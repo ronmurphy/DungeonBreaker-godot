@@ -76,7 +76,7 @@ func start_combat(enemies: Array, room: Dictionary, scene_root: Node3D):
 	var ox: int = room.get("_offset_x", 0)
 	var oz: int = room.get("_offset_z", 0)
 
-	tactical_grid.setup_room(room, ox, oz, 0)
+	tactical_grid.setup_room(room, ox, oz, room.get("floor_height", 0))
 
 	# ── Place player unit ──
 	var player_pos := Vector2i(

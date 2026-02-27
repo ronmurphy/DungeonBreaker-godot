@@ -17,6 +17,7 @@ signal advance_floor()
 @onready var _players: Node = $Players
 
 var _player: Node3D = null
+var _camera: Camera3D = null
 var _dungeon_stamper = null
 var _dungeon_objects: Node3D = null
 var _combat_manager: Node = null
@@ -121,14 +122,14 @@ func _spawn_player(pos: Vector3):
 	_player.terrain = _terrain.get_path()
 	_players.add_child(_player)
 
-	var cam: Camera3D = _player.get_node("IsometricCamera")
-	if cam and cam.has_method("set_follow_target"):
-		cam.set_follow_target(_player)
+	_camera = _player.get_node("IsometricCamera") as Camera3D
+	if _camera and _camera.has_method("set_follow_target"):
+		_camera.set_follow_target(_player)
 
 	if EntityManager:
-		EntityManager.set_camera(cam)
+		EntityManager.set_camera(_camera)
 
-	cam.global_position = pos + Vector3(12, 16, 12)
+	_camera.global_position = pos + Vector3(12, 16, 12)
 
 
 func _spawn_enemies(data: Dictionary):
@@ -307,12 +308,18 @@ func _trigger_room_combat(room: Dictionary):
 	# Connect player movement to tactical grid
 	_combat_manager.unit_moved.connect(_on_unit_moved)
 
+	# Lock camera pitch for combat — only yaw rotation (Q/E) allowed
+	if _camera and is_instance_valid(_camera):
+		_camera.set_combat_mode(true)
+
 
 func _on_combat_ended(victory: bool, room: Dictionary):
 	_combat_active = false
 	_set_wall_combat_mode(false)
 	if _player and is_instance_valid(_player):
 		_player.combat_locked = false
+	if _camera and is_instance_valid(_camera):
+		_camera.set_combat_mode(false)
 
 	if _combat_manager and is_instance_valid(_combat_manager):
 		_combat_manager.queue_free()
@@ -432,6 +439,9 @@ func _set_wall_combat_mode(enabled: bool) -> void:
 		_wall_tween.tween_callback(func() -> void:
 			_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 			_terrain_mat.vertex_color_use_as_albedo = true
+			# Zoom back out now that walls are fully opaque again
+			if _camera and is_instance_valid(_camera):
+				_camera.restore_zoom()
 		)
 
 

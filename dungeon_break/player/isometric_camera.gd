@@ -44,6 +44,15 @@ var _target_yaw: float = 45.0
 ## Signal emitted when yaw changes so player controller can stay aligned
 signal yaw_changed(new_yaw: float)
 
+## Combat mode: locks R/T pitch controls and resets pitch to default
+var _combat_locked := false
+var _pre_combat_pitch := 0.0
+var _pre_combat_distance := 0.0
+var _zoom_tween: Tween = null
+
+## Distance to snap to when combat begins (close enough to see the tactical grid clearly)
+const COMBAT_DISTANCE := 18.0
+
 
 func _ready():
 	top_level = true
@@ -63,8 +72,38 @@ func get_current_yaw() -> float:
 	return _current_yaw
 
 
+## Enable or disable combat mode.
+## On enable: saves pitch + zoom, snaps pitch to default, animates zoom in.
+## On disable: restores pitch. Zoom-out is deferred — call restore_zoom() after
+##             walls have faded back to opaque, so the reveal feels intentional.
+func set_combat_mode(enabled: bool) -> void:
+	_combat_locked = enabled
+	if enabled:
+		_pre_combat_pitch = pitch_degrees
+		_pre_combat_distance = distance
+		pitch_degrees = 40.0
+		_zoom_tween_to(COMBAT_DISTANCE, 0.45)
+	else:
+		pitch_degrees = _pre_combat_pitch
+		# Zoom-out happens in restore_zoom(), called by dungeon.gd after wall fade
+
+
+## Animate zoom back to the distance the player had before combat.
+## Call this after the wall-opacity restore tween has finished.
+func restore_zoom() -> void:
+	_zoom_tween_to(_pre_combat_distance, 0.6)
+
+
+func _zoom_tween_to(target_dist: float, duration: float) -> void:
+	if _zoom_tween and _zoom_tween.is_valid():
+		_zoom_tween.kill()
+	_zoom_tween = create_tween()
+	_zoom_tween.tween_property(self, "distance", target_dist, duration) \
+		.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
+
+
 func _unhandled_input(event: InputEvent):
-	if event is InputEventMouseButton:
+	if event is InputEventMouseButton and not _combat_locked:
 		if event.pressed:
 			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
 				distance = max(distance - zoom_speed - distance * 0.05, min_distance)
@@ -74,13 +113,15 @@ func _unhandled_input(event: InputEvent):
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_Q:
 			_target_yaw -= 90.0
+			_current_yaw = _target_yaw  # Snap immediately so frustum culling is correct
 			yaw_changed.emit(_target_yaw)
 		elif event.keycode == KEY_E:
 			_target_yaw += 90.0
+			_current_yaw = _target_yaw  # Snap immediately so frustum culling is correct
 			yaw_changed.emit(_target_yaw)
-		elif event.keycode == KEY_R:
+		elif event.keycode == KEY_R and not _combat_locked:
 			pitch_degrees = clampf(pitch_degrees + pitch_step, min_pitch, max_pitch)
-		elif event.keycode == KEY_T:
+		elif event.keycode == KEY_T and not _combat_locked:
 			pitch_degrees = clampf(pitch_degrees - pitch_step, min_pitch, max_pitch)
 
 
