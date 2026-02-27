@@ -34,10 +34,6 @@ MusicManager="*res://dungeon_break/data/music_manager.gd"
 window/stretch/mode="2d"
 window/stretch/aspect="expand"
 
-[editor_plugins]
-
-enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
-
 [filesystem]
 
 import/blender/enabled=false
