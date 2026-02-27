@@ -358,6 +358,10 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Boss room keeps its elevation when it's an upper room; decorations (pillars, portal, light) placed relative to `floor_y`
 - [x] Wall-only material split (`terrain_material_wall.tres`) — log_y, stone_bricks, void_stone_bricks use separate material from floors so walls can be toggled independently
 - [x] Combat wall transparency — walls fade to 8% opacity on combat start, restore on combat end (0.35s tween); material restored to TRANSPARENCY_DISABLED after fade-out completes
+- [x] Dungeon darkness — DirectionalLight3D killed (energy 0.0) at build time; ambient set to 0.05; rooms start with all lights hidden (`visible = false`, grouped as `room_lights_N`)
+- [x] Room light reveal — player entering a room for the first time enables its light group; start room pre-revealed; rooms stay lit once visited
+- [x] Player torch — OmniLight3D parented to player; range 1.5→10, energy 0.15→1.8 lerped from `torch_fuel` (0–100); burns at 0.15/sec while exploring (paused during combat)
+- [x] Combat ambient boost — tweens ambient 0.05→0.35 on combat start (alongside wall fade), back to 0.05 on combat end
 
 ### Combat
 - [x] FFT-style tactical grid combat

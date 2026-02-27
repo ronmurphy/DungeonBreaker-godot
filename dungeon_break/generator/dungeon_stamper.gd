@@ -50,6 +50,10 @@ var _scene_root: Node3D = null
 # Store the generated dungeon data for game logic
 var dungeon_data: Dictionary = {}
 
+# Set before calling _decorate_room() so _add_light() can group lights by room.
+# -1 means "no room" (corridor lights), which stay permanently visible.
+var _current_room_id: int = -1
+
 
 func setup(terrain: VoxelTerrain, scene_parent: Node3D):
 	_terrain = terrain
@@ -147,9 +151,13 @@ func build_dungeon(floor_num: int) -> Dictionary:
 	# Build staircases connecting corridors to elevated rooms
 	_build_staircases(grid, rooms, cols, rows, ox, oz, wall_block)
 
-	# Place room decorations and lights
+	# Place room decorations and lights.
+	# Set _current_room_id so _add_light() groups each light under its room —
+	# dungeon.gd enables the group when the player first enters that room.
 	for room in rooms:
+		_current_room_id = room["id"]
 		_decorate_room(room, ox, oz, floor_num)
+		_current_room_id = -1
 
 	# Place corridor decorations (sconces every ~8 tiles)
 	_decorate_corridors(grid, cols, rows, ox, oz, floor_num)
@@ -570,7 +578,10 @@ func _decorate_corridors(grid: Array, cols: int, rows: int, ox: int, oz: int, fl
 
 
 ## Add an OmniLight3D to the scene.
-func _add_light(pos: Vector3, node_name: String, color: Color, energy: float, range_val: float):
+## If _current_room_id >= 0 the light is hidden by default and added to
+## "room_lights_N" so dungeon.gd can reveal it when the player enters.
+## Corridor lights (_current_room_id == -1) are always visible.
+func _add_light(pos: Vector3, node_name: String, color: Color, energy: float, range_val: float) -> void:
 	var light := OmniLight3D.new()
 	light.name = node_name
 	light.light_color = color
@@ -578,6 +589,9 @@ func _add_light(pos: Vector3, node_name: String, color: Color, energy: float, ra
 	light.omni_range = range_val
 	light.omni_attenuation = 1.2
 	light.shadow_enabled = false
+	if _current_room_id >= 0:
+		light.add_to_group("room_lights_%d" % _current_room_id)
+		light.visible = false
 	_scene_root.add_child(light)
 	light.global_position = pos
 

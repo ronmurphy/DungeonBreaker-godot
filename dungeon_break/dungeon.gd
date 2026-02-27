@@ -15,6 +15,8 @@ signal advance_floor()
 
 @onready var _terrain: VoxelTerrain = $VoxelTerrain
 @onready var _players: Node = $Players
+@onready var _world_env: WorldEnvironment = $WorldEnvironment
+@onready var _dir_light: DirectionalLight3D = $DirectionalLight3D
 
 var _player: Node3D = null
 var _camera: Camera3D = null
@@ -28,6 +30,20 @@ var _hud: CanvasLayer = null
 var _combat_floor_height: int = 0  # elevation of the active combat room
 var _terrain_mat: StandardMaterial3D = null
 var _wall_tween: Tween = null
+
+## Ambient light levels for the dungeon environment
+const DUNGEON_AMBIENT := 0.05   # dark exploration
+const COMBAT_AMBIENT  := 0.35   # readable tactical grid
+
+## Torch light node (OmniLight3D parented to player, only in dungeon)
+var _torch_light: OmniLight3D = null
+
+## Rooms the player has visited this run — keyed by room id (int → true)
+var _visited_rooms: Dictionary = {}
+
+## Accumulator for torch fuel burn (fuel is int, burn rate is float)
+var _torch_burn_accum: float = 0.0
+const TORCH_BURN_RATE := 0.15  # fuel per second; full torch lasts ~11 min
 
 
 func _ready():
@@ -111,6 +127,18 @@ func _build_dungeon():
 		if GameData.gold == 0:
 			GameData.add_gold(15)
 
+	# Darken the dungeon: kill the directional sun (it shines into every open-top room)
+	# and bring ambient down to near-zero. Corridor sconces + player torch + room lights
+	# on entry are the only illumination.
+	if _dir_light:
+		_dir_light.light_energy = 0.0
+	if _world_env and _world_env.environment:
+		_world_env.environment.ambient_light_energy = DUNGEON_AMBIENT
+
+	# Start room (id 0) is always pre-revealed — player spawns there
+	_visited_rooms[0] = true
+	_enable_room_lights(0)
+
 	MusicManager.play_dungeon()
 	print("Dungeon: floor %d ready — %d rooms" % [_floor_num, data["rooms"].size()])
 
@@ -130,6 +158,16 @@ func _spawn_player(pos: Vector3):
 		EntityManager.set_camera(_camera)
 
 	_camera.global_position = pos + Vector3(12, 16, 12)
+
+	# Torch light — warm OmniLight parented to player, dims as torch_fuel drains
+	_torch_light = OmniLight3D.new()
+	_torch_light.name = "TorchLight"
+	_torch_light.light_color = Color(1.0, 0.75, 0.3)
+	_torch_light.omni_attenuation = 1.5
+	_torch_light.shadow_enabled = false
+	_player.add_child(_torch_light)
+	_torch_light.position = Vector3(0.0, 1.5, 0.0)
+	_update_torch_light()
 
 
 func _spawn_enemies(data: Dictionary):
@@ -191,9 +229,18 @@ func _connect_portals():
 			# So we use area overlap with player proximity check instead
 
 
-func _process(_delta: float):
+func _process(delta: float):
 	if _player == null or _dungeon_stamper == null:
 		return
+
+	# Burn torch fuel while exploring (not during combat — give player a breather)
+	if not _combat_active:
+		_torch_burn_accum += delta * TORCH_BURN_RATE
+		if _torch_burn_accum >= 1.0:
+			var burned: int = int(_torch_burn_accum)
+			_torch_burn_accum -= float(burned)
+			GameData.torch_fuel = maxi(0, GameData.torch_fuel - burned)
+	_update_torch_light()
 
 	# Update dungeon HUD clock from shared world time
 	if _hud:
@@ -263,11 +310,16 @@ func _check_area_interactions():
 	if not near_anything and _hud:
 		_hud.hide_prompt()
 
-	# Check if player entered an uncleared room → trigger combat
+	# Check room entry: reveal lights on first visit, trigger combat if uncleared
 	if not _combat_active:
 		var room: Dictionary = _dungeon_stamper.get_room_at_world(player_pos)
-		if not room.is_empty() and room["state"] == "uncleared":
-			_trigger_room_combat(room)
+		if not room.is_empty():
+			var rid: int = room["id"]
+			if not _visited_rooms.has(rid):
+				_visited_rooms[rid] = true
+				_enable_room_lights(rid)
+			if room["state"] == "uncleared":
+				_trigger_room_combat(room)
 
 
 func _trigger_room_combat(room: Dictionary):
@@ -420,6 +472,23 @@ func _on_area_body_entered(_body: Node3D, _area: Area3D):
 	pass  # Handled via proximity in _check_area_interactions
 
 
+## Enable all lights for a room (called when the player first steps into it).
+func _enable_room_lights(room_id: int) -> void:
+	var group: String = "room_lights_%d" % room_id
+	for node in get_tree().get_nodes_in_group(group):
+		if node is OmniLight3D:
+			(node as OmniLight3D).visible = true
+
+
+## Sync torch OmniLight range and energy to current torch_fuel (0–100).
+func _update_torch_light() -> void:
+	if _torch_light == null or not is_instance_valid(_torch_light):
+		return
+	var t: float = float(GameData.torch_fuel) / 100.0
+	_torch_light.omni_range = lerpf(1.5, 10.0, t)
+	_torch_light.light_energy = lerpf(0.15, 1.8, t)
+
+
 ## Fade terrain walls in/out during combat.
 ## Disables vertex_color_use_as_albedo so albedo_color.a controls transparency.
 func _set_wall_combat_mode(enabled: bool) -> void:
@@ -433,9 +502,17 @@ func _set_wall_combat_mode(enabled: bool) -> void:
 		_terrain_mat.vertex_color_use_as_albedo = false
 		_wall_tween.tween_property(_terrain_mat, "albedo_color",
 			Color(1.0, 1.0, 1.0, 0.08), 0.35)
+		# Boost ambient so tactical grid tiles are clearly readable during combat
+		if _world_env and _world_env.environment:
+			_wall_tween.parallel().tween_property(
+				_world_env.environment, "ambient_light_energy", COMBAT_AMBIENT, 0.35)
 	else:
 		_wall_tween.tween_property(_terrain_mat, "albedo_color",
 			Color(1.0, 1.0, 1.0, 1.0), 0.35)
+		# Restore dungeon darkness alongside the wall fade
+		if _world_env and _world_env.environment:
+			_wall_tween.parallel().tween_property(
+				_world_env.environment, "ambient_light_energy", DUNGEON_AMBIENT, 0.35)
 		_wall_tween.tween_callback(func() -> void:
 			_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 			_terrain_mat.vertex_color_use_as_albedo = true
