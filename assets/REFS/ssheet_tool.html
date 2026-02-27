@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sprite Sheet BBox Editor · Dungeon Break</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0d0b16;
+  color: #c0b8d4;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── Toolbar ────────────────────────────────────────────────────────── */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #16122a;
+  border-bottom: 1px solid #2e2450;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+#toolbar h1 {
+  font-size: 13px;
+  color: #c8a0ff;
+  font-weight: bold;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.sep {
+  width: 1px;
+  height: 22px;
+  background: #2e2450;
+  margin: 0 3px;
+  flex-shrink: 0;
+}
+
+button {
+  background: #231a3a;
+  border: 1px solid #3e3060;
+  color: #a898c8;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+button:hover  { background: #332550; border-color: #6a50a0; color: #ddd0ff; }
+button.active { background: #4a2f80; border-color: #9070d8; color: #fff; }
+button:disabled { opacity: 0.4; cursor: default; }
+
+#sheet-label {
+  color: #ffd060;
+  min-width: 110px;
+  text-align: center;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+#hint-bar {
+  margin-left: auto;
+  color: #4a4060;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* ── Canvas area ────────────────────────────────────────────────────── */
+#canvas-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #0d0b16;
+}
+
+canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+/* ── Status bar ─────────────────────────────────────────────────────── */
+#statusbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 4px 14px;
+  background: #100e1c;
+  border-top: 1px solid #1e1a30;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+#status-frame  { color: #ffd060; font-weight: bold; min-width: 76px; }
+#status-coords { color: #90b8ff; font-family: monospace; min-width: 280px; }
+#status-mouse  { color: #5a5070; min-width: 120px; }
+#status-zoom   { color: #5a5070; min-width: 60px; }
+
+input[type=file] { display: none; }
+</style>
+</head>
+
+<body>
+
+<div id="toolbar">
+  <h1>BBox Editor</h1>
+  <div class="sep"></div>
+
+  <button id="btn-prev" title="Previous sheet">◀</button>
+  <span id="sheet-label">Human Male</span>
+  <button id="btn-next" title="Next sheet">▶</button>
+
+  <div class="sep"></div>
+
+  <button id="btn-load-img" title="Load a custom image file">Load Image…</button>
+  <button id="btn-load-json" title="Load a saved ssheet.json">Load JSON…</button>
+  <button id="btn-export" title="Export ssheet.json (save next to this HTML)">Export ssheet.json</button>
+  <button id="btn-reset" title="Reset all boxes to built-in defaults">Reset Defaults</button>
+  <button id="btn-fit" title="Fit image to window (F)">Fit (F)</button>
+
+  <span id="hint-bar">Scroll=zoom · Space/MMB drag=pan · Drag body=X-move all · Drag corner=resize this · Esc=deselect</span>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="statusbar">
+  <span id="status-frame">—</span>
+  <span id="status-coords">x: —    y: —    w: —    h: —</span>
+  <span id="status-mouse">img: —, —</span>
+  <span id="status-zoom">zoom: —</span>
+</div>
+
+<input type="file" id="file-img"  accept="image/*">
+<input type="file" id="file-json" accept=".json,application/json">
+
+<script>
+'use strict';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SHEETS = [
+  { label: 'Human Male',    file: 'human_male_spritesheet_transparent.png'   },
+  { label: 'Human Female',  file: 'human_female_spritesheet_transparent.png' },
+  { label: 'Elf Male',      file: 'elf_male_spritesheetd_transparent.png'    }, // note 'd' typo in filename
+  { label: 'Elf Female',    file: 'elf_female_spritesheet_transparent.png'   },
+  { label: 'Dwarf Male',    file: 'dwarf_male_spritesheet_transparent.png'   },
+  { label: 'Dwarf Female',  file: 'dwarf_female_spritesheet_transparent.png' },
+  { label: 'Goblin Male',   file: 'goblin_male_spritesheet_transparent.png'  },
+  { label: 'Goblin Female', file: 'goblin_female_spritesheet_transparent.png'},
+];
+
+// Default bounding boxes from character_sprite.gd / spatial.json
+// displayName is shown in the canvas label; name is the JSON export key.
+//
+// Mirror notes (implemented in character_sprite.gd, not a separate sheet crop):
+//   IDLE_NW  = FACE_LEFT  — the only side-facing pose on the sheet
+//   IDLE_SE  = FACE_RIGHT — game uses IDLE_NW region with flip_h=true (no extra crop needed)
+//   WALK_NE  = WALK_UP    — 2-frame animated: frame 1 normal, frame 2 flip_h=true (mirror)
+//   WALK_SW1/WALK_SW2 are size-linked: resizing w or h on either updates the other.
+const DEFAULT_FRAMES = [
+  { name: 'PORTRAIT',  x:    0, y:   0, w: 746, h: 771 },
+  { name: 'IDLE_SW',   x:  739, y:   0, w: 509, h: 771 },
+  { name: 'IDLE_NE',   x: 1241, y:   0, w: 509, h: 771 },
+  { name: 'IDLE_NW',   x: 1743, y:   0, w: 509, h: 771, displayName: 'IDLE_NW / FACE_LEFT' },
+  { name: 'IDLE_SE',   x: 2245, y:   0, w: 507, h: 771, displayName: 'IDLE_SE (→ FACE_RIGHT mirror)' },
+  { name: 'WALK_SW1',  x:    0, y: 764, w: 691, h: 772, displayName: 'WALK_SW1 (size-linked ↔ SW2)' },
+  { name: 'WALK_SW2',  x:  684, y: 764, w: 695, h: 772, displayName: 'WALK_SW2 (size-linked ↔ SW1)' },
+  { name: 'WALK_NE',   x: 1372, y: 764, w: 695, h: 772, displayName: 'WALK_NE / WALK_UP (frame 2 = mirror)' },
+  { name: 'DEAD',      x: 2060, y: 764, w: 692, h: 772 },
+];
+
+// Distinct colours per frame
+const FRAME_COLORS = [
+  '#FF6B6B', // PORTRAIT  — red
+  '#4ED8C4', // IDLE_SW   — teal
+  '#58B8F8', // IDLE_NE   — blue
+  '#90D490', // IDLE_NW   — green
+  '#FFD060', // IDLE_SE   — yellow
+  '#FF9EF8', // WALK_SW1  — pink
+  '#70B0FF', // WALK_SW2  — periwinkle
+  '#B880FF', // WALK_NE   — purple
+  '#50E8E8', // DEAD      — cyan
+];
+
+const HANDLE_R  = 6;   // handle circle radius (screen px)
+const MIN_SIZE  = 4;   // minimum frame width/height (image px)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────────────────────────────────────
+
+let sheetIdx    = 0;
+let frames      = cloneFrames();   // working copy of current frame rects
+let selectedIdx = -1;
+let image       = null;            // current HTMLImageElement (or null)
+
+// Viewport transform
+let zoom = 1.0;
+let panX = 40;
+let panY = 40;
+
+// Input state
+let spaceDown = false;
+let mouseImg  = { x: 0, y: 0 };   // last mouse position in image coords
+
+/*
+  drag = null  |  {
+    type:       'move' | 'resize' | 'pan',
+    frameIdx:   number,
+    handle:     string | null,   // null for body-move; 'tl'|'tc'|'tr'|'ml'|'mr'|'bl'|'bc'|'br' for resize
+    startCX:    number,          // canvas coords at drag start
+    startCY:    number,
+    snapFrames: array,           // deep copy of ALL frames at drag start (for incremental delta)
+  }
+*/
+let drag = null;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CANVAS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const wrap   = document.getElementById('canvas-wrap');
+
+new ResizeObserver(() => {
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  render();
+}).observe(wrap);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COORD TRANSFORMS
+// ─────────────────────────────────────────────────────────────────────────────
+
+function i2c(ix, iy) { return [ix * zoom + panX, iy * zoom + panY]; }
+function c2i(cx, cy) { return [(cx - panX) / zoom, (cy - panY) / zoom]; }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HANDLE GEOMETRY
+// ─────────────────────────────────────────────────────────────────────────────
+
+//  tl──tc──tr
+//  |       |
+//  ml      mr
+//  |       |
+//  bl──bc──br
+
+function handlePoints(f) {
+  return {
+    tl: [f.x,           f.y          ],
+    tc: [f.x + f.w / 2, f.y          ],
+    tr: [f.x + f.w,     f.y          ],
+    ml: [f.x,           f.y + f.h / 2],
+    mr: [f.x + f.w,     f.y + f.h / 2],
+    bl: [f.x,           f.y + f.h    ],
+    bc: [f.x + f.w / 2, f.y + f.h    ],
+    br: [f.x + f.w,     f.y + f.h    ],
+  };
+}
+
+const HANDLE_CURSORS = {
+  tl: 'nwse-resize', tc: 'ns-resize', tr: 'nesw-resize',
+  ml: 'ew-resize',                    mr: 'ew-resize',
+  bl: 'nesw-resize', bc: 'ns-resize', br: 'nwse-resize',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HIT TESTING
+// ─────────────────────────────────────────────────────────────────────────────
+
+function hitTest(cx, cy) {
+  // Check handles of selected frame first
+  if (selectedIdx >= 0) {
+    const pts = handlePoints(frames[selectedIdx]);
+    for (const [h, [ix, iy]] of Object.entries(pts)) {
+      const [hcx, hcy] = i2c(ix, iy);
+      if (Math.hypot(cx - hcx, cy - hcy) <= HANDLE_R + 3) {
+        return { type: 'handle', frameIdx: selectedIdx, handle: h };
+      }
+    }
+  }
+  // Check box bodies, last drawn (highest index) wins topmost click
+  for (let i = frames.length - 1; i >= 0; i--) {
+    const f = frames[i];
+    const [x1, y1] = i2c(f.x, f.y);
+    const [x2, y2] = i2c(f.x + f.w, f.y + f.h);
+    if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) {
+      return { type: 'box', frameIdx: i };
+    }
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// APPLY RESIZE  (per-box only, from snap + total delta)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function applyResize(f, snap, handle, dix, diy) {
+  switch (handle) {
+    case 'tl': f.x = snap.x + dix; f.y = snap.y + diy; f.w = snap.w - dix; f.h = snap.h - diy; break;
+    case 'tc':                      f.y = snap.y + diy;                      f.h = snap.h - diy; break;
+    case 'tr':                      f.y = snap.y + diy; f.w = snap.w + dix; f.h = snap.h - diy; break;
+    case 'ml': f.x = snap.x + dix;                      f.w = snap.w - dix;                      break;
+    case 'mr':                                           f.w = snap.w + dix;                      break;
+    case 'bl': f.x = snap.x + dix;                      f.w = snap.w - dix; f.h = snap.h + diy; break;
+    case 'bc':                                                                f.h = snap.h + diy; break;
+    case 'br':                                           f.w = snap.w + dix; f.h = snap.h + diy; break;
+  }
+  if (f.w < MIN_SIZE) { if (handle.includes('l')) f.x = snap.x + snap.w - MIN_SIZE; f.w = MIN_SIZE; }
+  if (f.h < MIN_SIZE) { if (handle.includes('t')) f.y = snap.y + snap.h - MIN_SIZE; f.h = MIN_SIZE; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RENDERING
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Build a checkerboard pattern once
+let _checker = null;
+function getChecker() {
+  if (_checker) return _checker;
+  const sz = 14;
+  const pc  = document.createElement('canvas');
+  pc.width  = sz * 2; pc.height = sz * 2;
+  const c   = pc.getContext('2d');
+  c.fillStyle = '#181428'; c.fillRect(0,   0,  sz*2, sz*2);
+  c.fillStyle = '#201a36'; c.fillRect(0,   0,  sz,   sz  );
+  c.fillStyle = '#201a36'; c.fillRect(sz,  sz, sz,   sz  );
+  _checker = ctx.createPattern(pc, 'repeat');
+  return _checker;
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Dark background
+  ctx.fillStyle = '#0d0b16';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (image) {
+    // Checkerboard under image to show transparency
+    const [ix, iy] = i2c(0, 0);
+    const iw = image.width  * zoom;
+    const ih = image.height * zoom;
+    ctx.fillStyle = getChecker();
+    ctx.fillRect(ix, iy, iw, ih);
+
+    // Image
+    ctx.imageSmoothingEnabled = zoom > 1.5;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(image, ix, iy, iw, ih);
+  } else {
+    ctx.fillStyle = '#302048';
+    ctx.font = '15px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Loading ' + SHEETS[sheetIdx].label + '…', canvas.width / 2, canvas.height / 2);
+  }
+
+  // Draw all frame boxes
+  for (let i = 0; i < frames.length; i++) drawFrame(i, i === selectedIdx);
+
+  updateStatus();
+}
+
+function drawFrame(i, selected) {
+  const f   = frames[i];
+  const col = FRAME_COLORS[i % FRAME_COLORS.length];
+  const [cx, cy] = i2c(f.x, f.y);
+  const cw  = f.w * zoom;
+  const ch  = f.h * zoom;
+
+  // Semi-transparent fill
+  ctx.globalAlpha = selected ? 0.28 : 0.10;
+  ctx.fillStyle   = col;
+  ctx.fillRect(cx, cy, cw, ch);
+  ctx.globalAlpha = 1.0;
+
+  // Border  (dashed when not selected)
+  ctx.strokeStyle = col;
+  ctx.lineWidth   = selected ? 2.5 : 1.5;
+  ctx.setLineDash(selected ? [] : [6, 4]);
+  ctx.strokeRect(cx + 0.5, cy + 0.5, cw - 1, ch - 1);
+  ctx.setLineDash([]);
+
+  // Label — use displayName when set (shows mirror / link notes)
+  const label     = f.displayName || f.name;
+  const fontSize  = Math.round(Math.max(9, Math.min(14, zoom * 20)));
+  ctx.font        = `bold ${fontSize}px monospace`;
+  ctx.textAlign   = 'left';
+  ctx.textBaseline = 'top';
+  const tx = cx + 5, ty = cy + 5;
+  ctx.fillStyle = 'rgba(0,0,0,0.75)';
+  ctx.fillText(label, tx + 1, ty + 1);
+  ctx.fillStyle = col;
+  ctx.fillText(label, tx, ty);
+
+  // Resize handles (selected only)
+  if (selected) {
+    const pts = handlePoints(f);
+    for (const [, [ix, iy]] of Object.entries(pts)) {
+      const [hx, hy] = i2c(ix, iy);
+      ctx.beginPath();
+      ctx.arc(hx, hy, HANDLE_R, 0, Math.PI * 2);
+      ctx.fillStyle   = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+    }
+  }
+}
+
+function updateStatus() {
+  const fl = document.getElementById('status-frame');
+  const cl = document.getElementById('status-coords');
+  const ml = document.getElementById('status-mouse');
+  const zl = document.getElementById('status-zoom');
+
+  if (selectedIdx >= 0) {
+    const f = frames[selectedIdx];
+    fl.textContent = f.name;
+    cl.textContent =
+      `x: ${String(Math.round(f.x)).padStart(4)}  ` +
+      `y: ${String(Math.round(f.y)).padStart(4)}  ` +
+      `w: ${String(Math.round(f.w)).padStart(4)}  ` +
+      `h: ${String(Math.round(f.h)).padStart(4)}`;
+  } else {
+    fl.textContent = '—';
+    cl.textContent = 'x: —    y: —    w: —    h: —';
+  }
+  ml.textContent = `img: ${Math.round(mouseImg.x)}, ${Math.round(mouseImg.y)}`;
+  zl.textContent = `zoom: ${zoom.toFixed(2)}x`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOUSE EVENTS
+// ─────────────────────────────────────────────────────────────────────────────
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+canvas.addEventListener('mousedown', e => {
+  const cx = e.offsetX, cy = e.offsetY;
+
+  // Pan: middle mouse OR space+LMB
+  if (e.button === 1 || (e.button === 0 && spaceDown)) {
+    drag = { type: 'pan', startCX: cx, startCY: cy };
+    canvas.style.cursor = 'grabbing';
+    e.preventDefault();
+    return;
+  }
+
+  if (e.button !== 0) return;
+
+  const hit = hitTest(cx, cy);
+  if (!hit) {
+    selectedIdx = -1;
+    render();
+    return;
+  }
+
+  selectedIdx = hit.frameIdx;
+  drag = {
+    type:       hit.type === 'handle' ? 'resize' : 'move',
+    frameIdx:   hit.frameIdx,
+    handle:     hit.handle ?? null,
+    startCX:    cx,
+    startCY:    cy,
+    snapFrames: cloneFrames(),
+  };
+  render();
+  e.preventDefault();
+});
+
+canvas.addEventListener('mousemove', e => {
+  const cx = e.offsetX, cy = e.offsetY;
+  [mouseImg.x, mouseImg.y] = c2i(cx, cy);
+
+  if (!drag) {
+    // Cursor hint only
+    const hit = hitTest(cx, cy);
+    if (spaceDown) {
+      canvas.style.cursor = 'grab';
+    } else if (hit?.type === 'handle') {
+      canvas.style.cursor = HANDLE_CURSORS[hit.handle] ?? 'crosshair';
+    } else if (hit?.type === 'box') {
+      canvas.style.cursor = 'move';
+    } else {
+      canvas.style.cursor = 'crosshair';
+    }
+    updateStatus();
+    return;
+  }
+
+  const dix = (cx - drag.startCX) / zoom;   // total delta in image px from drag start
+  const diy = (cy - drag.startCY) / zoom;
+
+  if (drag.type === 'pan') {
+    panX += cx - drag.startCX;
+    panY += cy - drag.startCY;
+    drag.startCX = cx;
+    drag.startCY = cy;
+
+  } else if (drag.type === 'move') {
+    // X delta → ALL frames (x-linked layout)
+    // Y delta → only dragged frame
+    for (let i = 0; i < frames.length; i++) {
+      frames[i].x = drag.snapFrames[i].x + dix;
+    }
+    frames[drag.frameIdx].y = drag.snapFrames[drag.frameIdx].y + diy;
+
+  } else if (drag.type === 'resize') {
+    const snap = drag.snapFrames[drag.frameIdx];
+    applyResize(frames[drag.frameIdx], snap, drag.handle, dix, diy);
+
+    // WALK_SW1 and WALK_SW2 are size-linked: keep w and h in sync
+    const sw1 = frames.findIndex(f => f.name === 'WALK_SW1');
+    const sw2 = frames.findIndex(f => f.name === 'WALK_SW2');
+    if (drag.frameIdx === sw1 && sw2 >= 0) {
+      frames[sw2].w = frames[sw1].w;
+      frames[sw2].h = frames[sw1].h;
+    } else if (drag.frameIdx === sw2 && sw1 >= 0) {
+      frames[sw1].w = frames[sw2].w;
+      frames[sw1].h = frames[sw2].h;
+    }
+  }
+
+  render();
+});
+
+canvas.addEventListener('mouseup', e => {
+  if (!drag) return;
+  if (drag.type === 'move' || drag.type === 'resize') {
+    // Snap all to integer pixels
+    for (const f of frames) {
+      f.x = Math.round(f.x); f.y = Math.round(f.y);
+      f.w = Math.round(f.w); f.h = Math.round(f.h);
+    }
+    // Re-apply WALK_SW size link after snap
+    const sw1 = frames.findIndex(f => f.name === 'WALK_SW1');
+    const sw2 = frames.findIndex(f => f.name === 'WALK_SW2');
+    if (drag.frameIdx === sw1 && sw2 >= 0) {
+      frames[sw2].w = frames[sw1].w; frames[sw2].h = frames[sw1].h;
+    } else if (drag.frameIdx === sw2 && sw1 >= 0) {
+      frames[sw1].w = frames[sw2].w; frames[sw1].h = frames[sw2].h;
+    }
+  }
+  drag = null;
+  canvas.style.cursor = 'crosshair';
+  render();
+});
+
+canvas.addEventListener('mouseleave', () => {
+  if (drag && drag.type === 'pan') {
+    drag = null;
+    canvas.style.cursor = 'crosshair';
+  }
+  render();
+});
+
+// Zoom centred on cursor
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+  const mx = e.offsetX, my = e.offsetY;
+  panX = mx - (mx - panX) * factor;
+  panY = my - (my - panY) * factor;
+  zoom = Math.max(0.04, Math.min(16, zoom * factor));
+  render();
+}, { passive: false });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// KEYBOARD
+// ─────────────────────────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+
+  if (e.code === 'Space' && !e.repeat) {
+    spaceDown = true;
+    canvas.style.cursor = 'grab';
+    e.preventDefault();
+  }
+  if (e.key === 'Escape') { selectedIdx = -1; render(); }
+  if (e.key === 'f' || e.key === 'F') { fitImage(); render(); }
+
+  // Nudge selected frame with arrow keys
+  if (selectedIdx >= 0 && !drag) {
+    const step = e.shiftKey ? 10 : 1;
+    let dx = 0, dy = 0;
+    if (e.key === 'ArrowLeft')  dx = -step;
+    if (e.key === 'ArrowRight') dx =  step;
+    if (e.key === 'ArrowUp')    dy = -step;
+    if (e.key === 'ArrowDown')  dy =  step;
+    if (dx !== 0) {
+      // X-linked nudge
+      for (const f of frames) f.x += dx;
+      e.preventDefault();
+    }
+    if (dy !== 0) {
+      frames[selectedIdx].y += dy;
+      e.preventDefault();
+    }
+    if (dx !== 0 || dy !== 0) render();
+  }
+});
+
+document.addEventListener('keyup', e => {
+  if (e.code === 'Space') {
+    spaceDown = false;
+    canvas.style.cursor = 'crosshair';
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMAGE LOADING
+// ─────────────────────────────────────────────────────────────────────────────
+
+function loadSheetByIdx(idx) {
+  sheetIdx = idx;
+  document.getElementById('sheet-label').textContent = SHEETS[idx].label;
+  image = null;
+  render();
+
+  const img = new Image();
+  img.onload = () => { image = img; fitImage(); render(); };
+  img.onerror = () => { image = null; render(); };
+  img.src = SHEETS[idx].file;
+}
+
+function fitImage() {
+  if (!image || canvas.width === 0 || canvas.height === 0) return;
+  const pad = 40;
+  const sx = (canvas.width  - pad * 2) / image.width;
+  const sy = (canvas.height - pad * 2) / image.height;
+  zoom = Math.min(sx, sy);
+  panX = (canvas.width  - image.width  * zoom) / 2;
+  panY = (canvas.height - image.height * zoom) / 2;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JSON EXPORT / IMPORT
+// ─────────────────────────────────────────────────────────────────────────────
+
+function exportJSON() {
+  const out = { frames: {} };
+  for (const f of frames) {
+    out.frames[f.name] = {
+      x: Math.round(f.x),
+      y: Math.round(f.y),
+      w: Math.round(f.w),
+      h: Math.round(f.h),
+    };
+  }
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = 'ssheet.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function applyJSON(text) {
+  let data;
+  try { data = JSON.parse(text); } catch (e) { alert('Invalid JSON: ' + e.message); return; }
+  if (!data?.frames) { alert('JSON missing "frames" key'); return; }
+  let applied = 0;
+  for (const f of frames) {
+    const d = data.frames[f.name];
+    if (!d) continue;
+    if (d.x !== undefined) f.x = +d.x;
+    if (d.y !== undefined) f.y = +d.y;
+    if (d.w !== undefined) f.w = +d.w;
+    if (d.h !== undefined) f.h = +d.h;
+    applied++;
+  }
+  render();
+  if (applied === 0) alert('No matching frame names found in JSON.');
+}
+
+// Try to auto-load ssheet.json from same folder on startup
+// (works in Firefox; Chrome blocks file:// fetch — use Load JSON button instead)
+fetch('ssheet.json')
+  .then(r => { if (!r.ok) throw new Error(); return r.text(); })
+  .then(applyJSON)
+  .catch(() => {});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BUTTON WIRING
+// ─────────────────────────────────────────────────────────────────────────────
+
+document.getElementById('btn-prev').addEventListener('click', () =>
+  loadSheetByIdx((sheetIdx + SHEETS.length - 1) % SHEETS.length));
+
+document.getElementById('btn-next').addEventListener('click', () =>
+  loadSheetByIdx((sheetIdx + 1) % SHEETS.length));
+
+document.getElementById('btn-fit').addEventListener('click', () => { fitImage(); render(); });
+
+document.getElementById('btn-export').addEventListener('click', exportJSON);
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  frames = cloneFrames();
+  selectedIdx = -1;
+  render();
+});
+
+document.getElementById('btn-load-img').addEventListener('click', () =>
+  document.getElementById('file-img').click());
+
+document.getElementById('file-img').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  image = new Image();
+  image.onload = () => { fitImage(); render(); };
+  image.src = URL.createObjectURL(file);
+  e.target.value = '';
+});
+
+document.getElementById('btn-load-json').addEventListener('click', () =>
+  document.getElementById('file-json').click());
+
+document.getElementById('file-json').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = ev => applyJSON(ev.target.result);
+  r.readAsText(file);
+  e.target.value = '';
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// UTILITIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+function cloneFrames() {
+  return DEFAULT_FRAMES.map(f => ({ ...f }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+
+loadSheetByIdx(0);
+
+</script>
+</body>
+</html>
