@@ -72,6 +72,9 @@ func generate(floor_num: int) -> Dictionary:
 	# Build walls around rooms and corridors
 	_build_walls(grid, cols, rows)
 
+	# Select rooms near outer edges as elevated upper rooms (boss + vault decoys)
+	_select_upper_rooms(rooms, cols, rows)
+
 	# Assign room types (start, boss, bonfire, trap, etc.)
 	_assign_room_types(rooms, floor_num)
 
@@ -323,7 +326,7 @@ func _build_walls(grid: Array, cols: int, rows: int):
 # ══════════════════════════════════════════════════════════════════════════════
 
 func _assign_room_types(rooms: Array, _floor_num: int):
-	if rooms.is_empty():
+	if rooms.size() < 2:
 		return
 
 	# Room 0 = start (shrine), always cleared, flat floor
@@ -331,19 +334,36 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 	rooms[0]["state"] = "cleared"
 	rooms[0]["floor_height"] = 0
 
-	# Boss room = furthest from start
 	var start_cx: int = rooms[0]["cx"]
 	var start_cy: int = rooms[0]["cy"]
-	var best_dist := 0.0
-	var boss_idx := 0
 
+	# Boss room: prefer upper rooms (far-edge elevated rooms); fall back to furthest from start
+	var best_dist := 0.0
+	var boss_idx := 1
+
+	var upper_indices: Array = []
 	for i in range(1, rooms.size()):
-		var dx: float = rooms[i]["cx"] - start_cx
-		var dy: float = rooms[i]["cy"] - start_cy
-		var dist := sqrt(dx * dx + dy * dy)
-		if dist > best_dist:
-			best_dist = dist
-			boss_idx = i
+		if rooms[i].get("is_upper", false):
+			upper_indices.append(i)
+
+	if not upper_indices.is_empty():
+		# Pick the upper room furthest from start
+		for i in upper_indices:
+			var dx: float = float(rooms[i]["cx"] - start_cx)
+			var dy: float = float(rooms[i]["cy"] - start_cy)
+			var dist := sqrt(dx * dx + dy * dy)
+			if dist > best_dist:
+				best_dist = dist
+				boss_idx = i
+	else:
+		# Fallback: any room furthest from start
+		for i in range(1, rooms.size()):
+			var dx: float = float(rooms[i]["cx"] - start_cx)
+			var dy: float = float(rooms[i]["cy"] - start_cy)
+			var dist := sqrt(dx * dx + dy * dy)
+			if dist > best_dist:
+				best_dist = dist
+				boss_idx = i
 
 	rooms[boss_idx]["room_type"] = "boss"
 	rooms[boss_idx]["state"] = "uncleared"
@@ -406,11 +426,59 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 
 	# Rest stay "normal" — these get enemies
 
+	# Upper rooms not assigned boss become vault (decoy elevated rooms)
+	for room in rooms:
+		if room.get("is_upper", false) and room["room_type"] == "normal":
+			room["room_type"] = "vault"
+
 	# Ensure interactive/safe rooms are always flat (elevation breaks their interactions)
-	const FLAT_TYPES := ["start", "boss", "bonfire", "merchant", "fountain"]
+	# Boss rooms keep their elevation if they're upper rooms
+	const FLAT_TYPES := ["start", "bonfire", "merchant", "fountain"]
 	for room in rooms:
 		if room["room_type"] in FLAT_TYPES:
 			room["floor_height"] = 0
+		elif room["room_type"] == "boss" and not room.get("is_upper", false):
+			room["floor_height"] = 0
+
+
+func _select_upper_rooms(rooms: Array, cols: int, rows: int) -> void:
+	## Post-placement pass: mark 2–3 far-edge rooms as upper rooms (floor_height = WALL_HEIGHT = 3).
+	## _assign_room_types uses them for boss and vault decoy assignment.
+	if rooms.size() < 4:
+		return
+
+	# "Edge zone" = outer 25% of the smaller dimension
+	var edge_margin := mini(cols, rows) / 4
+
+	# Score each non-start room: higher = closer to any grid edge
+	var candidates: Array = []
+	for i in range(1, rooms.size()):
+		var room: Dictionary = rooms[i]
+		var near_edge: bool = (
+			room["cx"] < edge_margin or room["cx"] > cols - edge_margin
+			or room["cy"] < edge_margin or room["cy"] > rows - edge_margin
+		)
+		# Normalised distance to closest edge (0 = on edge, 0.5 = centre)
+		var ex: float = float(mini(room["cx"], cols - room["cx"])) / float(cols)
+		var ey: float = float(mini(room["cy"], rows - room["cy"])) / float(rows)
+		var edge_score: float = 1.0 - (ex + ey) * 0.5
+		candidates.append({"idx": i, "near_edge": near_edge, "edge_score": edge_score})
+
+	# Sort: near-edge rooms first, then by edge_score descending
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if bool(a["near_edge"]) != bool(b["near_edge"]):
+			return bool(a["near_edge"])
+		return float(a["edge_score"]) > float(b["edge_score"])
+	)
+
+	# Pick 2 upper rooms on smaller floors, 3 on larger
+	var upper_count := 2 if rooms.size() < 12 else 3
+	upper_count = mini(upper_count, candidates.size())
+
+	for i in range(upper_count):
+		var idx: int = int(candidates[i]["idx"])
+		rooms[idx]["floor_height"] = WALL_HEIGHT  # = 3
+		rooms[idx]["is_upper"] = true
 
 
 func _build_connections(rooms: Array, corridors: Array):

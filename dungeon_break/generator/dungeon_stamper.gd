@@ -41,7 +41,7 @@ const VOID_STONE_BRICKS = 64
 
 const WALL_HEIGHT    := 3   # walls are 3 blocks tall above floor
 const FLOOR_Y        := 0   # base floor level
-const MAX_ELEVATION  := 2   # max room floor_height (blocks above FLOOR_Y)
+const MAX_ELEVATION  := 3   # max room floor_height (blocks above FLOOR_Y)
 
 var _terrain: VoxelTerrain = null
 var _voxel_tool: VoxelTool = null
@@ -145,7 +145,7 @@ func build_dungeon(floor_num: int) -> Dictionary:
 					_voxel_tool.set_voxel(Vector3i(wx, y, wz), wall_block)
 
 	# Build staircases connecting corridors to elevated rooms
-	_build_staircases(grid, rooms, cols, rows, ox, oz)
+	_build_staircases(grid, rooms, cols, rows, ox, oz, wall_block)
 
 	# Place room decorations and lights
 	for room in rooms:
@@ -165,9 +165,10 @@ func build_dungeon(floor_num: int) -> Dictionary:
 	return dungeon_data
 
 
-## Place one STAIRS block in each corridor tile adjacent to an elevated room,
-## giving players a 1-block step up into the raised floor.
-func _build_staircases(grid: Array, rooms: Array, cols: int, rows: int, ox: int, oz: int) -> void:
+## Place stair blocks in corridor tiles adjacent to elevated rooms.
+## For elev=2: 1 step (Y=1) in the adjacent tile.
+## For elev=3: 2 steps — Y=2 in adjacent tile, Y=1 in the tile one step further out.
+func _build_staircases(grid: Array, rooms: Array, cols: int, rows: int, ox: int, oz: int, wall_block: int) -> void:
 	for room in rooms:
 		var elev: int = room.get("floor_height", 0)
 		if elev <= 0:
@@ -179,52 +180,69 @@ func _build_staircases(grid: Array, rooms: Array, cols: int, rows: int, ox: int,
 		var rh: int = room["h"]
 		var stamped := {}
 
-		# Check each of the 4 room perimeter edges for adjacent corridor tiles
-		# North (ry - 1)
+		# Check each of the 4 room perimeter edges for adjacent corridor tiles.
+		# dir = direction away from the room (used to extend multi-tile stairs outward).
+
+		# North (ry - 1) — dir points further north (decreasing z)
 		if ry > 0:
 			for col in range(rx, rx + rw):
 				if grid[ry - 1][col] == BspDungeon.CORRIDOR:
 					var k := Vector2i(col, ry - 1)
 					if not stamped.has(k):
 						stamped[k] = true
-						_stamp_stair_approach(col + ox, ry - 1 + oz, elev)
+						_stamp_stair_approach(col + ox, ry - 1 + oz, elev, Vector2i(0, -1), wall_block)
 
-		# South (ry + rh)
+		# South (ry + rh) — dir points further south (increasing z)
 		if ry + rh < grid.size():
 			for col in range(rx, rx + rw):
 				if grid[ry + rh][col] == BspDungeon.CORRIDOR:
 					var k := Vector2i(col, ry + rh)
 					if not stamped.has(k):
 						stamped[k] = true
-						_stamp_stair_approach(col + ox, ry + rh + oz, elev)
+						_stamp_stair_approach(col + ox, ry + rh + oz, elev, Vector2i(0, 1), wall_block)
 
-		# West (rx - 1)
+		# West (rx - 1) — dir points further west (decreasing x)
 		if rx > 0:
 			for row in range(ry, ry + rh):
 				if grid[row][rx - 1] == BspDungeon.CORRIDOR:
 					var k := Vector2i(rx - 1, row)
 					if not stamped.has(k):
 						stamped[k] = true
-						_stamp_stair_approach(rx - 1 + ox, row + oz, elev)
+						_stamp_stair_approach(rx - 1 + ox, row + oz, elev, Vector2i(-1, 0), wall_block)
 
-		# East (rx + rw)
+		# East (rx + rw) — dir points further east (increasing x)
 		if rx + rw < cols:
 			for row in range(ry, ry + rh):
 				if grid[row][rx + rw] == BspDungeon.CORRIDOR:
 					var k := Vector2i(rx + rw, row)
 					if not stamped.has(k):
 						stamped[k] = true
-						_stamp_stair_approach(rx + rw + ox, row + oz, elev)
+						_stamp_stair_approach(rx + rw + ox, row + oz, elev, Vector2i(1, 0), wall_block)
 
 
-## Stamp stair step(s) in one corridor tile adjacent to an elevated room.
-## For elev=2: 1 step at Y=1 (player walks Y=1→2→room Y=3). ✓
-func _stamp_stair_approach(wx: int, wz: int, elev: int) -> void:
-	for step_y in range(1, elev):   # Y=1 only when elev=2
-		_voxel_tool.set_voxel(Vector3i(wx, step_y, wz), STAIRS)
-	# Ensure clear headroom above the stair
-	for y in range(elev, FLOOR_Y + elev + WALL_HEIGHT + 2):
-		_voxel_tool.set_voxel(Vector3i(wx, y, wz), AIR)
+## Stamp stair approach tiles leading up to an elevated room.
+##
+## Tile layout (elev=3, approaching from north):
+##   (tile, ry-2): STAIRS at Y=1  ← player steps here first
+##   (tile, ry-1): STAIRS at Y=2  ← second step (adjacent to room)
+##   (room floor): Y=3            ← enter room
+##
+## dir = direction away from the room (so tile at i=0 is adjacent, i=1 is one further out).
+## fill_block fills the solid sub-support so stair blocks don't float.
+func _stamp_stair_approach(wx: int, wz: int, elev: int, dir: Vector2i, fill_block: int) -> void:
+	var num_stairs := elev - 1   # 0 for elev≤1, 1 for elev=2, 2 for elev=3
+	for i in range(num_stairs):
+		var tx := wx + dir.x * i
+		var tz := wz + dir.y * i
+		var step_y := elev - 1 - i   # adjacent tile gets the highest step
+		# Fill solid support below this step so it doesn't float
+		for y in range(FLOOR_Y + 1, step_y):
+			_voxel_tool.set_voxel(Vector3i(tx, y, tz), fill_block)
+		# Place the stair block
+		_voxel_tool.set_voxel(Vector3i(tx, step_y, tz), STAIRS)
+		# Clear headroom from just above the stair up to wall top
+		for y in range(step_y + 1, FLOOR_Y + MAX_ELEVATION + WALL_HEIGHT + 2):
+			_voxel_tool.set_voxel(Vector3i(tx, y, tz), AIR)
 
 
 ## Decorate a room based on its type.
@@ -258,6 +276,8 @@ func _decorate_room(room: Dictionary, ox: int, oz: int, floor_num: int = 1):
 			_build_alchemy_room(wcx, wcz, room, ox, oz)
 		"locked":
 			pass  # Normal looking but needs a key
+		"vault":
+			_build_vault_room(wcx, wcz, room, ox, oz)
 		"normal":
 			pass  # Enemy rooms — decorated by enemy spawner
 
@@ -291,13 +311,16 @@ func _build_start_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: in
 	_voxel_tool.set_voxel(Vector3i(gx, FLOOR_Y, gz), GLASS)
 
 
-## Boss room: large, dramatic lighting.
+## Boss room: large, dramatic lighting. Handles elevated upper rooms correctly.
 func _build_boss_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: int):
 	if not _scene_root:
 		return
 
+	var elev: int = room.get("floor_height", 0)
+	var floor_y := FLOOR_Y + elev
+
 	# Red ominous light
-	_add_light(Vector3(wcx, 3.0, wcz), "BossLight", Color(1.0, 0.2, 0.1), 3.0, 14.0)
+	_add_light(Vector3(wcx, float(floor_y) + 3.0, wcz), "BossLight", Color(1.0, 0.2, 0.1), 3.0, 14.0)
 
 	# Floor portal (appears after boss defeat → next floor)
 	var area := Area3D.new()
@@ -310,17 +333,17 @@ func _build_boss_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: int
 	area.set_meta("interaction", "boss_portal")
 	area.set_meta("enabled", false)  # Enabled after boss dies
 	_scene_root.add_child(area)
-	area.global_position = Vector3(wcx, 2.0, wcz)
+	area.global_position = Vector3(wcx, float(floor_y) + 2.0, wcz)
 
-	# 4 pillar blocks around centre — now using epic Rune Pillars (Rune Core + Void Stone)
+	# 4 Rune Pillars around centre — placed relative to elevated floor
 	for offset in [Vector2i(-2, -2), Vector2i(2, -2), Vector2i(-2, 2), Vector2i(2, 2)]:
 		var px: int = int(floor(wcx)) + offset.x
 		var pz: int = int(floor(wcz)) + offset.y
 		# Base + Mid (Void Stone)
-		_voxel_tool.set_voxel(Vector3i(px, FLOOR_Y + 1, pz), VOID_STONE)
-		_voxel_tool.set_voxel(Vector3i(px, FLOOR_Y + 2, pz), VOID_STONE)
+		_voxel_tool.set_voxel(Vector3i(px, floor_y + 1, pz), VOID_STONE)
+		_voxel_tool.set_voxel(Vector3i(px, floor_y + 2, pz), VOID_STONE)
 		# Top (Rune Core)
-		_voxel_tool.set_voxel(Vector3i(px, FLOOR_Y + 3, pz), RUNE_CORE)
+		_voxel_tool.set_voxel(Vector3i(px, floor_y + 3, pz), RUNE_CORE)
 
 
 ## Bonfire room: safe rest area.
@@ -445,6 +468,44 @@ func _build_alchemy_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: 
 	room["state"] = "cleared"
 
 
+## Vault room: decoy elevated room that looks valuable but isn't the boss.
+## Gives players a chest and gold ore decorations to reward exploration.
+func _build_vault_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: int):
+	if not _scene_root:
+		return
+
+	var elev: int = room.get("floor_height", 0)
+	var floor_y := FLOOR_Y + elev
+
+	# Warm golden light
+	_add_light(Vector3(wcx, float(floor_y) + 2.5, wcz), "VaultLight", Color(1.0, 0.85, 0.1), 2.5, 10.0)
+
+	# Chest at centre
+	var gx := int(floor(wcx))
+	var gz := int(floor(wcz))
+	_voxel_tool.set_voxel(Vector3i(gx, floor_y + 1, gz), CHEST)
+
+	# Gold ore decorations flanking the chest
+	for dx in [-1, 1]:
+		_voxel_tool.set_voxel(Vector3i(gx + dx, floor_y + 1, gz), GOLD_ORE)
+	for dz in [-1, 1]:
+		_voxel_tool.set_voxel(Vector3i(gx, floor_y + 1, gz + dz), GOLD_ORE)
+
+	# Vault interaction trigger
+	var area := Area3D.new()
+	area.name = "VaultArea"
+	var coll := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(4, 3, 4)
+	coll.shape = shape
+	area.add_child(coll)
+	area.set_meta("interaction", "vault")
+	_scene_root.add_child(area)
+	area.global_position = Vector3(wcx, float(floor_y) + 2.0, wcz)
+
+	room["state"] = "cleared"
+
+
 ## Add sconces (lights) in room corners.
 func _add_room_sconces(room: Dictionary, ox: int, oz: int, floor_num: int = 1):
 	if not _scene_root:
@@ -546,7 +607,8 @@ func get_boss_position() -> Vector3:
 		if room["room_type"] == "boss":
 			var ox: int = dungeon_data["offset_x"]
 			var oz: int = dungeon_data["offset_z"]
-			return Vector3(room["cx"] + ox + 0.5, FLOOR_Y + 1.5, room["cy"] + oz + 0.5)
+			var elev: int = room.get("floor_height", 0)
+			return Vector3(room["cx"] + ox + 0.5, FLOOR_Y + elev + 1.5, room["cy"] + oz + 0.5)
 
 	return Vector3.ZERO
 
