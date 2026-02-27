@@ -74,6 +74,12 @@ func _ready():
 			_sprite = child
 			break
 
+	# Apply the race/gender sheet chosen on the character select screen
+	if _sprite != null and _sprite.has_method("setup"):
+		var sheet: String = GameData.player_sheet_path
+		if sheet != "":
+			_sprite.setup(sheet)
+
 	# Create click indicator
 	_click_marker = MeshInstance3D.new()
 	var torus := TorusMesh.new()

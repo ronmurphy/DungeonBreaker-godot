@@ -53,6 +53,9 @@ const CLASS_BASE_STATS := {
 # ── Player State ─────────────────────────────────────────────────────────────
 var player_class: PlayerClass = PlayerClass.SCOUNDREL
 var player_name: String = "Hero"
+var player_race: String = "human"     # human / elf / dwarf / goblin
+var player_gender: String = "male"    # male / female
+var player_sheet_path: String = ""    # set by character select; empty = default human_male
 
 # Core stats (single-digit)
 var stat_str: int = 2

@@ -1,13 +1,28 @@
 extends Node
-## Dungeon Break entry point — manages scene transitions (camp ↔ dungeon).
+## Dungeon Break entry point — manages scene transitions (char select → camp ↔ dungeon).
 
-const CampScene    = preload("res://dungeon_break/game.tscn")
-const DungeonScene = preload("res://dungeon_break/dungeon.tscn")
+const CharSelectScene = preload("res://dungeon_break/ui/character_select.tscn")
+const CampScene       = preload("res://dungeon_break/game.tscn")
+const DungeonScene    = preload("res://dungeon_break/dungeon.tscn")
 
 var _current_scene: Node = null
 
 
 func _ready():
+	_show_character_select()
+
+
+## Show the race/gender/name selection screen.
+func _show_character_select():
+	_clear_current()
+	var sel = CharSelectScene.instantiate()
+	sel.name = "CharacterSelect"
+	add_child(sel)
+	_current_scene = sel
+	sel.confirmed.connect(_on_character_select_confirmed)
+
+
+func _on_character_select_confirmed():
 	_load_camp()
 
 
