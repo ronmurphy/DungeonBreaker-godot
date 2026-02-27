@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document
-*Last updated: 2026-02-27 (session 2)*
+*Last updated: 2026-02-27 (session 3)*
 
 ---
 
@@ -37,43 +37,43 @@ Note: The godot ide is actually a custom Zylann build of Godot with 'godot_voxel
 ```
 project/
   dungeon_break/
-    main.gd / main.tscn        ← Entry point, manages scene transitions
-    game.gd / game.tscn        ← Camp scene
-    dungeon.gd / dungeon.tscn  ← Dungeon scene
-    combat/
-      combat_manager.gd        ← FFT-style tactical combat logic
-      combat_ui.gd             ← Combat overlay (tracker, log, enemy info)
-      tactical_grid.gd         ← 3D tile markers on the dungeon floor
-    data/
-      game_data.gd             ← Autoload: all player state, stats, inventory
-      enemy_db.gd              ← Autoload: loads entities.json, portrait paths
-      item_db.gd               ← Autoload: item definitions, equip/use logic
-      music_manager.gd         ← Autoload: background music
-      graphics_manager.gd      ← Autoload: quality/graphics settings
-    entities/
-      entity_manager.gd        ← Autoload: spawns/despawns 3D entity GLBs
-      wanderer_controller.gd   ← Camp NPC wandering logic
-    generator/
-      bsp_dungeon.gd           ← BSP room splitter
-      dungeon_terrain_gen.gd   ← Voxel terrain carver for dungeon floors
-      dungeon_stamper.gd       ← Places rooms into voxel grid
-      camp_builder.gd          ← Builds camp structures (bonfire, spire, etc.)
-      camp_generator.gd        ← Camp terrain shape
-    player/
-      player.tscn              ← Player scene (CharacterBody3D + camera)
-      player_controller.gd     ← WASD + click-to-move, combat_locked bool
-      isometric_camera.gd      ← Follows player; Q/E to rotate, scroll to zoom
-    ui/
-      game_hud.gd              ← Minimal HUD: time bar + hero panel in dungeon
-      inventory_ui.gd          ← Full inventory overlay (I / TAB to open)
-    world/
-      day_night_cycle.gd       ← Drives sun angle + environment from GameData.world_time
+	main.gd / main.tscn        ← Entry point, manages scene transitions
+	game.gd / game.tscn        ← Camp scene
+	dungeon.gd / dungeon.tscn  ← Dungeon scene
+	combat/
+	  combat_manager.gd        ← FFT-style tactical combat logic
+	  combat_ui.gd             ← Combat overlay (tracker, log, enemy info)
+	  tactical_grid.gd         ← 3D tile markers on the dungeon floor
+	data/
+	  game_data.gd             ← Autoload: all player state, stats, inventory
+	  enemy_db.gd              ← Autoload: loads entities.json, portrait paths
+	  item_db.gd               ← Autoload: item definitions, equip/use logic
+	  music_manager.gd         ← Autoload: background music
+	  graphics_manager.gd      ← Autoload: quality/graphics settings
+	entities/
+	  entity_manager.gd        ← Autoload: spawns/despawns 3D entity GLBs
+	  wanderer_controller.gd   ← Camp NPC wandering logic
+	generator/
+	  bsp_dungeon.gd           ← BSP room splitter
+	  dungeon_terrain_gen.gd   ← Voxel terrain carver for dungeon floors
+	  dungeon_stamper.gd       ← Places rooms into voxel grid
+	  camp_builder.gd          ← Builds camp structures (bonfire, spire, etc.)
+	  camp_generator.gd        ← Camp terrain shape
+	player/
+	  player.tscn              ← Player scene (CharacterBody3D + camera)
+	  player_controller.gd     ← WASD + click-to-move, combat_locked bool
+	  isometric_camera.gd      ← Follows player; Q/E to rotate, scroll to zoom
+	ui/
+	  game_hud.gd              ← Minimal HUD: time bar + hero panel in dungeon
+	  inventory_ui.gd          ← Full inventory overlay (I / TAB to open)
+	world/
+	  day_night_cycle.gd       ← Drives sun angle + environment from GameData.world_time
   blocky_game/blocks/          ← Zylann template blocks (kept for voxel lib/textures)
   common/                      ← Zylann utility scripts (grid, util, etc.)
   assets/
-    art/
-      entities/                ← GLB models + entities.json + portrait images
-      time/                    ← sun.png, dusk.png, moon.png for HUD clock
+	art/
+	  entities/                ← GLB models + entities.json + portrait images
+	  time/                    ← sun.png, dusk.png, moon.png for HUD clock
 ```
 
 ---
@@ -114,7 +114,7 @@ main.tscn  (always in tree)
 
 ```gdscript
 player_class: PlayerClass   # enum: VANGUARD, SCOUNDREL, ARCANIST, CONFESSOR,
-                             #       STRIDER, MINSTREL, TEMPLAR, REANIMATOR, TINKERER
+							 #       STRIDER, MINSTREL, TEMPLAR, REANIMATOR, TINKERER
 player_name: String
 stat_str / stat_dex / stat_int / stat_lck: int
 hp / hp_max: int
@@ -147,6 +147,27 @@ Clash roll: power maps to largest fitting die (d20/d12/d10/d8/d6/d4) + remainder
 | Templar | 4 | 1 | 3 | 2 | Paladin |
 | Reanimator | 1 | 2 | 5 | 2 | Necro |
 | Tinkerer | 2 | 4 | 3 | 1 | Engineer |
+
+---
+
+## Dungeon Room Types
+
+| Type | State | Elevation | Notes |
+|---|---|---|---|
+| `start` | cleared | flat | Shrine marker (GLASS block), player spawns here |
+| `boss` | uncleared | flat or `floor_height=3` if upper room | Red light, void-stone pillars, floor portal (enabled after boss dies) |
+| `bonfire` | cleared | flat | Safe rest area |
+| `merchant` | cleared | flat | Shop (not yet implemented) |
+| `fountain` | cleared | flat | Healing fountain (not yet implemented) |
+| `trap` | uncleared | varies | Trap room |
+| `alchemy` | cleared | varies | Alchemy room |
+| `locked` | uncleared | varies | Needs a key (not yet implemented) |
+| `vault` | cleared | `floor_height=3` | Decoy elevated room; chest + gold ore flanking + warm golden light; rewards exploration without combat |
+| `normal` | uncleared | varies | Standard enemy room |
+
+**Upper room selection:** `_select_upper_rooms()` runs after BSP placement. 2 upper rooms on floors < 12 rooms, 3 on larger floors. Picks far-edge rooms (outer 25% of smaller dimension) sorted by edge score. Marked `is_upper = true` with `floor_height = WALL_HEIGHT (3)`. Boss prefers these; leftover upper rooms become `vault`.
+
+**Staircase generation:** `_build_staircases()` places stair blocks in corridor tiles adjacent to elevated rooms. elev=1: no stairs. elev=2: 1 stair tile (Y=1 in adjacent corridor). elev=3: 2 stair tiles — adjacent tile Y=2, next tile out Y=1. Solid fill-blocks placed below each step so stairs don't float.
 
 ---
 
@@ -198,6 +219,21 @@ No `unit_idx` stored inside the dict — always use `get_units().find()` or arra
 - Orange = enemy position
 - Green = player position
 - White cursor = dedicated `_cursor_mesh` (not stored in `_markers` dict — avoids a bug where clearing cursor erased blue tiles)
+
+`setup_room()` receives the room's `floor_height` so tile markers are placed at the correct world Y.
+
+### Combat Camera (`isometric_camera.gd`)
+On combat start (`set_combat_mode(true)`):
+- Saves current `pitch_degrees` and `distance`
+- Snaps pitch to 40° (good overhead angle for tactical grid)
+- Tweens `distance` → `COMBAT_DISTANCE = 18.0` over 0.45s (cubic ease-in-out)
+- Disables mouse-scroll zoom and R/T pitch keys
+
+On combat end (`set_combat_mode(false)`):
+- Restores saved `pitch_degrees` immediately
+- Zoom-out is **deferred**: `dungeon.gd` calls `camera.restore_zoom()` inside the wall-fade tween callback, after walls are fully opaque again (0.6s cubic ease-in-out back to pre-combat distance)
+
+Q/E yaw rotation: snaps `_current_yaw` immediately (not just `_target_yaw`) so frustum culling is correct mid-tween.
 
 ---
 
@@ -315,9 +351,13 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Torch fuel ticks down while exploring
 - [x] Return to camp / advance floor signals
 - [x] Room size increased (72–82% of BSP chunk, inset 10–15%) for better combat visibility
-- [x] Room elevation: 30% of eligible rooms raised 1–2 blocks (start/boss/bonfire/merchant/fountain always flat)
+- [x] Room elevation: 30% of eligible rooms raised 1–2 blocks; start/bonfire/merchant/fountain always flat
+- [x] Upper rooms: 2–3 far-edge rooms per floor marked `is_upper = true` with `floor_height = 3` (WALL_HEIGHT); boss prefers these, remaining upper rooms become `vault` decoy rooms
+- [x] Vault room type: decoy elevated room (chest + gold ore flanking + warm golden light); `state = "cleared"` so no combat, rewards exploration
+- [x] Multi-step staircases: elev=2 → 1 stair step; elev=3 → 2 stair steps with solid fill-block support below each (no floating stairs)
+- [x] Boss room keeps its elevation when it's an upper room; decorations (pillars, portal, light) placed relative to `floor_y`
 - [x] Wall-only material split (`terrain_material_wall.tres`) — log_y, stone_bricks, void_stone_bricks use separate material from floors so walls can be toggled independently
-- [x] Combat wall transparency — walls fade to 8% opacity on combat start, restore on combat end (0.35s tween)
+- [x] Combat wall transparency — walls fade to 8% opacity on combat start, restore on combat end (0.35s tween); material restored to TRANSPARENCY_DISABLED after fade-out completes
 
 ### Combat
 - [x] FFT-style tactical grid combat
@@ -328,6 +368,9 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Enemy AI: approach + attack
 - [x] Combat ends on player win/loss
 - [x] Player input locked during combat
+- [x] Tactical grid floor height fix — `setup_room()` now receives correct `floor_height` (was always 0)
+- [x] Combat camera: on combat start, pitch snaps to 40° and camera zooms to distance 18 (0.45s cubic tween); scroll/pitch keys (R/T) locked; Q/E yaw snaps immediately for correct frustum culling
+- [x] Zoom restore: after combat ends, zoom-out (0.6s cubic tween) is deferred until after the wall-opacity fade completes so the reveal feels intentional
 
 ### UI
 - [x] Game HUD: time clock, hero panel in dungeon
@@ -391,7 +434,7 @@ Gothic fantasy painted art panels + text below, click to advance. 3–5 scene pa
 ## Development Notes
 
 - **JS prototype location:** `/home/brad/Documents/dungeon-break/` — kept as reference, not active
-- **Godot project location:** `/home/brad/Documents/Godot/DungeonBreak/project/`
+- **Godot project location:** `/home/brad/DungeonBreaker-godot/`
 - **Why Godot?** The JS version kept breaking under complexity (3D rendering, combat state, UI all fighting each other). Godot gives proper scene tree, signals, and typed GDScript.
 - **Zylann template cleanup:** The blocky_terrain, smooth_terrain, multipass_generator, and grid_pathfinding template folders were deleted. Kept: `blocky_game/blocks/` (for voxel library/textures) and `common/` (utility scripts). `addons/` kept in full.
 - **Wall material split:** `blocky_game/blocks/terrain_material_wall.tres` is a separate StandardMaterial3D (same texture atlas as `terrain_material.tres`) assigned only to the three dungeon wall block types (log_y, stone_bricks, void_stone_bricks) in `voxel_library.tres`. This gives walls their own mesh surface so `dungeon.gd` can fade them independently during combat via `_set_wall_combat_mode()`. Floor blocks (planks, ruin_stone, void_stone, dirt, stone, etc.) continue using the original `terrain_material.tres`.
