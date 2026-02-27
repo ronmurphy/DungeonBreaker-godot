@@ -25,6 +25,8 @@ var _floor_num: int = 1
 var _combat_active: bool = false
 var _hud: CanvasLayer = null
 var _combat_floor_height: int = 0  # elevation of the active combat room
+var _terrain_mat: StandardMaterial3D = null
+var _wall_tween: Tween = null
 
 
 func _ready():
@@ -61,6 +63,9 @@ func _build_dungeon():
 	# Give chunks time to generate around the viewer
 	await get_tree().create_timer(1.5).timeout
 	await _wait_for_terrain_editable()
+
+	# Cache wall material for combat transparency toggling (floor blocks use the other material)
+	_terrain_mat = load("res://blocky_game/blocks/terrain_material_wall.tres") as StandardMaterial3D
 
 	var data: Dictionary = _dungeon_stamper.build_dungeon(_floor_num)
 
@@ -273,6 +278,7 @@ func _trigger_room_combat(room: Dictionary):
 	_combat_floor_height = room.get("floor_height", 0)
 	if _player:
 		_player.combat_locked = true
+	_set_wall_combat_mode(true)
 	print("Dungeon: combat started in room %d (%s) elev=%d" % [room["id"], room["room_type"], _combat_floor_height])
 
 	# Inject dungeon offsets into room dict for the tactical grid
@@ -304,6 +310,7 @@ func _trigger_room_combat(room: Dictionary):
 
 func _on_combat_ended(victory: bool, room: Dictionary):
 	_combat_active = false
+	_set_wall_combat_mode(false)
 	if _player and is_instance_valid(_player):
 		_player.combat_locked = false
 
@@ -404,6 +411,36 @@ func _do_alchemy_brew():
 
 func _on_area_body_entered(_body: Node3D, _area: Area3D):
 	pass  # Handled via proximity in _check_area_interactions
+
+
+## Fade terrain walls in/out during combat.
+## Disables vertex_color_use_as_albedo so albedo_color.a controls transparency.
+func _set_wall_combat_mode(enabled: bool) -> void:
+	if _terrain_mat == null:
+		return
+	if _wall_tween and _wall_tween.is_valid():
+		_wall_tween.kill()
+	_wall_tween = create_tween()
+	if enabled:
+		_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_terrain_mat.vertex_color_use_as_albedo = false
+		_wall_tween.tween_property(_terrain_mat, "albedo_color",
+			Color(1.0, 1.0, 1.0, 0.08), 0.35)
+	else:
+		_wall_tween.tween_property(_terrain_mat, "albedo_color",
+			Color(1.0, 1.0, 1.0, 1.0), 0.35)
+		_wall_tween.tween_callback(func() -> void:
+			_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+			_terrain_mat.vertex_color_use_as_albedo = true
+		)
+
+
+func _notification(what: int):
+	# Safety: always restore wall material on scene exit, even if mid-combat
+	if what == NOTIFICATION_EXIT_TREE and _terrain_mat != null:
+		_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+		_terrain_mat.albedo_color = Color(1.0, 1.0, 1.0, 1.0)
+		_terrain_mat.vertex_color_use_as_albedo = true
 
 
 ## Track the last hovered grid tile for cursor highlight.

@@ -158,20 +158,20 @@ func _place_rooms(node: Dictionary, rooms: Array, floor_num: int):
 		var nw: int = node["w"]
 		var nh: int = node["h"]
 
-		# Inset: 20–25% from edges, size: 60–70%
-		var ox := randi_range(nw / 5, nw / 4)
-		var oy := randi_range(nh / 5, nh / 4)
-		var rw := maxi(4, randi_range(int(nw * 0.6), int(nw * 0.7)))
-		var rh := maxi(4, randi_range(int(nh * 0.6), int(nh * 0.7)))
+		# Inset: 10–15% from edges, size: 72–82%
+		var ox := randi_range(nw / 10, nw / 7)
+		var oy := randi_range(nh / 10, nh / 7)
+		var rw := maxi(4, randi_range(int(nw * 0.72), int(nw * 0.82)))
+		var rh := maxi(4, randi_range(int(nh * 0.72), int(nh * 0.82)))
 
 		# Clamp to chunk
 		rw = mini(rw, nw - ox - 1)
 		rh = mini(rh, nh - oy - 1)
 
-		# Floor height variation: 30% non-flat
+		# Floor height variation: 30% chance of a raised platform
 		var floor_height := 0
 		if randf() < 0.30:
-			floor_height = [-2, 2][randi() % 2]
+			floor_height = randi_range(1, 2)
 
 		var room := {
 			"id": rooms.size(),

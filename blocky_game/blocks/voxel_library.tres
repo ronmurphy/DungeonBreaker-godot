@@ -3,6 +3,7 @@
 [ext_resource type="ArrayMesh" uid="uid://rq0nk6t5jqyc" path="res://blocky_game/blocks/grass/grass.obj" id="1"]
 [ext_resource type="ArrayMesh" uid="uid://dmi1fa4udxhx3" path="res://blocky_game/blocks/dirt/dirt.obj" id="2"]
 [ext_resource type="Material" uid="uid://bvllkch8a7b0w" path="res://blocky_game/blocks/terrain_material.tres" id="2_r7axq"]
+[ext_resource type="Material" path="res://blocky_game/blocks/terrain_material_wall.tres" id="wall_mat"]
 [ext_resource type="ArrayMesh" uid="uid://dungrukis54l4" path="res://blocky_game/blocks/log/log_y.obj" id="3"]
 [ext_resource type="ArrayMesh" uid="uid://cttendrth7rqh" path="res://blocky_game/blocks/log/log_x.obj" id="4"]
 [ext_resource type="ArrayMesh" uid="uid://bur41ote1leoo" path="res://blocky_game/blocks/log/log_z.obj" id="5"]
@@ -96,7 +97,7 @@ mesh = ExtResource("4")
 resource_name = "log_y"
 random_tickable = true
 collision_aabbs = Array[AABB]([AABB(0, 0, 0, 1, 1, 1)])
-material_override_0 = ExtResource("2_r7axq")
+material_override_0 = ExtResource("wall_mat")
 collision_enabled_0 = true
 mesh = ExtResource("3")
 
@@ -599,14 +600,14 @@ mesh = ExtResource("44_7wops")
 [sub_resource type="VoxelBlockyModelMesh" id="VoxelBlockyModelMesh_4qwt2"]
 resource_name = "stone_bricks"
 collision_aabbs = Array[AABB]([AABB(0, 0, 0, 1, 1, 1)])
-material_override_0 = ExtResource("2_r7axq")
+material_override_0 = ExtResource("wall_mat")
 collision_enabled_0 = true
 mesh = ExtResource("45_10cid")
 
 [sub_resource type="VoxelBlockyModelMesh" id="VoxelBlockyModelMesh_476m5"]
 resource_name = "void_stone_bricks"
 collision_aabbs = Array[AABB]([AABB(0, 0, 0, 1, 1, 1)])
-material_override_0 = ExtResource("2_r7axq")
+material_override_0 = ExtResource("wall_mat")
 collision_enabled_0 = true
 mesh = ExtResource("46_hha2l")
 

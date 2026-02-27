@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document
-*Last updated: 2026-02-27*
+*Last updated: 2026-02-27 (session 2)*
 
 ---
 
@@ -27,6 +27,8 @@ Genre feel: Tactics + dungeon crawler. Think Final Fantasy Tactics combat on Dia
 | 3D models | GLB files in `assets/art/entities/` |
 | Enemy data | `assets/art/entities/entities.json` |
 | Music/SFX | MusicManager autoload |
+
+Note: The godot ide is actually a custom Zylann build of Godot with 'godot_voxel' baked inside, so we don't use an actual addon.
 
 ---
 
@@ -312,6 +314,10 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Room entry triggers combat
 - [x] Torch fuel ticks down while exploring
 - [x] Return to camp / advance floor signals
+- [x] Room size increased (72–82% of BSP chunk, inset 10–15%) for better combat visibility
+- [x] Room elevation: 30% of eligible rooms raised 1–2 blocks (start/boss/bonfire/merchant/fountain always flat)
+- [x] Wall-only material split (`terrain_material_wall.tres`) — log_y, stone_bricks, void_stone_bricks use separate material from floors so walls can be toggled independently
+- [x] Combat wall transparency — walls fade to 8% opacity on combat start, restore on combat end (0.35s tween)
 
 ### Combat
 - [x] FFT-style tactical grid combat
@@ -388,3 +394,4 @@ Gothic fantasy painted art panels + text below, click to advance. 3–5 scene pa
 - **Godot project location:** `/home/brad/Documents/Godot/DungeonBreak/project/`
 - **Why Godot?** The JS version kept breaking under complexity (3D rendering, combat state, UI all fighting each other). Godot gives proper scene tree, signals, and typed GDScript.
 - **Zylann template cleanup:** The blocky_terrain, smooth_terrain, multipass_generator, and grid_pathfinding template folders were deleted. Kept: `blocky_game/blocks/` (for voxel library/textures) and `common/` (utility scripts). `addons/` kept in full.
+- **Wall material split:** `blocky_game/blocks/terrain_material_wall.tres` is a separate StandardMaterial3D (same texture atlas as `terrain_material.tres`) assigned only to the three dungeon wall block types (log_y, stone_bricks, void_stone_bricks) in `voxel_library.tres`. This gives walls their own mesh surface so `dungeon.gd` can fade them independently during combat via `_set_wall_combat_mode()`. Floor blocks (planks, ruin_stone, void_stone, dirt, stone, etc.) continue using the original `terrain_material.tres`.
