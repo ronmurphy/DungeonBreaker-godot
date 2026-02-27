@@ -1,0 +1,77 @@
+{
+  "toolbench": {
+    "id": "toolbench",
+    "name": "🔧 Toolbench",
+    "emoji": "🔧",
+    "ingredients": {
+      "wood": 10,
+      "stone": 5
+    },
+    "result": {
+      "blockType": "toolbench",
+      "placeable": true
+    },
+    "description": "Craft tools and weapons",
+    "unlocked": true
+  },
+  "kitchen_bench": {
+    "id": "kitchen_bench",
+    "name": "🍳 Kitchen Bench",
+    "emoji": "🍳",
+    "ingredients": {
+      "wood": 8,
+      "stone": 4
+    },
+    "result": {
+      "blockType": "kitchen_bench",
+      "placeable": true
+    },
+    "description": "Cook food and create buffs",
+    "unlocked": true
+  },
+  "campfire": {
+    "id": "campfire",
+    "name": "🔥 Campfire",
+    "emoji": "🔥",
+    "ingredients": {
+      "stone": 8,
+      "wood": 5
+    },
+    "result": {
+      "blockType": "campfire",
+      "placeable": true,
+      "lightLevel": 15
+    },
+    "description": "Cook food and provide light",
+    "unlocked": true
+  },
+  "chest": {
+    "id": "chest",
+    "name": "📦 Storage Chest",
+    "emoji": "📦",
+    "ingredients": {
+      "wood": 8
+    },
+    "result": {
+      "blockType": "chest",
+      "placeable": true,
+      "storage": 27
+    },
+    "description": "Store items safely",
+    "unlocked": true
+  },
+  "crafting_table": {
+    "id": "crafting_table",
+    "name": "⚒️ Crafting Table",
+    "emoji": "⚒️",
+    "ingredients": {
+      "wood": 4
+    },
+    "result": {
+      "blockType": "crafting_table",
+      "placeable": true
+    },
+    "description": "Basic crafting station",
+    "unlocked": true
+  }
+}

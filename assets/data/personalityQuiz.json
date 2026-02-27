@@ -1,0 +1,201 @@
+{
+  "name": "Personality Quiz - Character Creation",
+  "description": "Pre-intro personality questions that determine player stats, race, and starting items",
+  "nodes": [
+    {
+      "id": "start",
+      "type": "dialogue",
+      "data": {
+        "speaker": "narrator",
+        "name": "The Long Nights",
+        "text": "Before your journey begins, let us learn a bit about you...",
+        "emoji": "✨"
+      }
+    },
+    {
+      "id": "q1_survival",
+      "type": "choice",
+      "data": {
+        "question": "What do you believe keeps someone alive in the wild?",
+        "options": [
+          "Strength to overcome any obstacle",
+          "Speed to escape danger",
+          "Endurance to outlast hardship",
+          "Luck - being in the right place at the right time"
+        ]
+      }
+    },
+    {
+      "id": "q2_gear",
+      "type": "choice",
+      "data": {
+        "question": "If you could only carry one thing, what would it be?",
+        "options": [
+          "A sturdy weapon",
+          "A reliable tool",
+          "Something magical",
+          "Food supplies"
+        ]
+      }
+    },
+    {
+      "id": "q3_ancestry",
+      "type": "choice",
+      "data": {
+        "question": "Which heritage calls to you?",
+        "options": [
+          "Human - adaptable and resourceful",
+          "Elf - swift and graceful",
+          "Dwarf - sturdy and resilient",
+          "Goblin - cunning and fortunate"
+        ]
+      }
+    },
+    {
+      "id": "q4_companion",
+      "type": "choice",
+      "data": {
+        "question": "Who would you trust to watch your back?",
+        "options": [
+          "A scrappy fighter with something to prove",
+          "A clever scavenger who knows the land",
+          "A mysterious wanderer with hidden talents",
+          "A loyal guardian who never gives up"
+        ]
+      }
+    },
+    {
+      "id": "q5_gender",
+      "type": "choice",
+      "data": {
+        "question": "How do you see yourself?",
+        "options": [
+          "Male",
+          "Female",
+          "Nonbinary",
+          "Surprise me!"
+        ]
+      }
+    },
+    {
+      "id": "end",
+      "type": "link_script",
+      "data": {
+        "scriptPath": "companion_introduction.json",
+        "useTemplates": true
+      }
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "start",
+      "toId": "q1_survival",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "q1_survival",
+      "toId": "q2_gear",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "q1_survival",
+      "toId": "q2_gear",
+      "sourceHandle": "output_1"
+    },
+    {
+      "fromId": "q1_survival",
+      "toId": "q2_gear",
+      "sourceHandle": "output_2"
+    },
+    {
+      "fromId": "q1_survival",
+      "toId": "q2_gear",
+      "sourceHandle": "output_3"
+    },
+    {
+      "fromId": "q2_gear",
+      "toId": "q3_ancestry",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "q2_gear",
+      "toId": "q3_ancestry",
+      "sourceHandle": "output_1"
+    },
+    {
+      "fromId": "q2_gear",
+      "toId": "q3_ancestry",
+      "sourceHandle": "output_2"
+    },
+    {
+      "fromId": "q2_gear",
+      "toId": "q3_ancestry",
+      "sourceHandle": "output_3"
+    },
+    {
+      "fromId": "q3_ancestry",
+      "toId": "q4_companion",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "q3_ancestry",
+      "toId": "q4_companion",
+      "sourceHandle": "output_1"
+    },
+    {
+      "fromId": "q3_ancestry",
+      "toId": "q4_companion",
+      "sourceHandle": "output_2"
+    },
+    {
+      "fromId": "q3_ancestry",
+      "toId": "q4_companion",
+      "sourceHandle": "output_3"
+    },
+    {
+      "fromId": "q4_companion",
+      "toId": "q5_gender",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "q4_companion",
+      "toId": "q5_gender",
+      "sourceHandle": "output_1"
+    },
+    {
+      "fromId": "q4_companion",
+      "toId": "q5_gender",
+      "sourceHandle": "output_2"
+    },
+    {
+      "fromId": "q4_companion",
+      "toId": "q5_gender",
+      "sourceHandle": "output_3"
+    },
+    {
+      "fromId": "q5_gender",
+      "toId": "end",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "q5_gender",
+      "toId": "end",
+      "sourceHandle": "output_1"
+    },
+    {
+      "fromId": "q5_gender",
+      "toId": "end",
+      "sourceHandle": "output_2"
+    },
+    {
+      "fromId": "q5_gender",
+      "toId": "end",
+      "sourceHandle": "output_3"
+    }
+  ],
+  "metadata": {
+    "version": "1.0",
+    "created": "2025-10-18",
+    "purpose": "Character creation via personality quiz (Daggerfall-style)"
+  }
+}

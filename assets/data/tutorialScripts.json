@@ -1,0 +1,416 @@
+{
+  "version": "1.0.0",
+  "description": "Companion tutorial scripts - triggered once per event",
+  "tutorials": {
+    "game_start": {
+      "id": "game_start",
+      "title": "Welcome to The Long Nights",
+      "trigger": "onGameStart",
+      "once": true,
+      "messages": [
+        {
+          "text": "Hey there! Welcome to the world! I'm your companion, and I'll help you survive out here.",
+          "delay": 2000
+        },
+        {
+          "text": "Press 'E' to open your backpack anytime. That's where you'll store everything you collect!",
+          "delay": 2000
+        },
+        {
+          "text": "See that machete in your hotbar? Uncle Beastly left it for you. Select it and hold left-click on trees to chop wood!",
+          "delay": 0
+        }
+      ]
+    },
+    
+    "machete_selected": {
+      "id": "machete_selected",
+      "title": "Machete Basics",
+      "trigger": "onMacheteSelected",
+      "once": true,
+      "messages": [
+        {
+          "text": "That's Uncle Beastly's machete! Hold left-click on trees, grass, dirt, or stone to harvest them.",
+          "delay": 1500
+        },
+        {
+          "text": "It never dulls, so chop away! You'll need lots of wood to craft things at the Workbench.",
+          "delay": 0
+        }
+      ]
+    },
+
+    "backpack_opened": {
+      "id": "backpack_opened",
+      "title": "Backpack Tutorial",
+      "trigger": "onBackpackOpened",
+      "once": true,
+      "messages": [
+        {
+          "text": "This is your backpack! It has tons of space for storing materials, food, and tools.",
+          "delay": 1500
+        },
+        {
+          "text": "Drag items between your hotbar and backpack to organize. Keep your most-used items in the hotbar for quick access!",
+          "delay": 2000
+        },
+        {
+          "text": "Great job finding the backpack! Press M to open your World Map, or press C to open the Companion Codex where you can view your companions and set your active battle partner!",
+          "delay": 2000
+        },
+        {
+          "text": "Oh, and see that sun icon in the top-left? That shows the time of day - the image changes as time passes! Click on it to open the Explorer's Menu where you can save your game, adjust settings, and more.",
+          "delay": 2000
+        },
+        {
+          "text": "Wait... I see something strange in the distance. To the north.",
+          "delay": 2000
+        },
+        {
+          "text": "It looks like... an old structure? Some kind of ruin, maybe?",
+          "delay": 2000
+        },
+        {
+          "text": "I've marked it on your map! Press M to open your Explorer's Journal and you'll see a red waypoint pointing the way.",
+          "delay": 2000
+        },
+        {
+          "text": "We should investigate while it's still daylight. Ruins can be dangerous at night, but there might be treasure inside!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "ruin_entrance": {
+      "id": "ruin_entrance",
+      "title": "Mysterious Ruin",
+      "trigger": "onRuinEntered",
+      "once": true,
+      "messages": [
+        {
+          "text": "This place is ancient... I wonder who built it?",
+          "delay": 1500
+        },
+        {
+          "text": "Stay alert. There might be enemies inside, and I see some kind of puzzle mechanisms.",
+          "delay": 2000
+        },
+        {
+          "text": "Those glowing pedestals... try walking INTO the stone blocks to push them onto the pedestals. That might unlock doors!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "workbench_crafted": {
+      "id": "workbench_crafted",
+      "title": "Workbench Unlocked",
+      "trigger": "onItemCrafted",
+      "item": "workbench",
+      "once": true,
+      "messages": [
+        {
+          "text": "Nice! You crafted a Workbench! This is where you'll craft basic tools and structures.",
+          "delay": 1500
+        },
+        {
+          "text": "Place it down by selecting it in your hotbar and right-clicking on the ground. Then right-click it again to open!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "workbench_placed": {
+      "id": "workbench_placed",
+      "title": "Workbench Placement",
+      "trigger": "onWorkbenchPlaced",
+      "once": true,
+      "messages": [
+        {
+          "text": "Perfect! Now right-click the Workbench to open it and see what you can craft.",
+          "delay": 0
+        }
+      ]
+    },
+
+    "workbench_opened": {
+      "id": "workbench_opened",
+      "title": "Workbench Interface",
+      "trigger": "onWorkbenchOpened",
+      "once": true,
+      "messages": [
+        {
+          "text": "Welcome to the Workbench! Here you can craft basic items like the Tool Bench, Kitchen Bench, torches, and campfires.",
+          "delay": 2000
+        },
+        {
+          "text": "The left side shows recipes. Click a recipe to see what materials you need. If you have them, click 'Craft' to make it!",
+          "delay": 2000
+        },
+        {
+          "text": "I'd recommend crafting a Tool Bench next - that's where the REAL magic happens! You'll be able to craft better tools there.",
+          "delay": 0
+        }
+      ]
+    },
+
+    "tool_bench_crafted": {
+      "id": "tool_bench_crafted",
+      "title": "Tool Bench Unlocked",
+      "trigger": "onItemCrafted",
+      "item": "tool_bench",
+      "once": true,
+      "messages": [
+        {
+          "text": "Excellent! The Tool Bench lets you craft advanced items like spears, light orbs, and upgraded tools!",
+          "delay": 1500
+        },
+        {
+          "text": "Place it down near your Workbench to create a crafting station. Organization is key!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "tool_bench_opened": {
+      "id": "tool_bench_opened",
+      "title": "Tool Bench Interface",
+      "trigger": "onToolBenchOpened",
+      "once": true,
+      "messages": [
+        {
+          "text": "This is the Tool Bench! Here you can craft specialized tools and equipment.",
+          "delay": 2000
+        },
+        {
+          "text": "Light Orbs are super useful - they glow permanently so you can see at night! Spears let you hunt animals from a distance.",
+          "delay": 2000
+        },
+        {
+          "text": "Each blueprint shows the materials needed. Some items need materials from the Kitchen Bench too - it's all connected!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "kitchen_bench_crafted": {
+      "id": "kitchen_bench_crafted",
+      "title": "Kitchen Bench Unlocked",
+      "trigger": "onItemCrafted",
+      "item": "kitchen_bench",
+      "once": true,
+      "messages": [
+        {
+          "text": "A Kitchen Bench! Now we're cooking! Literally!",
+          "delay": 1500
+        },
+        {
+          "text": "This is where you'll turn raw meat into cooked food, and combine ingredients into better meals. Food restores health during combat!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "kitchen_bench_opened": {
+      "id": "kitchen_bench_opened",
+      "title": "Kitchen Bench Interface",
+      "trigger": "onKitchenBenchOpened",
+      "once": true,
+      "messages": [
+        {
+          "text": "Welcome to the Kitchen! This is where you cook food to restore health and stamina.",
+          "delay": 2000
+        },
+        {
+          "text": "Hunt rabbits with spears to get raw meat, then cook it here. Cooked food is WAY better than raw!",
+          "delay": 2000
+        },
+        {
+          "text": "You can also grow crops with the Hoe and Watering Can to make even better meals. Farming + hunting = survival!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "torch_crafted": {
+      "id": "torch_crafted",
+      "title": "Torch Crafted",
+      "trigger": "onItemCrafted",
+      "item": "torch",
+      "once": true,
+      "messages": [
+        {
+          "text": "You made a torch! These are temporary light sources - they glow for a while then burn out.",
+          "delay": 1500
+        },
+        {
+          "text": "Place torches around your base to see at night. But if you want permanent light, craft Light Orbs at the Tool Bench!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "campfire_crafted": {
+      "id": "campfire_crafted",
+      "title": "Campfire Crafted",
+      "trigger": "onItemCrafted",
+      "item": "campfire",
+      "once": true,
+      "messages": [
+        {
+          "text": "A campfire! This is SUPER important - it's your respawn point!",
+          "delay": 1500
+        },
+        {
+          "text": "Place it down where you want to respawn if you die. The game also auto-saves when you place a campfire, so use it often!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "campfire_placed": {
+      "id": "campfire_placed",
+      "title": "Respawn Point Set",
+      "trigger": "onCampfirePlaced",
+      "once": true,
+      "messages": [
+        {
+          "text": "Smart move! That campfire is now your respawn point. If you die, you'll wake up right here!",
+          "delay": 1500
+        },
+        {
+          "text": "The game also auto-saved just now. Place a new campfire anytime you want to update your respawn location.",
+          "delay": 0
+        }
+      ]
+    },
+
+    "hoe_crafted": {
+      "id": "hoe_crafted",
+      "title": "Hoe Crafted",
+      "trigger": "onItemCrafted",
+      "item": "hoe",
+      "once": true,
+      "messages": [
+        {
+          "text": "You crafted a Hoe! Now you can start farming!",
+          "delay": 1500
+        },
+        {
+          "text": "Right-click on grass or dirt with the hoe to till it into farmland. Then plant seeds and use the Watering Can to make crops grow!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "watering_can_crafted": {
+      "id": "watering_can_crafted",
+      "title": "Watering Can Crafted",
+      "trigger": "onItemCrafted",
+      "item": "watering_can",
+      "once": true,
+      "messages": [
+        {
+          "text": "Nice! The Watering Can waters your crops to help them grow faster.",
+          "delay": 1500
+        },
+        {
+          "text": "Stand near water (like a pond) and right-click to fill it up. Then right-click on farmland to water your crops!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "light_orb_crafted": {
+      "id": "light_orb_crafted",
+      "title": "Light Orb Crafted",
+      "trigger": "onItemCrafted",
+      "item": "crafted_light_orb",
+      "once": true,
+      "messages": [
+        {
+          "text": "Awesome! Light Orbs are permanent light sources - they NEVER burn out!",
+          "delay": 1500
+        },
+        {
+          "text": "Place them around your base, in caves, or along paths. They'll keep glowing forever, unlike torches!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "spear_crafted": {
+      "id": "spear_crafted",
+      "title": "Spear Crafted",
+      "trigger": "onItemCrafted",
+      "item": "crafted_stone_spear",
+      "once": true,
+      "messages": [
+        {
+          "text": "You made a spear! This is your hunting weapon!",
+          "delay": 1500
+        },
+        {
+          "text": "Hold right-click to charge up a throw, then release to launch it! Hit rabbits to hunt them for meat. Cook the meat at the Kitchen Bench!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "nightfall": {
+      "id": "nightfall",
+      "title": "Night is Coming",
+      "trigger": "onNightfall",
+      "once": true,
+      "messages": [
+        {
+          "text": "Uh oh... it's getting dark. Ghosts come out at night, and they're NOT friendly!",
+          "delay": 2000
+        },
+        {
+          "text": "Place torches or Light Orbs to see in the dark. And watch out - ghosts can hurt you, so keep your health up!",
+          "delay": 2000
+        },
+        {
+          "text": "If you have a campfire, stay near it at night. It's safer there!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "first_ghost": {
+      "id": "first_ghost",
+      "title": "Ghost Encounter",
+      "trigger": "onGhostSpawn",
+      "once": true,
+      "messages": [
+        {
+          "text": "There's a ghost! Don't let it touch you - ghosts deal damage!",
+          "delay": 1500
+        },
+        {
+          "text": "Some ghosts are angry and will chase you. Others just float around. Either way, keep your distance at night!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "first_rabbit": {
+      "id": "first_rabbit",
+      "title": "Rabbit Spotted",
+      "trigger": "onAnimalSpawn",
+      "animal": "rabbit",
+      "once": true,
+      "messages": [
+        {
+          "text": "Look, a rabbit! They spawn at dawn and are pretty skittish.",
+          "delay": 1500
+        },
+        {
+          "text": "If you have a spear, you can hunt them for meat. Charge up a throw with right-click, then release to throw!",
+          "delay": 0
+        }
+      ]
+    }
+  }
+}

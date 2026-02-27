@@ -1,0 +1,49 @@
+=== BLOCK CREATION INSTRUCTIONS ===
+Block Name: water_block_
+Generated: 2025-10-28T19:32:34
+
+FILES CREATED:
+  - water_block_.obj (place in res://blocky_game/blocks/water_block_/)
+  - water_block__sprite.png (for GUI/inventory)
+
+==================================================
+STEP 1: Add to generator.gd
+==================================================
+File: res://blocky_game/blocks/generator/generator.gd
+
+Find the block constants (around line 10) and add:
+const WATER_BLOCK_ = XX  # Replace XX with next available number
+
+==================================================
+STEP 2: Add to blocks.gd
+==================================================
+File: res://blocky_game/blocks/blocks.gd
+
+Add this in the _ready() function:
+
+_create_block({
+    "name": "water_block_",
+    "gui_model": "water_block_.obj",
+    "rotation_type": ROTATION_TYPE_NONE,
+    "voxels": ["water_block_"],
+    "transparent": false
+})
+
+==================================================
+STEP 3: Add to voxel_library.tres (MANUAL)
+==================================================
+1. Open res://blocky_game/blocks/voxel_library.tres in Godot
+2. Add a new VoxelBlockyModelMesh entry
+3. Set the mesh to your .obj file
+4. Set material_override_0 to terrain_material.tres
+
+==================================================
+TEXTURE INFO (Multi)
+==================================================
+TOP:    (2, 1)
+SIDE:   (4, 1)
+BOTTOM: (5, 1)
+
+==================================================
+DONE! Your block is ready to use.
+==================================================

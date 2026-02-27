@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://tow361t58eu6"
+path="res://.godot/imported/void_teleport_stone.obj-692c7a42e9e1476c30bc8de0c4404a87.mesh"
+
+[deps]
+
+files=["res://.godot/imported/void_teleport_stone.obj-692c7a42e9e1476c30bc8de0c4404a87.mesh"]
+
+source_file="res://blocky_game/blocks/void_teleport_stone/void_teleport_stone.obj"
+dest_files=["res://.godot/imported/void_teleport_stone.obj-692c7a42e9e1476c30bc8de0c4404a87.mesh", "res://.godot/imported/void_teleport_stone.obj-692c7a42e9e1476c30bc8de0c4404a87.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

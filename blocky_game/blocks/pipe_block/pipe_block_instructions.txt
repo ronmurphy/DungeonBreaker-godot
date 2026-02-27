@@ -1,0 +1,47 @@
+=== BLOCK CREATION INSTRUCTIONS ===
+Block Name: pipe_block
+Generated: 2025-11-09T17:39:14
+
+FILES CREATED:
+  - pipe_block.obj (place in res://blocky_game/blocks/pipe_block/)
+  - pipe_block_sprite.png (for GUI/inventory)
+
+==================================================
+STEP 1: Add to generator.gd
+==================================================
+File: res://blocky_game/blocks/generator/generator.gd
+
+Find the block constants (around line 10) and add:
+const PIPE_BLOCK = XX  # Replace XX with next available number
+
+==================================================
+STEP 2: Add to blocks.gd
+==================================================
+File: res://blocky_game/blocks/blocks.gd
+
+Add this in the _ready() function:
+
+_create_block({
+    "name": "pipe_block",
+    "gui_model": "pipe_block.obj",
+    "rotation_type": ROTATION_TYPE_NONE,
+    "voxels": ["pipe_block"],
+    "transparent": false
+})
+
+==================================================
+STEP 3: Add to voxel_library.tres (MANUAL)
+==================================================
+1. Open res://blocky_game/blocks/voxel_library.tres in Godot
+2. Add a new VoxelBlockyModelMesh entry
+3. Set the mesh to your .obj file
+4. Set material_override_0 to terrain_material.tres
+
+==================================================
+TEXTURE INFO (Single)
+==================================================
+Grid: (3, 14)
+
+==================================================
+DONE! Your block is ready to use.
+==================================================

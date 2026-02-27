@@ -1,0 +1,86 @@
+{
+  "nodes": [
+    {
+      "id": "start",
+      "type": "dialogue",
+      "data": {
+        "character": "{{companion_id}}",
+        "speaker": "{{companion_name}}",
+        "text": "Hey there! I'm your new companion. Let's get you set up for exploring!"
+      },
+      "position": { "x": 100, "y": 100 }
+    },
+    {
+      "id": "minimap_hint",
+      "type": "dialogue",
+      "data": {
+        "character": "{{companion_id}}",
+        "speaker": "{{companion_name}}",
+        "text": "See that red dot on your minimap in the top-right? That's your Explorer's Pack with all your tools!"
+      },
+      "position": { "x": 100, "y": 200 }
+    },
+    {
+      "id": "controls_hint",
+      "type": "dialogue",
+      "data": {
+        "character": "{{companion_id}}",
+        "speaker": "{{companion_name}}",
+        "text": "Use WASD to move and your mouse to look around. If you spawn in a tree, just punch the leaves to break free!"
+      },
+      "position": { "x": 100, "y": 300 }
+    },
+    {
+      "id": "backpack_hint",
+      "type": "dialogue",
+      "data": {
+        "character": "{{companion_id}}",
+        "speaker": "{{companion_name}}",
+        "text": "Walk up to the backpack (🎒) and hold left-click to pick it up. That'll unlock your inventory and tools. Good luck, explorer!"
+      },
+      "position": { "x": 100, "y": 400 }
+    },
+    {
+      "id": "spawn_backpack",
+      "type": "action",
+      "data": {
+        "actionType": "custom",
+        "code": "if (window.voxelApp && window.voxelApp.spawnStarterBackpack) { window.voxelApp.spawnStarterBackpack(); }"
+      },
+      "position": { "x": 100, "y": 500 }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "data": {},
+      "position": { "x": 100, "y": 600 }
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "start",
+      "toId": "minimap_hint",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "minimap_hint",
+      "toId": "controls_hint",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "controls_hint",
+      "toId": "backpack_hint",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "backpack_hint",
+      "toId": "spawn_backpack",
+      "sourceHandle": "output_0"
+    },
+    {
+      "fromId": "spawn_backpack",
+      "toId": "end",
+      "sourceHandle": "output_0"
+    }
+  ]
+}

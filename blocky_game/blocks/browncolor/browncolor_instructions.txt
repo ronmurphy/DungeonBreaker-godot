@@ -1,0 +1,47 @@
+=== BLOCK CREATION INSTRUCTIONS ===
+Block Name: browncolor
+Generated: 2025-11-24T08:56:52
+
+FILES CREATED:
+  - browncolor.obj (place in res://blocky_game/blocks/browncolor/)
+  - browncolor_sprite.png (for GUI/inventory)
+
+==================================================
+STEP 1: Add to generator.gd
+==================================================
+File: res://blocky_game/blocks/generator/generator.gd
+
+Find the block constants (around line 10) and add:
+const BROWNCOLOR = XX  # Replace XX with next available number
+
+==================================================
+STEP 2: Add to blocks.gd
+==================================================
+File: res://blocky_game/blocks/blocks.gd
+
+Add this in the _init() function:
+
+_create_block({
+    "name": "browncolor",
+    "gui_model": "browncolor.obj",
+    "rotation_type": ROTATION_TYPE_NONE,
+    "voxels": ["browncolor"],
+    "transparent": false
+})
+
+==================================================
+STEP 3: Add to voxel_library.tres (MANUAL)
+==================================================
+1. Open res://blocky_game/blocks/voxel_library.tres in Godot
+2. Add a new VoxelBlockyModelMesh entry
+3. Set the mesh to your .obj file
+4. Set material_override_0 to terrain_material.tres
+
+==================================================
+TEXTURE INFO (Single)
+==================================================
+Grid: (11, 0)
+
+==================================================
+DONE! Your block is ready to use.
+==================================================

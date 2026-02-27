@@ -1,0 +1,49 @@
+=== BLOCK CREATION INSTRUCTIONS ===
+Block Name: box
+Generated: 2025-10-28T19:06:55
+
+FILES CREATED:
+  - box.obj (place in res://blocky_game/blocks/box/)
+  - box_sprite.png (for GUI/inventory)
+
+==================================================
+STEP 1: Add to generator.gd
+==================================================
+File: res://blocky_game/blocks/generator/generator.gd
+
+Find the block constants (around line 10) and add:
+const BOX = XX  # Replace XX with next available number
+
+==================================================
+STEP 2: Add to blocks.gd
+==================================================
+File: res://blocky_game/blocks/blocks.gd
+
+Add this in the _ready() function:
+
+_create_block({
+    "name": "box",
+    "gui_model": "box.obj",
+    "rotation_type": ROTATION_TYPE_NONE,
+    "voxels": ["box"],
+    "transparent": false
+})
+
+==================================================
+STEP 3: Add to voxel_library.tres (MANUAL)
+==================================================
+1. Open res://blocky_game/blocks/voxel_library.tres in Godot
+2. Add a new VoxelBlockyModelMesh entry
+3. Set the mesh to your .obj file
+4. Set material_override_0 to terrain_material.tres
+
+==================================================
+TEXTURE INFO (Single)
+==================================================
+Grid: (5, 1)
+U: 0.3125 - 0.3750
+V: 0.0625 - 0.1250
+
+==================================================
+DONE! Your block is ready to use.
+==================================================

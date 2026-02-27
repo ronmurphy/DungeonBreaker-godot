@@ -1,0 +1,177 @@
+{
+  "dialogues": {
+    "game_start": {
+      "id": "game_start",
+      "once": true,
+      "messages": [
+        {
+          "speaker": "companion",
+          "mood": "normal",
+          "text": "Hey there! Welcome to the world! I'm {{companion_name}}, your companion.",
+          "delay": 2500
+        },
+        {
+          "speaker": "companion",
+          "mood": "normal",
+          "text": "I'll be helping you survive out here in The Long Nights.",
+          "delay": 2000
+        },
+        {
+          "speaker": "companion",
+          "mood": "ready",
+          "text": "Use WASD to move, and your mouse to look around. Let's explore together!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "first_night": {
+      "id": "first_night",
+      "once": true,
+      "messages": [
+        {
+          "speaker": "companion",
+          "mood": "ready",
+          "text": "Uh oh... it's getting dark. Ghosts come out at night!",
+          "delay": 2000
+        },
+        {
+          "speaker": "companion",
+          "mood": "ready",
+          "text": "Stay alert and keep your health up. We'll get through this together!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "ruin_discovered": {
+      "id": "ruin_discovered",
+      "once": true,
+      "messages": [
+        {
+          "speaker": "companion",
+          "mood": "normal",
+          "text": "Wait... I see something strange in the distance. To the north.",
+          "delay": 2000
+        },
+        {
+          "speaker": "companion",
+          "mood": "ready",
+          "text": "It looks like... an old structure? Some kind of ruin, maybe?",
+          "delay": 2000
+        },
+        {
+          "speaker": "companion",
+          "mood": "normal",
+          "text": "We should investigate while it's still daylight. Ruins can be dangerous at night, but there might be treasure inside!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "ruin_entrance": {
+      "id": "ruin_entrance",
+      "once": true,
+      "messages": [
+        {
+          "speaker": "companion",
+          "mood": "normal",
+          "text": "This place is ancient... I wonder who built it?",
+          "delay": 1500
+        },
+        {
+          "speaker": "companion",
+          "mood": "ready",
+          "text": "Stay alert. There might be enemies inside, and I see some kind of puzzle mechanisms.",
+          "delay": 2000
+        },
+        {
+          "speaker": "companion",
+          "mood": "normal",
+          "text": "Look for glowing stones - they might teleport us to other places!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "test_dialogue": {
+      "id": "test_dialogue",
+      "once": false,
+      "messages": [
+        {
+          "speaker": "narrator",
+          "mood": "normal",
+          "text": "This is a test dialogue from the narrator!",
+          "delay": 1500
+        },
+        {
+          "speaker": "companion",
+          "mood": "normal",
+          "text": "And now your companion is speaking!",
+          "delay": 1500
+        },
+        {
+          "speaker": "companion",
+          "mood": "ready",
+          "text": "They can even change moods mid-conversation!",
+          "delay": 1500
+        },
+        {
+          "speaker": "companion",
+          "mood": "attack",
+          "text": "Like this angry pose!",
+          "delay": 0
+        }
+      ]
+    },
+
+    "zara_keepers_charm": {
+      "id": "zara_keepers_charm",
+      "once": true,
+      "messages": [
+        {
+          "speaker": "npc",
+          "speaker_display": "Zara",
+          "text": "Greetings, traveler. I am Zara, Keeper of the Ruins.",
+          "portrait_left": "res://assets/art/npc_sprites/zara.png",
+          "voice_mode": "animalese",
+          "voice_speed": 1.0,
+          "voice_pitch": 3.4,
+          "delay": 2000
+        },
+        {
+          "speaker": "npc",
+          "speaker_display": "Zara",
+          "text": "I sense you are new to these lands. The ruins can be treacherous, and you may find yourself in dangerous places.",
+          "portrait_left": "res://assets/art/npc_sprites/zara.png",
+          "voice_mode": "animalese",
+          "voice_speed": 1.0,
+          "voice_pitch": 3.6,
+          "delay": 2500
+        },
+        {
+          "speaker": "npc",
+          "speaker_display": "Zara",
+          "text": "Please, take this Keeper's Charm. It is a gift from the ancient keepers.",
+          "portrait_left": "res://assets/art/npc_sprites/zara.png",
+          "delay": 2500
+        ,
+          "voice_mode": "animalese",
+          "voice_speed": 1.2,
+          "voice_pitch": 3.4
+        },
+        {
+          "speaker": "npc",
+          "speaker_display": "Zara",
+          "text": "If you ever find yourself in danger or somewhere inhospitable, hold the charm and left-click. It will return you safely to your home base.",
+          "portrait_left": "res://assets/art/npc_sprites/zara.png",
+          "delay": 0,
+          "choices": [
+            { "id": "accept_charm", "text": "Thank you!", "next_dialogue": "game_start" },
+            { "id": "decline_charm", "text": "I'm not ready..." }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "dawn": ".png",
+  "dusk": ".png",
+  "fileList": ".json",
+  "moon": ".png",
+  "night": ".png",
+  "sun": ".png",
+  "timeWheel": ".png"
+}

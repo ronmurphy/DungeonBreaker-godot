@@ -1,0 +1,79 @@
+{
+  "_comment": "✅ = Fully implemented | 🚧 = Partially implemented (missing art/mechanic) | 📋 = Planned",
+  
+  "roasted_wheat": {
+    "id": "roasted_wheat",
+    "status": "✅",
+    "name": "🍞 Bread",
+    "emoji": "🍞",
+    "ingredients": { "wheat": 3 },
+    "result": {
+      "stamina": 30,
+      "duration": 60,
+      "effects": ["Well Fed: +30 stamina"]
+    },
+    "description": "Simple bread, restores stamina"
+  },
+  
+  "baked_potato": {
+    "id": "baked_potato",
+    "status": "📋",
+    "comment": "Potato not yet in game - needs art asset",
+    "name": "🥔 Baked Potato",
+    "emoji": "🥔",
+    "ingredients": { "potato": 1 },
+    "result": {
+      "stamina": 45,
+      "staminaDrainReduction": 0.2,
+      "duration": 90,
+      "effects": ["Hearty Meal: +45 stamina, -20% drain"]
+    },
+    "description": "Filling! Reduces stamina drain by 20%"
+  },
+  
+  "grilled_fish": {
+    "id": "grilled_fish",
+    "status": "✅",
+    "name": "� Grilled Fish",
+    "emoji": "�",
+    "ingredients": { "fish": 1 },
+    "result": {
+      "stamina": 75,
+      "speedBoost": 1.2,
+      "duration": 60,
+      "effects": ["Protein Power: +75 stamina, +20% speed"]
+    },
+    "description": "Protein-rich! +20% movement speed"
+  },
+  
+  "carrot_stew": {
+    "id": "carrot_stew",
+    "status": "🚧",
+    "comment": "Works but needs better visual feedback",
+    "name": "🥕🍲 Carrot Stew",
+    "emoji": "🍲",
+    "ingredients": { "carrot": 3, "potato": 1 },
+    "result": {
+      "stamina": 60,
+      "speedBoost": 1.15,
+      "duration": 120,
+      "effects": ["Healthy stew: +60 stamina, +15% speed"]
+    },
+    "description": "Healthy stew! +15% speed for 2min"
+  },
+  
+  "berry_bread": {
+    "id": "berry_bread",
+    "status": "✅",
+    "name": "🍓� Berry Bread",
+    "emoji": "�",
+    "ingredients": { "wheat": 2, "berry": 4 },
+    "result": {
+      "stamina": 50,
+      "speedBoost": 1.1,
+      "duration": 60,
+      "effects": ["Sweet Energy: +50 stamina, +10% speed"]
+    },
+    "description": "Sweet bread with energy boost"
+  }
+}

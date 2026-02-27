@@ -1,0 +1,9 @@
+{
+  "grass": [0, 0],
+  "grass_side": [1, 0],
+  "dirt": [0, 1],
+  "tall_grass": [1, 1],
+  "water_top": [2, 1],
+  "water_full": [2, 1],
+  "leaves": [0, 2]
+}

@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://jnw2dc2daohh"
+path="res://.godot/imported/iron_ore.obj-fe1c43382da1078081da7b5e92f465ad.mesh"
+
+[deps]
+
+files=["res://.godot/imported/iron_ore.obj-fe1c43382da1078081da7b5e92f465ad.mesh"]
+
+source_file="res://blocky_game/blocks/iron_ore/iron_ore.obj"
+dest_files=["res://.godot/imported/iron_ore.obj-fe1c43382da1078081da7b5e92f465ad.mesh", "res://.godot/imported/iron_ore.obj-fe1c43382da1078081da7b5e92f465ad.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false

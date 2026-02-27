@@ -1,0 +1,127 @@
+{
+  "stone_pickaxe": {
+    "id": "stone_pickaxe",
+    "name": "⛏️ Stone Pickaxe",
+    "emoji": "⛏️",
+    "ingredients": {
+      "stone": 3,
+      "stick": 2
+    },
+    "result": {
+      "itemType": "stone_pickaxe",
+      "durability": 100,
+      "miningSpeed": 1.5
+    },
+    "description": "Essential for mining stone and ore",
+    "unlocked": true
+  },
+  "stone_axe": {
+    "id": "stone_axe",
+    "name": "🪓 Stone Axe",
+    "emoji": "🪓",
+    "ingredients": {
+      "stone": 3,
+      "stick": 2
+    },
+    "result": {
+      "itemType": "stone_axe",
+      "durability": 100,
+      "choppingSpeed": 1.5
+    },
+    "description": "Chop trees faster",
+    "unlocked": true
+  },
+  "stone_hoe": {
+    "id": "stone_hoe",
+    "name": "🔨 Stone Hoe",
+    "emoji": "🔨",
+    "ingredients": {
+      "stone": 2,
+      "stick": 2
+    },
+    "result": {
+      "itemType": "stone_hoe",
+      "durability": 100
+    },
+    "description": "For tilling soil and farming",
+    "unlocked": true
+  },
+  "stone_spear": {
+    "id": "stone_spear",
+    "name": "🗡️ Stone Spear",
+    "emoji": "🗡️",
+    "ingredients": {
+      "stone": 1,
+      "stick": 2
+    },
+    "result": {
+      "itemType": "stone_spear",
+      "damage": 10,
+      "throwable": true
+    },
+    "description": "Your first weapon!",
+    "unlocked": true
+  },
+  "machete": {
+    "id": "machete",
+    "name": "🔪 Machete",
+    "emoji": "🔪",
+    "ingredients": {
+      "iron": 3,
+      "stick": 1
+    },
+    "result": {
+      "itemType": "machete",
+      "durability": 200,
+      "choppingSpeed": 2.0
+    },
+    "description": "Superior chopping tool",
+    "unlocked": false
+  },
+  "speed_boots": {
+    "id": "speed_boots",
+    "name": "👢 Speed Boots",
+    "emoji": "👢",
+    "ingredients": {
+      "leather": 4,
+      "iron": 2
+    },
+    "result": {
+      "itemType": "speed_boots",
+      "speedBonus": 2.0,
+      "staminaBonus": 2.0
+    },
+    "description": "2x speed and stamina!",
+    "unlocked": false
+  },
+  "backpack": {
+    "id": "backpack",
+    "name": "🎒 Backpack",
+    "emoji": "🎒",
+    "ingredients": {
+      "leather": 5,
+      "rope": 2
+    },
+    "result": {
+      "itemType": "backpack",
+      "slots": 20
+    },
+    "description": "Expand your inventory",
+    "unlocked": false
+  },
+  "torch": {
+    "id": "torch",
+    "name": "🔦 Torch",
+    "emoji": "🔦",
+    "ingredients": {
+      "stick": 1,
+      "coal": 1
+    },
+    "result": {
+      "itemType": "torch",
+      "lightLevel": 10
+    },
+    "description": "Light up the darkness",
+    "unlocked": true
+  }
+}
