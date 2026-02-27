@@ -435,6 +435,14 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 	var attacker: Dictionary = _units[attacker_idx]
 	var target: Dictionary = _units[target_idx]
 
+	# Flash the enemy's world sprite to its attack pose
+	var entity_key: String = attacker.get("entity_key", "")
+	if entity_key != "" and is_instance_valid(attacker.get("entity", null)):
+		EntityManager.play_attack_flash(
+			attacker["entity"],
+			EnemyDB.get_attack_texture_path(entity_key)
+		)
+
 	var enemy_roll: int = _clash_roll(attacker["attack"])
 	var player_roll: int = _clash_roll(target["defense"] + GameData.ac_bonus_temp)
 

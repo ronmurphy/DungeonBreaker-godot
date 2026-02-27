@@ -1,0 +1,179 @@
+{
+  "sheet": {
+    "width": 2752,
+    "height": 1536,
+    "rows": 2,
+    "layout": "Row 1: portrait_bust, front_idle, back, side_left, side_right | Row 2: walk_front, walk_front_2, walk_back, prone_dead"
+  },
+  "isometric_directions": {
+    "SW": "Front-left, toward viewer (primary player-facing direction)",
+    "NE": "Back-right, away from viewer",
+    "NW": "Left side profile",
+    "SE": "Right side profile (mirror of NW)"
+  },
+  "mirror_note": "Poses marked mirror_of can be derived by flipping the referenced pose horizontally. In-engine, generate SE/NW walk frames by mirroring the existing side walk if not explicitly drawn.",
+  "frames": [
+    {
+      "id": "portrait_bust",
+      "label": "Portrait Bust",
+      "description": "Close-up head and shoulders, 3/4 angle facing slightly left. Used for dialogue/menu portraits.",
+      "row": 0,
+      "col": 0,
+      "isometric_dir": "SW",
+      "mirror_of": null,
+      "notes": "Larger cell than body sprites. Not a game-world sprite \u2014 UI only.",
+      "bbox": {
+        "top": 0,
+        "bottom": 771,
+        "left": 0,
+        "right": 746,
+        "width": 746,
+        "height": 771
+      }
+    },
+    {
+      "id": "front_idle",
+      "label": "Front Idle",
+      "description": "Full body, isometric 3/4 front-left angle, neutral standing pose.",
+      "row": 0,
+      "col": 1,
+      "isometric_dir": "SW",
+      "mirror_of": null,
+      "notes": "Primary facing direction. Use as base for SW-facing animations.",
+      "bbox": {
+        "top": 0,
+        "bottom": 771,
+        "left": 739,
+        "right": 1248,
+        "width": 509,
+        "height": 771
+      }
+    },
+    {
+      "id": "back",
+      "label": "Back / Idle Back",
+      "description": "Full body, isometric 3/4 back-right angle, facing away from viewer.",
+      "row": 0,
+      "col": 2,
+      "isometric_dir": "NE",
+      "mirror_of": null,
+      "notes": "NE-facing idle. Pair with walk_back for NE movement.",
+      "bbox": {
+        "top": 0,
+        "bottom": 771,
+        "left": 1241,
+        "right": 1750,
+        "width": 509,
+        "height": 771
+      }
+    },
+    {
+      "id": "side_left",
+      "label": "Side Left",
+      "description": "Full body, pure left-facing side profile.",
+      "row": 0,
+      "col": 3,
+      "isometric_dir": "NW",
+      "mirror_of": null,
+      "notes": "NW-facing idle. Mirror horizontally to get SE-facing (side_right equivalent).",
+      "bbox": {
+        "top": 0,
+        "bottom": 771,
+        "left": 1743,
+        "right": 2252,
+        "width": 509,
+        "height": 771
+      }
+    },
+    {
+      "id": "side_right",
+      "label": "Side Right",
+      "description": "Full body, pure right-facing side profile.",
+      "row": 0,
+      "col": 4,
+      "isometric_dir": "SE",
+      "mirror_of": "side_left",
+      "notes": "SE-facing idle. This is effectively a horizontal mirror of side_left.",
+      "bbox": {
+        "top": 0,
+        "bottom": 771,
+        "left": 2245,
+        "right": 2752,
+        "width": 507,
+        "height": 771
+      }
+    },
+    {
+      "id": "walk_front",
+      "label": "Walk Front",
+      "description": "Full body mid-stride walking toward viewer, isometric front-left angle.",
+      "row": 1,
+      "col": 0,
+      "isometric_dir": "SW",
+      "mirror_of": null,
+      "notes": "SW walk frame 1. Pair with walk_front_2 for a 2-frame walk cycle.",
+      "bbox": {
+        "top": 764,
+        "bottom": 1536,
+        "left": 0,
+        "right": 691,
+        "width": 691,
+        "height": 772
+      }
+    },
+    {
+      "id": "walk_front_2",
+      "label": "Walk Front 2",
+      "description": "Walking toward viewer, opposite arm/leg swing variant.",
+      "row": 1,
+      "col": 1,
+      "isometric_dir": "SW",
+      "mirror_of": null,
+      "notes": "SW walk frame 2. Alternate with walk_front for walk animation.",
+      "bbox": {
+        "top": 764,
+        "bottom": 1536,
+        "left": 684,
+        "right": 1379,
+        "width": 695,
+        "height": 772
+      }
+    },
+    {
+      "id": "walk_back",
+      "label": "Walk Back",
+      "description": "Full body back-facing mid-stride, walking away from viewer.",
+      "row": 1,
+      "col": 2,
+      "isometric_dir": "NE",
+      "mirror_of": null,
+      "notes": "NE walk frame. Mirror horizontally for a second NE walk frame if needed.",
+      "bbox": {
+        "top": 764,
+        "bottom": 1536,
+        "left": 1372,
+        "right": 2067,
+        "width": 695,
+        "height": 772
+      }
+    },
+    {
+      "id": "prone_dead",
+      "label": "Prone / Dead",
+      "description": "Full body lying flat on the ground, arms at sides.",
+      "row": 1,
+      "col": 3,
+      "isometric_dir": null,
+      "mirror_of": null,
+      "notes": "KO/death state. No directional facing.",
+      "bbox": {
+        "top": 764,
+        "bottom": 1536,
+        "left": 2060,
+        "right": 2752,
+        "width": 692,
+        "height": 772
+      }
+    }
+  ]
+}

@@ -21,6 +21,12 @@ const LOD_FULL_DIST := 30.0      # Full sprite below this distance
 const LOD_SIMPLE_DIST := 60.0    # Simplified sprite below this
 const LOD_CULL_DIST := 100.0     # Invisible beyond this
 
+# ── Enemy sprite sizing ───────────────────────────────────────────────────────
+# Enemy portraits are 1024×1024px. At 0.0015 that's ~1.5 units tall (≈ 1 voxel block).
+# Adjust here if sprites need to be bigger or smaller overall.
+const ENTITY_PIXEL_SIZE_FULL   := 0.0015
+const ENTITY_PIXEL_SIZE_SIMPLE := 0.001
+
 # ── Texture cache ────────────────────────────────────────────────────────────
 var _texture_cache: Dictionary = {}  # path → Texture2D
 
@@ -74,12 +80,12 @@ func _process(_delta: float):
 		elif dist > LOD_SIMPLE_DIST:
 			# Simple LOD: smaller/faded
 			sprite.visible = true
-			sprite.pixel_size = 0.003
+			sprite.pixel_size = ENTITY_PIXEL_SIZE_SIMPLE
 			sprite.modulate.a = 0.6
 		else:
 			# Full detail
 			sprite.visible = true
-			sprite.pixel_size = 0.005
+			sprite.pixel_size = ENTITY_PIXEL_SIZE_FULL
 			sprite.modulate.a = 1.0
 
 
@@ -116,6 +122,25 @@ func spawn_entity(world_pos: Vector3, texture_path: String, data: Dictionary = {
 	entity.global_position = world_pos
 	entity_spawned.emit(entity)
 	return entity
+
+
+## Briefly swap an entity's world sprite to its attack pose, then restore.
+## attack_tex_path should come from EnemyDB.get_attack_texture_path(key).
+func play_attack_flash(entity: Node3D, attack_tex_path: String) -> void:
+	if not is_instance_valid(entity):
+		return
+	var sprite: Sprite3D = entity.get_meta("sprite", null)
+	if sprite == null:
+		return
+	var attack_tex := _get_texture(attack_tex_path)
+	if attack_tex == null:
+		return
+	var base_tex: Texture2D = sprite.texture
+	sprite.texture = attack_tex
+	get_tree().create_timer(0.45).timeout.connect(func() -> void:
+		if is_instance_valid(sprite):
+			sprite.texture = base_tex
+	)
 
 
 ## Despawn an entity back into the pool.
@@ -157,10 +182,11 @@ func _create_entity_node() -> Node3D:
 	var sprite := Sprite3D.new()
 	sprite.name = "Sprite"
 	sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-	sprite.pixel_size = 0.005
+	sprite.pixel_size = ENTITY_PIXEL_SIZE_FULL
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	sprite.transform.origin.y = 0.35  # Centre above ground
 	sprite.shaded = false
+	sprite.render_priority = 2  # Draw on top of grid tiles (priority 1)
 	root.add_child(sprite)
 
 	root.set_meta("sprite", sprite)

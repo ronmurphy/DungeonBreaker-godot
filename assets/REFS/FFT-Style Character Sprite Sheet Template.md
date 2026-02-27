@@ -80,8 +80,12 @@ When generating a new character's sprite sheet, always pass these as `references
 ## Characters Completed
 
 - [x] Human Male — `human_male_spritesheet.png`
-- [ ] Human Female
-- [ ] Dwarf Male
-- [ ] Dwarf Female
-- [ ] Elf Male
-- [ ] Elf Female
+- [x] Human Female
+- [x] Dwarf Male
+- [x] Dwarf Female
+- [x] Elf Male
+- [x] Elf Female
+- [x] Goblin Male
+- [x] Goblin Female
+
+

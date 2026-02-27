@@ -283,9 +283,17 @@ func _physics_process(delta: float):
 			_velocity.y = jump_force
 			_grounded = false
 
-		# Flip sprite based on movement direction
+		# Update sprite direction (CharacterSprite) or fall back to simple flip
 		if _sprite != null:
-			_sprite.flip_h = input_dir.x < -0.1
+			if _sprite.has_method("update_direction"):
+				_sprite.update_direction(input_dir, cam_forward, cam_right)
+			else:
+				_sprite.flip_h = input_dir.x < -0.1
+
+	# When no input, tell CharacterSprite to return to idle
+	if input_dir.length_squared() < 0.01 and _sprite != null:
+		if _sprite.has_method("update_direction"):
+			_sprite.update_direction(Vector3.ZERO, cam_forward, cam_right)
 
 	var motor := input_dir * speed
 
