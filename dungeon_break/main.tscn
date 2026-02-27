@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://cks3dpkju3o62"]
+
+[ext_resource type="Script" uid="uid://ciy471u4aw2u6" path="res://dungeon_break/main.gd" id="1"]
+
+[node name="Main" type="Node" unique_id=438879309]
+script = ExtResource("1")

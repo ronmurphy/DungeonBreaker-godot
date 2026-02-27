@@ -1,0 +1,46 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://dungeon_break/dungeon.gd" id="1"]
+[ext_resource type="VoxelMesherBlocky" uid="uid://c6l3pdnhmvhqp" path="res://blocky_game/blocks/mesher.tres" id="2"]
+[ext_resource type="VoxelGeneratorScript" path="res://dungeon_break/generator/dungeon_terrain_gen.tres" id="3"]
+
+[sub_resource type="ProceduralSkyMaterial" id="sky_mat"]
+sky_top_color = Color(0.02, 0.02, 0.05, 1)
+sky_horizon_color = Color(0.05, 0.04, 0.08, 1)
+ground_bottom_color = Color(0.02, 0.02, 0.03, 1)
+ground_horizon_color = Color(0.04, 0.03, 0.06, 1)
+
+[sub_resource type="Sky" id="sky"]
+sky_material = SubResource("sky_mat")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("sky")
+ambient_light_source = 1
+ambient_light_color = Color(0.15, 0.14, 0.2, 1)
+ambient_light_sky_contribution = 0.15
+ambient_light_energy = 0.6
+fog_enabled = true
+fog_light_color = Color(0.08, 0.06, 0.12, 1)
+fog_density = 0.008
+fog_aerial_perspective = 0.5
+
+[node name="Dungeon" type="Node"]
+script = ExtResource("1")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="VoxelTerrain" type="VoxelTerrain" parent="."]
+generator = ExtResource("3")
+mesher = ExtResource("2")
+generate_collisions = false
+run_stream_in_editor = false
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.866, 0.354, -0.354, 0.0, 0.707, 0.707, 0.5, 0.612, -0.612, 0, 20, 0)
+light_color = Color(0.5, 0.45, 0.6, 1)
+light_energy = 0.9
+shadow_enabled = true
+
+[node name="Players" type="Node" parent="."]

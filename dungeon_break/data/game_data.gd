@@ -1,0 +1,297 @@
+extends Node
+## Game data singleton — player stats, classes, inventory, floor progression.
+##
+## Ported from JS game-state.js. Autoloaded as "GameData".
+
+# ── Signals ──────────────────────────────────────────────────────────────────
+signal hp_changed(current: int, maximum: int)
+signal gold_changed(amount: int)
+signal floor_changed(floor_num: int)
+signal inventory_changed()
+signal equipment_changed()
+signal player_died()
+
+# ── Player Classes ───────────────────────────────────────────────────────────
+enum PlayerClass {
+	VANGUARD,    # Tank — high STR, shield abilities
+	SCOUNDREL,   # DPS — high DEX, backstab/poison
+	ARCANIST,    # Mage — high INT, spell burst
+	CONFESSOR,   # Healer — INT/LCK hybrid, holy magic
+	STRIDER,     # Ranger — DEX/STR, bow + traps
+	MINSTREL,    # Bard — LCK/INT, buffs + debuffs
+	TEMPLAR,     # Paladin — STR/INT, holy + melee
+	REANIMATOR,  # Necro — INT, summon undead
+	TINKERER,    # Engineer — DEX/INT, gadgets + bombs
+}
+
+# Class display names
+const CLASS_NAMES := {
+	PlayerClass.VANGUARD:    "Vanguard",
+	PlayerClass.SCOUNDREL:   "Scoundrel",
+	PlayerClass.ARCANIST:    "Arcanist",
+	PlayerClass.CONFESSOR:   "Confessor",
+	PlayerClass.STRIDER:     "Strider",
+	PlayerClass.MINSTREL:    "Minstrel",
+	PlayerClass.TEMPLAR:     "Templar",
+	PlayerClass.REANIMATOR:  "Reanimator",
+	PlayerClass.TINKERER:    "Tinkerer",
+}
+
+# Base stats per class: { STR, DEX, INT, LCK }
+const CLASS_BASE_STATS := {
+	PlayerClass.VANGUARD:    { "STR": 5, "DEX": 2, "INT": 1, "LCK": 2 },
+	PlayerClass.SCOUNDREL:   { "STR": 2, "DEX": 5, "INT": 1, "LCK": 3 },
+	PlayerClass.ARCANIST:    { "STR": 1, "DEX": 2, "INT": 5, "LCK": 2 },
+	PlayerClass.CONFESSOR:   { "STR": 1, "DEX": 2, "INT": 4, "LCK": 3 },
+	PlayerClass.STRIDER:     { "STR": 3, "DEX": 4, "INT": 1, "LCK": 2 },
+	PlayerClass.MINSTREL:    { "STR": 1, "DEX": 3, "INT": 3, "LCK": 4 },
+	PlayerClass.TEMPLAR:     { "STR": 4, "DEX": 1, "INT": 3, "LCK": 2 },
+	PlayerClass.REANIMATOR:  { "STR": 1, "DEX": 2, "INT": 5, "LCK": 2 },
+	PlayerClass.TINKERER:    { "STR": 2, "DEX": 4, "INT": 3, "LCK": 1 },
+}
+
+# ── Player State ─────────────────────────────────────────────────────────────
+var player_class: PlayerClass = PlayerClass.SCOUNDREL
+var player_name: String = "Hero"
+
+# Core stats (single-digit)
+var stat_str: int = 2
+var stat_dex: int = 5
+var stat_int: int = 1
+var stat_lck: int = 3
+
+# Vitals
+var hp: int = 33
+var hp_max: int = 33
+var ac: int = 10  # Armor class (base 10 + equipment)
+var gold: int = 0
+
+# Progression
+var current_floor: int = 1
+var floors_cleared: int = 0
+var total_kills: int = 0
+
+# Dungeon state
+var in_dungeon: bool = false
+var torch_fuel: int = 100  # 0–100, burns while in dungeon
+
+# ── Inventory ────────────────────────────────────────────────────────────────
+const BACKPACK_SIZE := 24
+const HOTBAR_SIZE := 6
+
+var backpack: Array = []  # Array of item dicts, max BACKPACK_SIZE
+var hotbar: Array = []    # Array of item dicts, max HOTBAR_SIZE
+
+# Equipment slots
+var equip_weapon: Dictionary = {}   # { id, name, attack_bonus, ... }
+var equip_helm: Dictionary = {}
+var equip_chest: Dictionary = {}
+var equip_legs: Dictionary = {}
+var equip_boots: Dictionary = {}
+
+# ── Guts (delayed-power attack meter) ────────────────────────────────────────
+var guts: int = 0
+var guts_max: int = 3
+
+# ── World clock (shared between camp and dungeon) ────────────────────────────
+var world_time: float = 0.25        # 0..1, starts at dawn
+const _WORLD_TIME_SPEED := 1.0 / 600.0  # full day every 10 real minutes
+
+func _process(delta: float):
+	world_time += delta * _WORLD_TIME_SPEED
+	if world_time >= 1.0:
+		world_time -= 1.0
+
+func get_world_hour() -> float:
+	return world_time * 24.0
+
+func get_world_time_name() -> String:
+	var h := get_world_hour()
+	if h >= 5.0 and h < 12.0:
+		return "Morning"
+	elif h >= 12.0 and h < 17.0:
+		return "Afternoon"
+	elif h >= 17.0 and h < 21.0:
+		return "Evening"
+	return "Night"
+
+# ── Tactical combat temp state ───────────────────────────────────────────────
+var stat_spd: int = 3         # Speed stat (for initiative rolls)
+var ac_bonus_temp: int = 0    # Temporary AC bonus from Defend/Counter (resets each turn)
+var counter_active: bool = false  # Counter stance active this turn
+
+# ── Status Effects ───────────────────────────────────────────────────────────
+var status_effects: Array = []  # Array of { id: String, turns_left: int }
+
+
+func _ready():
+	_init_class(player_class)
+
+
+## Initialise stats from chosen class.
+func _init_class(cls: PlayerClass):
+	player_class = cls
+	var base = CLASS_BASE_STATS[cls]
+	stat_str = base["STR"]
+	stat_dex = base["DEX"]
+	stat_int = base["INT"]
+	stat_lck = base["LCK"]
+
+	# HP scales with STR  (25 base + 4 per STR)
+	hp_max = 25 + stat_str * 4
+	hp = hp_max
+	ac = 10
+	gold = 0
+	current_floor = 1
+	guts = 0
+	backpack.clear()
+	hotbar.clear()
+	equip_weapon = {}
+	equip_helm = {}
+	equip_chest = {}
+	equip_legs = {}
+	equip_boots = {}
+	status_effects.clear()
+
+
+## Change class and reset stats.
+func set_class(cls: PlayerClass):
+	_init_class(cls)
+
+
+## Deal damage to the player after AC reduction.
+func take_damage(raw: int) -> int:
+	var mitigated := maxi(1, raw - ac)
+	hp = maxi(0, hp - mitigated)
+	hp_changed.emit(hp, hp_max)
+	if hp <= 0:
+		player_died.emit()
+	return mitigated
+
+
+## Deal exact damage (no AC reduction). Used by tactical combat which
+## already handles defense via clash rolls.
+func take_raw_damage(amount: int) -> int:
+	hp = maxi(0, hp - amount)
+	hp_changed.emit(hp, hp_max)
+	if hp <= 0:
+		player_died.emit()
+	return amount
+
+
+## Heal the player.
+func heal(amount: int):
+	hp = mini(hp + amount, hp_max)
+	hp_changed.emit(hp, hp_max)
+
+
+## Add gold.
+func add_gold(amount: int):
+	gold += amount
+	gold_changed.emit(gold)
+
+
+## Get total attack power (best of STR/DEX + weapon bonus).
+## DEX-based classes (Scoundrel, Ranger) benefit from their primary stat.
+func get_attack_power() -> int:
+	var weapon_bonus: int = equip_weapon.get("attack_bonus", 0) if equip_weapon else 0
+	return maxi(stat_str, stat_dex) + weapon_bonus
+
+
+## Get total AC (base + all armor + temp bonus from combat stance).
+func get_total_ac() -> int:
+	var total := 10
+	for piece in [equip_helm, equip_chest, equip_legs, equip_boots]:
+		if piece:
+			total += piece.get("ac_bonus", 0)
+	return total + ac_bonus_temp
+
+
+## Advance to next floor.
+func advance_floor():
+	current_floor += 1
+	floors_cleared += 1
+	floor_changed.emit(current_floor)
+
+
+## Roll a die: returns random int 1..sides.
+func roll_die(sides: int) -> int:
+	return randi_range(1, sides)
+
+
+## Clash roll — maps power to the best die (d20/d12/d10/d8/d6/d4) + remainder bonus.
+## Returns total roll value.
+func clash_roll(power: int) -> int:
+	var dice: Array[int] = [20, 12, 10, 8, 6, 4]
+	for die_size in dice:
+		if power >= die_size:
+			var bonus: int = power - die_size
+			return roll_die(die_size) + bonus
+	# power < 4, just use d4
+	return roll_die(4)
+
+
+## Get deck multiplier for current floor (controls encounter density).
+## Floor 1–3: 1x, Floor 4–6: 2x, Floor 7+: 3x.
+func get_deck_multiplier() -> int:
+	if current_floor >= 7:
+		return 3
+	elif current_floor >= 4:
+		return 2
+	return 1
+
+
+## Save to JSON dict (for persistence).
+func to_save_dict() -> Dictionary:
+	return {
+		"player_class": player_class,
+		"player_name": player_name,
+		"stat_str": stat_str,
+		"stat_dex": stat_dex,
+		"stat_int": stat_int,
+		"stat_lck": stat_lck,
+		"hp": hp,
+		"hp_max": hp_max,
+		"ac": ac,
+		"gold": gold,
+		"current_floor": current_floor,
+		"floors_cleared": floors_cleared,
+		"total_kills": total_kills,
+		"in_dungeon": in_dungeon,
+		"torch_fuel": torch_fuel,
+		"backpack": backpack.duplicate(true),
+		"hotbar": hotbar.duplicate(true),
+		"equip_weapon": equip_weapon.duplicate(true),
+		"equip_helm": equip_helm.duplicate(true),
+		"equip_chest": equip_chest.duplicate(true),
+		"equip_legs": equip_legs.duplicate(true),
+		"equip_boots": equip_boots.duplicate(true),
+		"guts": guts,
+	}
+
+
+## Load from JSON dict.
+func from_save_dict(data: Dictionary):
+	player_class = data.get("player_class", PlayerClass.SCOUNDREL)
+	player_name = data.get("player_name", "Hero")
+	stat_str = data.get("stat_str", 2)
+	stat_dex = data.get("stat_dex", 5)
+	stat_int = data.get("stat_int", 1)
+	stat_lck = data.get("stat_lck", 3)
+	hp = data.get("hp", 20)
+	hp_max = data.get("hp_max", 20)
+	ac = data.get("ac", 10)
+	gold = data.get("gold", 0)
+	current_floor = data.get("current_floor", 1)
+	floors_cleared = data.get("floors_cleared", 0)
+	total_kills = data.get("total_kills", 0)
+	in_dungeon = data.get("in_dungeon", false)
+	torch_fuel = data.get("torch_fuel", 100)
+	backpack = data.get("backpack", [])
+	hotbar = data.get("hotbar", [])
+	equip_weapon = data.get("equip_weapon", {})
+	equip_helm = data.get("equip_helm", {})
+	equip_chest = data.get("equip_chest", {})
+	equip_legs = data.get("equip_legs", {})
+	equip_boots = data.get("equip_boots", {})
+	guts = data.get("guts", 0)

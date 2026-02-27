@@ -1,0 +1,31 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://dungeon_break/player/player_controller.gd" id="1"]
+[ext_resource type="Script" path="res://dungeon_break/player/isometric_camera.gd" id="2"]
+[ext_resource type="Texture2D" path="res://assets/art/player_avatars/human_male.png" id="3"]
+
+[node name="Player" type="Node3D"]
+script = ExtResource("1")
+speed = 5.0
+gravity = 30.0
+jump_force = 8.0
+
+[node name="Sprite3D" type="Sprite3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.35, 0)
+pixel_size = 0.005
+billboard = 1
+texture_filter = 0
+texture = ExtResource("3")
+
+[node name="IsometricCamera" type="Camera3D" parent="."]
+current = true
+fov = 50.0
+near = 0.5
+far = 500.0
+script = ExtResource("2")
+yaw_degrees = 45.0
+pitch_degrees = 40.0
+distance = 25.0
+follow_smoothing = 0.08
+
+[node name="VoxelViewer" type="VoxelViewer" parent="."]
