@@ -9,13 +9,16 @@ class_name CharacterSprite
 ## Walk animation: alternates flip_h every WALK_FRAME_TIME seconds.
 ##   SW (toward camera): _run → _run mirrored → _run → …
 ##   NE (away):          _run_back → _run_back mirrored → _run_back → …
-##   Sideways:           static (flip_h already encodes direction; mirroring reverses it)
+##   Sideways w/ side sprites: _side_1 → _side_2 → _side_1 → …  (flip_h when going LEFT)
+##   Sideways w/o side sprites: static _run  (flip_h when going LEFT; fallback)
 ##
 ## Poses loaded by suffix:
 ##   ""              → idle / base (facing camera)
 ##   "_back"         → idle facing away
 ##   "_run"          → walking toward camera (SW)
 ##   "_run_back"     → walking away from camera (NE)
+##   "_side_1"       → sideways walk frame 1 (facing right; flip_h for left)
+##   "_side_2"       → sideways walk frame 2 (facing right; flip_h for left)
 ##   "_attack"       → attack swing
 ##   "_ready"        → combat-ready stance
 ##   "_jumping"      → mid-jump toward camera
@@ -36,6 +39,7 @@ const WALK_FRAME_TIME := 0.25   # seconds between mirror flips
 # ── All known pose suffixes (missing files are silently skipped) ──────────────
 const ALL_POSES: Array = [
 	"", "_back", "_run", "_run_back",
+	"_side_1", "_side_2",
 	"_attack", "_ready",
 	"_jumping", "_jumping_back",
 	"_sad", "_worried", "_happy", "_angry", "_thumbs_up",
@@ -47,11 +51,12 @@ var _tex: Dictionary = {}   # suffix (String) → Texture2D
 # ── State ─────────────────────────────────────────────────────────────────────
 var _is_dead:      bool   = false
 var _is_walking:   bool   = false
-var _is_sideways:  bool   = false   # sideways walks skip the mirror animation
+var _is_sideways:  bool   = false   # true when moving left/right
+var _has_side:     bool   = false   # true when _side_1 + _side_2 textures exist
 var _current_pose: String = ""      # active suffix
-var _last_face:    String = "sw"    # "sw" or "ne" — which way we last walked
+var _last_face:    String = "sw"    # "sw", "ne", "side_r", "side_l"
 var _walk_timer:   float  = 0.0
-var _walk_flip:    bool   = false   # current mirror state
+var _walk_flip:    bool   = false   # current frame / mirror state
 
 
 func _ready() -> void:
@@ -72,6 +77,7 @@ func setup(prefix: String) -> void:
 		var path: String = prefix + suffix + ".png"
 		if ResourceLoader.exists(path):
 			_tex[suffix] = load(path) as Texture2D
+	_has_side    = _tex.has("_side_1") and _tex.has("_side_2")
 	_is_dead     = false
 	_is_walking  = false
 	_is_sideways = false
@@ -119,21 +125,34 @@ func update_direction(move_dir: Vector3, cam_forward: Vector3, cam_right: Vector
 			flip_h     = _walk_flip
 			_apply_pose("_run")
 	else:
-		# Sideways: use flip_h for direction; no mirror animation
+		# Sideways: flip_h encodes direction; 2-frame cycle if side sprites exist
 		_is_sideways = true
-		_last_face   = "sw"
-		flip_h       = rgt_dot > 0.0
-		_apply_pose("_run")
+		var going_right: bool  = rgt_dot > 0.0
+		var new_face:    String = "side_r" if going_right else "side_l"
+		if _last_face != new_face:
+			_walk_flip  = false
+			_walk_timer = 0.0
+		_last_face = new_face
+		flip_h     = not going_right   # sprites face right; flip for leftward movement
+		if _has_side:
+			_apply_pose("_side_1" if not _walk_flip else "_side_2")
+		else:
+			_apply_pose("_run")
 
 
 func _process(delta: float) -> void:
-	if not _is_walking or _is_dead or _is_sideways:
+	if not _is_walking or _is_dead:
 		return
+	if _is_sideways and not _has_side:
+		return   # no side sprites — static _run fallback, nothing to animate
 	_walk_timer += delta
 	if _walk_timer >= WALK_FRAME_TIME:
 		_walk_timer = 0.0
 		_walk_flip  = not _walk_flip
-		flip_h      = _walk_flip
+		if _is_sideways:
+			_apply_pose("_side_1" if not _walk_flip else "_side_2")
+		else:
+			flip_h = _walk_flip
 
 
 ## Freeze on dead/defeated pose.
