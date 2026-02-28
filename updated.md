@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document
-*Last updated: 2026-02-28 (session 4)*
+*Last updated: 2026-02-28 (session 4, continued)*
 
 ---
 
@@ -247,7 +247,7 @@ Always visible CanvasLayer. Two modes:
 
 **Dungeon mode** (`set_dungeon_mode(true)` called in `dungeon.gd._build_dungeon()`):
 - Same top-right bar
-- Bottom-right hero panel (248×88px): portrait, "Name · Class · Floor N", HP bar (border color reacts to HP ratio), "HP x/y  AC z  ATK w  Weapon"
+- Bottom-right hero panel (248×104px): portrait, "Name · Class · Floor N", HP bar (border color reacts to HP ratio), "HP x/y  AC z  ATK w" on one line, weapon name on a separate label below (added session 4)
 
 Prompt label (center-bottom) shown via `show_prompt(text)` / `hide_prompt()` when player is near interactions.
 
@@ -264,9 +264,17 @@ Overlay active only during combat. Features:
 - Shows on enemy turn start: portrait (64×64), name, HP bar, "AC N  ATK N"
 - Hidden during player turn
 
+**ACT menu (session 4 restructure) — 3-level hierarchy:**
+- Level 1 (top): `[1] Action  [2] Items  [3] Flee` — replaces old flat 6-button layout
+- Level 2a — Action sub-panel: `[1] Attack  [2] Guts  [3] Counter  [4] Defend  [ESC] Back`
+- Level 2b — Items sub-panel: scrollable item cards (FOOD/POTION from backpack only); each card has 48×48 icon + trimmed description (last sentence only, no flavor text) + click/number to use
+- Panels are mutually exclusive — each hides the previous when opened; Back restores the previous
+- All three panels share the same screen position (offset_left −260, offset_right −12) so they replace each other cleanly
+
 **Target selection cards:**
-- 56×56 portrait, name, HP bar per targetable enemy
+- 44×44 portrait, name, HP bar per targetable enemy
 - PanelContainer with `gui_input` click handler
+- Back button returns to Action sub-panel (session 4)
 
 **Combat log:**
 - Positioned above enemy panel (offset_top=-238, offset_bottom=-100)
@@ -274,6 +282,12 @@ Overlay active only during combat. Features:
 **Turn bar:** removed; `_update_turn_bar` is a no-op stub kept for signal compatibility.
 
 HP bar color logic: >60% green, >30% yellow, else red.
+
+### Screenshot System (`main.gd`, session 4)
+- **Hotkey:** `Ctrl+S` anywhere in the game captures the viewport and saves to `user://screenshots/shot_YYYYMMDD_HHMMSS.png`
+- **Toast:** green label (top-left, CanvasLayer 128) fades out after 1.8s + 0.6s fade; shows filename
+- **Click to open:** clicking the toast calls `_open_folder()` which detects the OS and launches the native file manager via `OS.create_process()` (avoids X11/Wayland BadWindow errors that `OS.shell_open()` triggers on Wayland)
+- **Linux file manager detection:** reads `XDG_CURRENT_DESKTOP` → `dolphin` (KDE), `nautilus` (GNOME/Unity), `thunar` (XFCE), `pcmanfm` (LXDE/LXQt), falls back to `xdg-open`; Windows/macOS use `OS.shell_open()`
 
 ### Inventory UI (`inventory_ui.gd`)
 Full-screen overlay. Toggle: `I` or `TAB`. Close: `ESC` or ✕ button.
@@ -418,13 +432,16 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - `combat_ui._unhandled_input()` now calls `get_viewport().set_input_as_handled()` after every combat key (1-6 for actions, S for skip, ESC for cancel target); previously these leaked to `inventory_ui._unhandled_input()` which uses 1-6 for quick-equip, causing silent item equips during combat
 
 ### UI
-- [x] Game HUD: time clock, hero panel in dungeon
+- [x] Game HUD: time clock, hero panel in dungeon; weapon name on separate line below HP/AC/ATK (session 4)
 - [x] Combat UI: portrait tracker with colored dots, active unit highlight, enemy info panel, combat log, target cards
+- [x] Combat ACT menu: 3-level hierarchy (Action/Items/Flee → Attack/Guts/Counter/Defend/Back → item cards with icons); panels mutually exclusive, all in same screen slot; target selector has Back button (session 4)
+- [x] Combat key isolation: keys 1–6/S/ESC consumed at phase level before routing to sub-state, preventing leakage to inventory quick-use (session 4)
 - [x] Inventory: paper doll + 6×4 backpack grid + character stats panel
 - [x] Quick-use hotkeys (F, 1–6)
 - [x] Toast notifications for inventory actions
 - [x] Save button (💾) in inventory header → `SaveManager.save_game(slot)` → toast feedback
 - [x] Character select screen (race/gender/class picker before new game)
+- [x] Screenshot system: Ctrl+S saves PNG to `user://screenshots/`, toast fades with click-to-open-folder via `_open_folder()` (Wayland-safe, desktop-detected) (session 4)
 
 ### Player Sprites
 - [x] `CharacterSprite` node (`character_sprite.gd`) — individual PNGs from `assets/art/player_avatars/`
@@ -455,6 +472,7 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Files: `user://dungeon_break_save_N.json` (N = 0..2, MAX_SLOTS=3)
 - [x] `dungeon_seed` in GameData — set before `build_dungeon()`, reset to 0 on `_on_advance_floor()` for fresh layouts
 - [x] `scene_state` ("camp"/"dungeon") determines where to restore on load
+- [x] `player_race`, `player_gender`, `player_sprite_prefix` included in save/load dict (session 4 fix — were missing, causing load to always restore human/male)
 - [x] Save slot UI (`ui/save_slot_ui.gd`): name/class/floor/HP/timestamp per slot, overwrite confirmation
 - [x] Flow: main.gd → SaveSlotUI (3 cards) → New Game (char select) OR Load (restores GameData → camp or dungeon)
 
