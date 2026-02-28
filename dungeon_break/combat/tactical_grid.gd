@@ -14,13 +14,17 @@ const TILE_SIZE := 1.0
 const TILE_Y    := 0.12   # just above floor surface
 const TILE_THICK := 0.06  # thin slab
 
-const COLOR_MOVE    := Color(0.2, 0.4, 1.0, 0.45)
-const COLOR_ATTACK  := Color(1.0, 0.2, 0.2, 0.35)
-const COLOR_PLAYER  := Color(0.2, 1.0, 0.3, 0.55)
-const COLOR_ENEMY   := Color(1.0, 0.5, 0.1, 0.45)
-const COLOR_CURSOR  := Color(1.0, 1.0, 1.0, 0.50)
-const COLOR_PATH    := Color(0.5, 0.8, 1.0, 0.50)
-const COLOR_ALLY    := Color(0.3, 0.9, 0.5, 0.40)
+const COLOR_MOVE         := Color(0.2, 0.4, 1.0, 0.45)
+const COLOR_ATTACK       := Color(1.0, 0.2, 0.2, 0.35)
+const COLOR_PLAYER       := Color(0.2, 1.0, 0.3, 0.55)
+const COLOR_ENEMY        := Color(1.0, 0.5, 0.1, 0.45)
+const COLOR_CURSOR       := Color(1.0, 1.0, 1.0, 0.50)
+const COLOR_PATH         := Color(0.5, 0.8, 1.0, 0.50)
+const COLOR_ALLY         := Color(0.3, 0.9, 0.5, 0.40)
+## Ranged attack zone (replaces red for ranged weapons — teal diamond)
+const COLOR_RANGED_ZONE  := Color(0.0, 0.85, 0.85, 0.35)
+## Active flight path tiles (bright cyan, shown while projectile is in flight)
+const COLOR_RANGED_PATH  := Color(0.1, 1.0, 0.85, 0.70)
 
 # ── Grid state ───────────────────────────────────────────────────────────────
 var grid_origin := Vector2i.ZERO   # world offset (room top-left corner)
@@ -53,7 +57,8 @@ func _ready():
 	_tile_mesh.size = Vector3(TILE_SIZE * 0.92, TILE_THICK, TILE_SIZE * 0.92)
 
 	# Pre-create materials
-	for col in [COLOR_MOVE, COLOR_ATTACK, COLOR_PLAYER, COLOR_ENEMY, COLOR_CURSOR, COLOR_PATH, COLOR_ALLY]:
+	for col in [COLOR_MOVE, COLOR_ATTACK, COLOR_PLAYER, COLOR_ENEMY, COLOR_CURSOR,
+			COLOR_PATH, COLOR_ALLY, COLOR_RANGED_ZONE, COLOR_RANGED_PATH]:
 		_get_material(col)
 
 	# Cursor mesh sits slightly above normal tiles (TILE_Y + 0.01) so it renders on top
@@ -246,6 +251,23 @@ func highlight_cursor(pos: Vector2i):
 func highlight_path(tiles: Array[Vector2i]):
 	for pos in tiles:
 		_place_marker(pos, COLOR_PATH)
+
+
+## Show ranged weapon attack zone (teal diamond — replaces red for ranged).
+func highlight_ranged_zone(tiles: Array[Vector2i]):
+	for pos in tiles:
+		_place_marker(pos, COLOR_RANGED_ZONE)
+
+
+## Show projectile flight path tiles (bright cyan, drawn over zone tiles).
+func highlight_ranged_path(tiles: Array[Vector2i]):
+	for pos in tiles:
+		_place_marker(pos, COLOR_RANGED_PATH)
+
+
+## Clear only the flight path tiles (called when projectile lands).
+func clear_ranged_path():
+	clear_color(COLOR_RANGED_PATH)
 
 
 ## Clear ALL markers.

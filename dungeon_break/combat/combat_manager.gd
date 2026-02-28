@@ -452,7 +452,21 @@ func _do_attack(attacker_idx: int, target_idx: int):
 			# Fire the projectile — it will trigger impact FX on landing
 			var from_wpos: Vector3 = tactical_grid.grid_to_world(attacker["grid_pos"]) + Vector3(0, 1.1, 0)
 			var to_wpos: Vector3   = tactical_grid.grid_to_world(target["grid_pos"])   + Vector3(0, 1.1, 0)
+
+			# Highlight the flight path on the grid before launching
+			var from_gpos: Vector2i = attacker["grid_pos"]
+			var to_gpos: Vector2i   = target["grid_pos"]
+			var path_tiles: Array[Vector2i]
+			if weapon_id == "boomerang":
+				path_tiles = _get_boomerang_path_tiles(from_gpos, to_gpos)
+			else:
+				path_tiles = _get_line_path_tiles(from_gpos, to_gpos)
+			tactical_grid.highlight_ranged_path(path_tiles)
+
 			var impact_cb := func() -> void:
+				# Clear flight path when projectile lands
+				if tactical_grid and is_instance_valid(tactical_grid):
+					tactical_grid.clear_ranged_path()
 				_fx_impact(to_wpos, "slash")
 				_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.9, 0.25))
 				_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
@@ -685,6 +699,10 @@ func _compute_attack_targets(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
 	_attack_tiles.clear()
 
+	# Clear any leftover flight-path tiles from a previous ranged attack
+	if tactical_grid and is_instance_valid(tactical_grid):
+		tactical_grid.clear_ranged_path()
+
 	var a_range: int = unit["attack_range"]
 	for dx in range(-a_range, a_range + 1):
 		for dz in range(-a_range, a_range + 1):
@@ -695,7 +713,11 @@ func _compute_attack_targets(unit_idx: int):
 			var pos: Vector2i = unit["grid_pos"] + Vector2i(dx, dz)
 			_attack_tiles.append(pos)
 
-	tactical_grid.highlight_attack(_attack_tiles)
+	# Ranged weapons get a teal zone instead of the melee red
+	if a_range > 1:
+		tactical_grid.highlight_ranged_zone(_attack_tiles)
+	else:
+		tactical_grid.highlight_attack(_attack_tiles)
 
 
 func _flash_unit(unit: Dictionary):
@@ -1002,6 +1024,91 @@ func _fx_projectile(from_pos: Vector3, to_pos: Vector3, weapon_id: String, on_la
 		if on_land.is_valid():
 			on_land.call()
 	)
+
+
+## Bresenham line path tiles from player to target (skips player's own tile).
+func _get_line_path_tiles(from_gpos: Vector2i, to_gpos: Vector2i) -> Array[Vector2i]:
+	var tiles: Array[Vector2i] = []
+	var x0: int = from_gpos.x
+	var y0: int = from_gpos.y
+	var x1: int = to_gpos.x
+	var y1: int = to_gpos.y
+	var dx: int = absi(x1 - x0)
+	var dy: int = absi(y1 - y0)
+	var sx: int = 1 if x0 < x1 else -1
+	var sy: int = 1 if y0 < y1 else -1
+	var err: int = dx - dy
+
+	while true:
+		var gp := Vector2i(x0, y0)
+		if gp != from_gpos:
+			tiles.append(gp)
+		if x0 == x1 and y0 == y1:
+			break
+		var e2: int = 2 * err
+		if e2 > -dy:
+			err -= dy
+			x0 += sx
+		if e2 < dx:
+			err += dx
+			y0 += sy
+
+	return tiles
+
+
+## Boomerang Bezier arc path tiles — samples both the outbound LEFT arc and the
+## mirrored return RIGHT arc, matching the same parameters used in _fx_boomerang.
+func _get_boomerang_path_tiles(from_gpos: Vector2i, to_gpos: Vector2i) -> Array[Vector2i]:
+	if tactical_grid == null or not is_instance_valid(tactical_grid):
+		return []
+
+	var tiles: Array[Vector2i] = []
+	var seen: Dictionary = {}
+
+	var from_w: Vector3 = tactical_grid.grid_to_world(from_gpos)
+	var to_w: Vector3   = tactical_grid.grid_to_world(to_gpos)
+
+	# Flatten to XZ for direction/distance (Y doesn't affect grid tiles)
+	var fwd_flat := Vector2(to_w.x - from_w.x, to_w.z - from_w.z).normalized()
+	var fwd: Vector3 = Vector3(fwd_flat.x, 0.0, fwd_flat.y)
+	var dist: float  = Vector2(from_w.x, from_w.z).distance_to(Vector2(to_w.x, to_w.z))
+
+	# Outbound arc — LEFT of travel (matches _fx_boomerang perp_out)
+	var perp_out: Vector3 = Vector3(-fwd.z, 0.0, fwd.x)
+	var off_out: Vector3  = perp_out * (dist * 0.42)
+	var p0: Vector3 = from_w
+	var p1: Vector3 = from_w + fwd * (dist * 0.33) + off_out
+	var p2: Vector3 = from_w + fwd * (dist * 0.66) + off_out
+	var p3: Vector3 = to_w
+
+	# Return arc — RIGHT of travel (matches _fx_boomerang perp_ret)
+	var perp_ret: Vector3 = Vector3(fwd.z, 0.0, -fwd.x)
+	var off_ret: Vector3  = perp_ret * (dist * 0.42)
+	var r0: Vector3 = to_w
+	var r1: Vector3 = to_w - fwd * (dist * 0.33) + off_ret
+	var r2: Vector3 = to_w - fwd * (dist * 0.66) + off_ret
+	var r3: Vector3 = from_w
+
+	# Sample both arcs at 32 points and collect unique grid tiles
+	for i in 32:
+		var t: float  = float(i) / 31.0
+		var mt: float = 1.0 - t
+
+		# Outbound
+		var wp: Vector3  = mt*mt*mt*p0 + 3.0*mt*mt*t*p1 + 3.0*mt*t*t*p2 + t*t*t*p3
+		var gp: Vector2i = tactical_grid.world_to_grid(wp)
+		if not gp in seen:
+			seen[gp] = true
+			tiles.append(gp)
+
+		# Return
+		wp = mt*mt*mt*r0 + 3.0*mt*mt*t*r1 + 3.0*mt*t*t*r2 + t*t*t*r3
+		gp = tactical_grid.world_to_grid(wp)
+		if not gp in seen:
+			seen[gp] = true
+			tiles.append(gp)
+
+	return tiles
 
 
 ## Boomerang arc FX — V-shaped 3D mesh flies a Bezier arc to target, triggers on_land,
