@@ -39,7 +39,7 @@ func _build_screenshot_overlay():
 	_screenshot_toast.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			if _screenshot_dir_path != "":
-				OS.shell_open(_screenshot_dir_path)
+				_open_folder(_screenshot_dir_path)
 	)
 	_screenshot_layer.add_child(_screenshot_toast)
 
@@ -76,6 +76,24 @@ func _take_screenshot():
 	else:
 		print("Screenshot failed (error %d)" % err)
 		_show_screenshot_toast("Screenshot failed!")
+
+
+func _open_folder(path: String) -> void:
+	var platform := OS.get_name()
+	if platform == "Linux" or platform == "FreeBSD":
+		var desktop: String = OS.get_environment("XDG_CURRENT_DESKTOP").to_lower()
+		var cmd: String = "xdg-open"
+		if "kde" in desktop:
+			cmd = "dolphin"
+		elif "gnome" in desktop or "unity" in desktop:
+			cmd = "nautilus"
+		elif "xfce" in desktop:
+			cmd = "thunar"
+		elif "lxde" in desktop or "lxqt" in desktop:
+			cmd = "pcmanfm"
+		OS.create_process(cmd, [path])
+	else:
+		OS.shell_open(path)  # Windows / macOS work fine with shell_open
 
 
 func _show_screenshot_toast(msg: String):
