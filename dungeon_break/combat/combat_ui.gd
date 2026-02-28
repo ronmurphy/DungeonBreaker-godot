@@ -358,7 +358,13 @@ func _show_act_actions(unit: Dictionary):
 
 	var has_targets := not attackable.is_empty()
 
-	_add_action_button("Attack [1]", "Strike adjacent foe" if has_targets else "No one in range",
+	var a_range: int = unit.get("attack_range", 1)
+	var attack_desc: String
+	if has_targets:
+		attack_desc = "Strike adjacent foe" if a_range <= 1 else "Ranged attack  (range %d)" % a_range
+	else:
+		attack_desc = "No one in range" if a_range <= 1 else "No target in range %d" % a_range
+	_add_action_button("Attack [1]", attack_desc,
 		Color(1.0, 0.3, 0.3) if has_targets else Color(0.4, 0.2, 0.2),
 		func(): _start_target_selection() if has_targets else null)
 
@@ -832,6 +838,7 @@ func _unhandled_input(event: InputEvent):
 			KEY_S:
 				if _combat:
 					_combat.player_skip_move()
+					get_viewport().set_input_as_handled()
 
 	elif _combat.phase == 2:  # ACT
 		if _selecting_target:
@@ -839,6 +846,7 @@ func _unhandled_input(event: InputEvent):
 				KEY_ESCAPE:
 					_selecting_target = false
 					_enemy_target_panel.visible = false
+					get_viewport().set_input_as_handled()
 		else:
 			match event.keycode:
 				KEY_1:
@@ -849,13 +857,19 @@ func _unhandled_input(event: InputEvent):
 							_do_act("attack", attackable[0]["unit_idx"])
 						else:
 							_start_target_selection()
+					get_viewport().set_input_as_handled()
 				KEY_2:
 					_do_act("defend")
+					get_viewport().set_input_as_handled()
 				KEY_3:
 					_do_act("counter")
+					get_viewport().set_input_as_handled()
 				KEY_4:
 					_do_act("guts")
+					get_viewport().set_input_as_handled()
 				KEY_5:
 					_do_act("wait")
+					get_viewport().set_input_as_handled()
 				KEY_6:
 					_do_act("flee")
+					get_viewport().set_input_as_handled()

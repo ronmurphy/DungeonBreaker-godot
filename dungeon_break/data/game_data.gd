@@ -98,6 +98,11 @@ var total_kills: int = 0
 var in_dungeon: bool = false
 var torch_fuel: int = 100  # 0–100, burns while in dungeon
 
+# Save state
+var save_slot: int = 0                # which slot this run is using
+var scene_state: String = "camp"      # "camp" or "dungeon" — for save/load routing
+var dungeon_seed: int = 0             # RNG seed used to build current floor (0 = regenerate)
+
 # ── Inventory ────────────────────────────────────────────────────────────────
 const BACKPACK_SIZE := 24
 const HOTBAR_SIZE := 6
@@ -184,6 +189,8 @@ func _init_class(cls: PlayerClass):
 	equip_boots = {}
 	status_effects.clear()
 	rescued_npcs = ["daniels", "conner"]
+	scene_state  = "camp"
+	dungeon_seed = 0
 
 
 ## Change class and reset stats.
@@ -299,6 +306,10 @@ func to_save_dict() -> Dictionary:
 		"equip_legs": equip_legs.duplicate(true),
 		"equip_boots": equip_boots.duplicate(true),
 		"guts": guts,
+		"scene_state":  scene_state,
+		"dungeon_seed": dungeon_seed,
+		"save_slot":    save_slot,
+		"rescued_npcs": rescued_npcs.duplicate(),
 	}
 
 
@@ -326,4 +337,11 @@ func from_save_dict(data: Dictionary):
 	equip_chest = data.get("equip_chest", {})
 	equip_legs = data.get("equip_legs", {})
 	equip_boots = data.get("equip_boots", {})
-	guts = data.get("guts", 0)
+	guts         = data.get("guts",         0)
+	scene_state  = data.get("scene_state",  "camp")
+	dungeon_seed = data.get("dungeon_seed", 0)
+	save_slot    = data.get("save_slot",    0)
+	var saved_npcs = data.get("rescued_npcs", ["daniels", "conner"])
+	rescued_npcs = []
+	for n in saved_npcs:
+		rescued_npcs.append(n as String)

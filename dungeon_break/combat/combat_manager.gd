@@ -13,6 +13,31 @@ extends Node
 
 const TacticalGridScript = preload("res://dungeon_break/combat/tactical_grid.gd")
 
+# ── Combat FX — texture pools & SFX paths ────────────────────────────────────
+const _FX_SLASH: Array = [
+	"res://assets/art/textures/slash_01.png",
+	"res://assets/art/textures/slash_02.png",
+	"res://assets/art/textures/slash_04.png",
+	"res://assets/art/textures/slash_05.png",
+]
+const _FX_SPARK: Array = [
+	"res://assets/art/textures/spark_01.png",
+	"res://assets/art/textures/spark_03.png",
+	"res://assets/art/textures/spark_06.png",
+]
+const _FX_STAR: Array = [
+	"res://assets/art/textures/star_01.png",
+	"res://assets/art/textures/star_05.png",
+	"res://assets/art/textures/star_07.png",
+]
+const _FX_MAGIC: Array = [
+	"res://assets/art/textures/magic_01.png",
+	"res://assets/art/textures/circle_01.png",
+]
+const _SFX_HIT  := "res://assets/sfx/Craft.ogg"
+const _SFX_MISS := "res://assets/sfx/Select.ogg"
+const _SFX_GUTS := "res://assets/sfx/Fire.ogg"
+
 signal combat_ended(victory: bool)
 signal combat_started()
 signal turn_order_changed(order: Array)
@@ -36,7 +61,7 @@ enum Phase { IDLE, MOVE, ACT, RESOLVING, ENEMY_THINKING, ENDED }
 var phase: int = Phase.IDLE
 
 # ── Grid ─────────────────────────────────────────────────────────────────────
-var tactical_grid: Node3D = null   # TacticalGrid instance
+var tactical_grid: TacticalGridScript = null   # TacticalGrid instance
 
 # ── Units ────────────────────────────────────────────────────────────────────
 # Each unit dict: { "type": "player"/"enemy", "entity": Node3D, "grid_pos": Vector2i,
@@ -57,6 +82,8 @@ var _attack_tiles: Array[Vector2i] = []
 # Scene parent for adding the tactical grid Node3D
 var _scene_root: Node3D = null
 
+var _sfx_player: AudioStreamPlayer = null
+
 
 ## Start tactical combat in a room.
 func start_combat(enemies: Array, room: Dictionary, scene_root: Node3D):
@@ -66,6 +93,7 @@ func start_combat(enemies: Array, room: Dictionary, scene_root: Node3D):
 	_turn_order.clear()
 	_round = 0
 	phase = Phase.IDLE
+	_init_fx()
 
 	# Create tactical grid
 	tactical_grid = TacticalGridScript.new()
@@ -411,6 +439,8 @@ func _do_attack(attacker_idx: int, target_idx: int):
 		target_idx = nearby[0]["unit_idx"]
 
 	var target: Dictionary = _units[target_idx]
+	var is_ranged: bool = attacker.get("attack_range", 1) > 1
+	var weapon_id: String = GameData.equip_weapon.get("id", "") if attacker["type"] == "player" else ""
 
 	# Clash roll
 	var player_roll: int = GameData.clash_roll(attacker["attack"])
@@ -418,9 +448,26 @@ func _do_attack(attacker_idx: int, target_idx: int):
 
 	if player_roll > enemy_roll:
 		var dmg := maxi(1, player_roll - enemy_roll)
-		_apply_damage(target_idx, dmg)
-		action_resolved.emit("[color=yellow]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
-			attacker["name"], target["name"], player_roll, enemy_roll, dmg])
+		if is_ranged and tactical_grid:
+			# Fire the projectile — it will trigger impact FX on landing
+			var from_wpos: Vector3 = tactical_grid.grid_to_world(attacker["grid_pos"]) + Vector3(0, 1.1, 0)
+			var to_wpos: Vector3   = tactical_grid.grid_to_world(target["grid_pos"])   + Vector3(0, 1.1, 0)
+			var impact_cb := func() -> void:
+				_fx_impact(to_wpos, "slash")
+				_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.9, 0.25))
+				_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+				_fx_camera_shake(0.10)
+			if weapon_id == "boomerang":
+				_fx_boomerang(from_wpos, to_wpos, impact_cb)
+			else:
+				_fx_projectile(from_wpos, to_wpos, weapon_id, impact_cb)
+			_apply_damage(target_idx, dmg, true)   # suppress FX — projectile handles them
+			action_resolved.emit("[color=yellow]%s[/color] %s %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
+				attacker["name"], _ranged_verb(weapon_id), target["name"], player_roll, enemy_roll, dmg])
+		else:
+			_apply_damage(target_idx, dmg)
+			action_resolved.emit("[color=yellow]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
+				attacker["name"], target["name"], player_roll, enemy_roll, dmg])
 	elif enemy_roll > player_roll:
 		var dmg := maxi(1, enemy_roll - player_roll)
 		_apply_damage(attacker_idx, dmg)
@@ -429,6 +476,10 @@ func _do_attack(attacker_idx: int, target_idx: int):
 	else:
 		action_resolved.emit("%s and %s clash! [color=white]%d vs %d[/color] — stalemate!" % [
 			attacker["name"], target["name"], player_roll, enemy_roll])
+		if tactical_grid:
+			_fx_float_text(tactical_grid.grid_to_world(target["grid_pos"]) + Vector3(0, 1.2, 0),
+				"Clash!", Color(0.8, 0.8, 0.5))
+		_fx_play_sfx(_SFX_MISS, randf_range(0.9, 1.1))
 
 
 func _do_enemy_attack(attacker_idx: int, target_idx: int):
@@ -460,6 +511,10 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 	else:
 		action_resolved.emit("[color=gray]%s attacks but misses! [color=white]%d vs %d[/color][/color]" % [
 			attacker["name"], enemy_roll, player_roll])
+		if tactical_grid:
+			_fx_float_text(tactical_grid.grid_to_world(_units[0]["grid_pos"]) + Vector3(0, 1.2, 0),
+				"Dodge!", Color(0.4, 1.0, 0.6))
+		_fx_play_sfx(_SFX_MISS, randf_range(1.0, 1.3))
 
 
 func _do_defend(unit_idx: int):
@@ -489,10 +544,18 @@ func _do_guts(unit_idx: int):
 			total_dmg += dmg
 		GameData.guts = 0
 		action_resolved.emit("[color=red]GUTS UNLEASHED![/color] %d total damage to %d enemies!" % [total_dmg, targets.size()])
+		if tactical_grid:
+			_fx_guts_burst(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 0.5, 0))
+		_fx_play_sfx(_SFX_GUTS, 0.9)
+		_fx_camera_shake(0.40)
 	else:
 		GameData.guts += 1
 		GameData.ac_bonus_temp = 2
 		action_resolved.emit("%s charges guts! (%d/%d) (+2 AC)" % [unit["name"], GameData.guts, GameData.guts_max])
+		if tactical_grid:
+			_fx_float_text(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+				"GUTS %d/%d" % [GameData.guts, GameData.guts_max], Color(1.0, 0.55, 0.1))
+		_fx_camera_shake(0.06)
 
 
 func _do_flee():
@@ -539,7 +602,7 @@ func _get_occupied_positions(exclude_idx: int = -1) -> Array[Vector2i]:
 # DAMAGE / DEATH
 # ══════════════════════════════════════════════════════════════════════════════
 
-func _apply_damage(unit_idx: int, damage: int):
+func _apply_damage(unit_idx: int, damage: int, suppress_fx: bool = false):
 	var unit: Dictionary = _units[unit_idx]
 	unit["hp"] = maxi(0, unit["hp"] - damage)
 
@@ -558,6 +621,17 @@ func _apply_damage(unit_idx: int, damage: int):
 					if is_instance_valid(sprite):
 						sprite.modulate = Color.WHITE
 				)
+
+	# ── Impact FX ────────────────────────────────────────────────────────────
+	# suppress_fx=true means a projectile is in flight and will trigger FX on landing
+	if tactical_grid and not suppress_fx:
+		var wpos: Vector3 = tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.1, 0)
+		var is_player_hit: bool = unit["type"] == "player"
+		_fx_impact(wpos, "blunt" if is_player_hit else "slash")
+		var num_col := Color(1.0, 0.35, 0.2) if is_player_hit else Color(1.0, 0.9, 0.25)
+		_fx_float_text(wpos, "-%d" % damage, num_col)
+		_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+		_fx_camera_shake(0.18 if is_player_hit else 0.10)
 
 	if unit["hp"] <= 0:
 		_kill_unit(unit_idx)
@@ -693,6 +767,339 @@ func _clash_roll(power: int) -> int:
 			var bonus: int = power - die_size
 			return randi_range(1, die_size) + bonus
 	return randi_range(1, 4)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMBAT FX — impact sprites, floating numbers, screen shake, audio
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _init_fx() -> void:
+	if is_instance_valid(_sfx_player):
+		_sfx_player.queue_free()
+	_sfx_player = AudioStreamPlayer.new()
+	_scene_root.add_child(_sfx_player)
+
+
+func _fx_camera_shake(trauma: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam and cam.has_method("shake"):
+		cam.shake(trauma)
+
+
+func _fx_play_sfx(path: String, pitch: float = 1.0) -> void:
+	if not is_instance_valid(_sfx_player) or not ResourceLoader.exists(path):
+		return
+	_sfx_player.stream = load(path)
+	_sfx_player.pitch_scale = pitch
+	_sfx_player.play()
+
+
+## Spawn an impact flash sprite at world_pos.
+## type: "slash" (warm yellow-white), "blunt" (orange-red spark, enemy hit on player).
+func _fx_impact(world_pos: Vector3, impact_type: String = "slash") -> void:
+	if _scene_root == null:
+		return
+
+	var tex_list: Array
+	var tint: Color
+	match impact_type:
+		"slash":
+			tex_list = _FX_SLASH
+			tint = Color(1.5, 1.1, 0.6)   # warm emissive yellow-white
+		"blunt":
+			tex_list = _FX_SPARK
+			tint = Color(1.3, 0.4, 0.2)   # orange-red impact
+		_:
+			tex_list = _FX_SLASH
+			tint = Color(1.2, 1.0, 0.8)
+
+	if tex_list.is_empty():
+		return
+	var path: String = tex_list[randi() % tex_list.size()]
+	if not ResourceLoader.exists(path):
+		return
+
+	var sprite := Sprite3D.new()
+	sprite.texture = load(path)
+	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sprite.no_depth_test = true
+	sprite.render_priority = 10
+	sprite.pixel_size = 0.006
+	sprite.double_sided = true
+	sprite.modulate = tint
+	sprite.scale = Vector3.ZERO
+	sprite.rotation_degrees.z = randf_range(-35.0, 35.0)
+	_scene_root.add_child(sprite)
+	sprite.global_position = world_pos + Vector3(randf_range(-0.15, 0.15), 0.0, randf_range(-0.1, 0.1))
+
+	var tw := sprite.create_tween().set_parallel(true)
+	tw.tween_property(sprite, "scale", Vector3.ONE * 1.5, 0.11).set_ease(Tween.EASE_OUT)
+	tw.tween_property(sprite, "modulate:a", 0.0, 0.26)
+	tw.chain().tween_callback(sprite.queue_free)
+
+	# Secondary spark burst
+	if not _FX_SPARK.is_empty():
+		var spath: String = _FX_SPARK[randi() % _FX_SPARK.size()]
+		if ResourceLoader.exists(spath):
+			var spark := Sprite3D.new()
+			spark.texture = load(spath)
+			spark.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			spark.no_depth_test = true
+			spark.render_priority = 9
+			spark.pixel_size = 0.004
+			spark.modulate = Color(1.5, 1.2, 0.4, 0.9)
+			spark.scale = Vector3.ZERO
+			spark.rotation_degrees.z = randf_range(0.0, 360.0)
+			_scene_root.add_child(spark)
+			spark.global_position = world_pos + Vector3(randf_range(-0.4, 0.4), randf_range(0.1, 0.5), randf_range(-0.3, 0.3))
+			var stw := spark.create_tween().set_parallel(true)
+			stw.tween_property(spark, "scale", Vector3.ONE * 0.8, 0.12).set_ease(Tween.EASE_OUT)
+			stw.tween_property(spark, "modulate:a", 0.0, 0.28)
+			stw.chain().tween_callback(spark.queue_free)
+
+
+## Floating damage / status text — rises and fades over 0.65s.
+func _fx_float_text(world_pos: Vector3, text: String, color: Color = Color.WHITE) -> void:
+	if _scene_root == null:
+		return
+
+	var lbl := Label3D.new()
+	lbl.text = text
+	lbl.font_size = 32
+	lbl.modulate = color
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.no_depth_test = true
+	lbl.render_priority = 12
+	lbl.double_sided = true
+	lbl.outline_size = 8
+	lbl.outline_modulate = Color(0.0, 0.0, 0.0, 0.9)
+	lbl.pixel_size = 0.008
+	_scene_root.add_child(lbl)
+	lbl.global_position = world_pos + Vector3(randf_range(-0.25, 0.25), 0.1, randf_range(-0.1, 0.1))
+
+	var tween := lbl.create_tween().set_parallel(true)
+	tween.tween_property(lbl, "global_position", lbl.global_position + Vector3(0.0, 1.8, 0.0), 0.65) \
+		.set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_OUT)
+	tween.tween_property(lbl, "modulate:a", 0.0, 0.65).set_delay(0.22)
+	tween.chain().tween_callback(lbl.queue_free)
+
+
+## Expanding magic circle + star spray for Guts Unleashed.
+func _fx_guts_burst(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# Two expanding magic circles
+	for ci in mini(2, _FX_MAGIC.size()):
+		var cpath: String = _FX_MAGIC[ci]
+		if not ResourceLoader.exists(cpath):
+			continue
+		var circle := Sprite3D.new()
+		circle.texture = load(cpath)
+		circle.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		circle.no_depth_test = true
+		circle.render_priority = 8
+		circle.pixel_size = 0.010
+		circle.modulate = Color(1.5, 0.15, 0.15, 0.9)
+		circle.scale = Vector3.ZERO
+		circle.rotation_degrees.y = float(ci) * 45.0
+		_scene_root.add_child(circle)
+		circle.global_position = world_pos
+
+		var ctw := circle.create_tween().set_parallel(true)
+		ctw.tween_property(circle, "scale", Vector3.ONE * (2.2 + ci * 0.7), 0.4) \
+			.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+		ctw.tween_property(circle, "modulate:a", 0.0, 0.5)
+		ctw.chain().tween_callback(circle.queue_free)
+
+	# Six-way star burst
+	for i in 6:
+		if _FX_STAR.is_empty():
+			break
+		var spath: String = _FX_STAR[randi() % _FX_STAR.size()]
+		if not ResourceLoader.exists(spath):
+			continue
+		var star := Sprite3D.new()
+		star.texture = load(spath)
+		star.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		star.no_depth_test = true
+		star.render_priority = 9
+		star.pixel_size = 0.005
+		star.modulate = Color(1.5, 0.7, 0.2, 1.0)
+		star.scale = Vector3.ZERO
+		star.rotation_degrees.z = randf_range(0.0, 360.0)
+		_scene_root.add_child(star)
+
+		var angle := (float(i) / 6.0) * TAU + randf_range(-0.3, 0.3)
+		var radius := randf_range(0.8, 1.6)
+		star.global_position = world_pos + Vector3(cos(angle) * radius, randf_range(0.3, 1.2), sin(angle) * radius)
+
+		var stw := star.create_tween().set_parallel(true)
+		stw.tween_property(star, "scale", Vector3.ONE * randf_range(0.7, 1.1), 0.20).set_ease(Tween.EASE_OUT)
+		stw.tween_property(star, "modulate:a", 0.0, 0.45).set_delay(0.10)
+		stw.chain().tween_callback(star.queue_free)
+
+
+## Attack verb for ranged weapons (used in combat log).
+func _ranged_verb(weapon_id: String) -> String:
+	match weapon_id:
+		"fire_staff": return "blasts"
+		"ice_bow":    return "freezes"
+		"crossbow":   return "shoots"
+		"boomerang":  return "hurls"
+		_:            return "launches at"
+
+
+## Flying projectile from `from_pos` to `to_pos`.
+## `on_land` callback fires when the sprite reaches the target.
+func _fx_projectile(from_pos: Vector3, to_pos: Vector3, weapon_id: String, on_land: Callable = Callable()) -> void:
+	if _scene_root == null:
+		if on_land.is_valid():
+			on_land.call()
+		return
+
+	var tex_path: String
+	var tint: Color
+	var travel_time := 0.28
+
+	match weapon_id:
+		"fire_staff":
+			tex_path    = _FX_MAGIC[0]               # magic_01.png — fireball
+			tint        = Color(2.0, 0.5, 0.1, 1.0)  # bright orange
+		"ice_bow":
+			tex_path    = _FX_SPARK[0]               # spark_01.png — frost bolt
+			tint        = Color(0.5, 1.5, 2.5, 1.0)  # icy blue
+			travel_time = 0.22
+		"crossbow":
+			tex_path    = _FX_SPARK[1]               # spark_03.png — crossbow bolt
+			tint        = Color(1.8, 1.5, 0.9, 1.0)  # bright white-gold
+			travel_time = 0.20
+		_:
+			tex_path    = _FX_STAR[0]                # star_01.png — generic thrown
+			tint        = Color(1.5, 1.2, 0.5, 1.0)
+
+	if not ResourceLoader.exists(tex_path):
+		if on_land.is_valid():
+			on_land.call()
+		return
+
+	var proj := Sprite3D.new()
+	proj.texture         = load(tex_path)
+	proj.billboard       = BaseMaterial3D.BILLBOARD_ENABLED
+	proj.no_depth_test   = true
+	proj.render_priority = 11
+	proj.pixel_size      = 0.005
+	proj.modulate        = tint
+	proj.scale           = Vector3.ONE * 0.55
+	_scene_root.add_child(proj)
+	proj.global_position = from_pos
+
+	var tw := proj.create_tween()
+	tw.tween_property(proj, "global_position", to_pos, travel_time) \
+		.set_trans(Tween.TRANS_LINEAR)
+	tw.tween_callback(func():
+		proj.queue_free()
+		if on_land.is_valid():
+			on_land.call()
+	)
+
+
+## Boomerang arc FX — V-shaped 3D mesh flies a Bezier arc to target, triggers on_land,
+## then arcs back on a mirrored curve and disappears.
+func _fx_boomerang(from_pos: Vector3, to_pos: Vector3, on_land: Callable = Callable()) -> void:
+	if _scene_root == null:
+		if on_land.is_valid():
+			on_land.call()
+		return
+
+	# ── Build V-shaped boomerang mesh ──────────────────────────────────────────
+	var boom := Node3D.new()
+	boom.global_position = from_pos
+	_scene_root.add_child(boom)
+
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.72, 0.50, 0.28)   # wood brown
+	mat.roughness    = 0.55
+	mat.emission_enabled = true
+	mat.emission = Color(0.25, 0.55, 1.0)         # magical blue glow
+	mat.emission_energy_multiplier = 1.8
+
+	var left_mesh := BoxMesh.new()
+	left_mesh.size = Vector3(0.55, 0.09, 0.13)
+	var left_arm := MeshInstance3D.new()
+	left_arm.mesh = left_mesh
+	left_arm.position = Vector3(-0.27, 0.0, 0.0)
+	left_arm.rotation_degrees = Vector3(0.0, 0.0, 22.0)
+	left_arm.material_override = mat
+	boom.add_child(left_arm)
+
+	var right_mesh := BoxMesh.new()
+	right_mesh.size = Vector3(0.55, 0.09, 0.13)
+	var right_arm := MeshInstance3D.new()
+	right_arm.mesh = right_mesh
+	right_arm.position = Vector3(0.27, 0.0, 0.0)
+	right_arm.rotation_degrees = Vector3(0.0, 0.0, -22.0)
+	right_arm.material_override = mat
+	boom.add_child(right_arm)
+
+	var glow := OmniLight3D.new()
+	glow.light_color   = Color(0.3, 0.6, 1.0)
+	glow.light_energy  = 2.2
+	glow.omni_range    = 2.8
+	glow.shadow_enabled = false
+	boom.add_child(glow)
+
+	# ── Cubic Bezier curves ────────────────────────────────────────────────────
+	var fwd: Vector3  = (to_pos - from_pos).normalized()
+	var dist: float   = from_pos.distance_to(to_pos)
+
+	# Outbound — arc to the LEFT of travel
+	var perp_out: Vector3 = Vector3(-fwd.z, 0.0, fwd.x).normalized()
+	var off_out: Vector3  = perp_out * (dist * 0.42)
+	var p0: Vector3 = from_pos
+	var p1: Vector3 = from_pos + fwd * (dist * 0.33) + off_out
+	var p2: Vector3 = from_pos + fwd * (dist * 0.66) + off_out
+	var p3: Vector3 = to_pos
+
+	# Return — arc to the RIGHT (mirror)
+	var perp_ret: Vector3 = Vector3(fwd.z, 0.0, -fwd.x).normalized()
+	var off_ret: Vector3  = perp_ret * (dist * 0.42)
+	var r0: Vector3 = to_pos
+	var r1: Vector3 = to_pos - fwd * (dist * 0.33) + off_ret
+	var r2: Vector3 = to_pos - fwd * (dist * 0.66) + off_ret
+	var r3: Vector3 = from_pos
+
+	# ── Tween outbound then return ─────────────────────────────────────────────
+	var tw: Tween = create_tween()
+
+	tw.tween_method(func(t: float) -> void:
+		if not is_instance_valid(boom):
+			return
+		var mt: float = 1.0 - t
+		boom.global_position = mt*mt*mt*p0 + 3.0*mt*mt*t*p1 + 3.0*mt*t*t*p2 + t*t*t*p3
+		# Spin flat (around Y) like a frisbee, plus slight tilt into travel direction
+		boom.rotation.y = Time.get_ticks_msec() * 0.014
+		boom.rotation.x = deg_to_rad(80.0)
+	, 0.0, 1.0, 0.40)
+
+	tw.tween_callback(func() -> void:
+		if on_land.is_valid():
+			on_land.call()
+	)
+
+	tw.tween_method(func(t: float) -> void:
+		if not is_instance_valid(boom):
+			return
+		var mt: float = 1.0 - t
+		boom.global_position = mt*mt*mt*r0 + 3.0*mt*mt*t*r1 + 3.0*mt*t*t*r2 + t*t*t*r3
+		boom.rotation.y = Time.get_ticks_msec() * 0.014
+		boom.rotation.x = deg_to_rad(80.0)
+	, 0.0, 1.0, 0.32)
+
+	tw.tween_callback(func() -> void:
+		if is_instance_valid(boom):
+			boom.queue_free()
+	)
 
 
 func _get_enemy_spawn_positions(room: Dictionary, ox: int, oz: int, count: int) -> Array[Vector2i]:

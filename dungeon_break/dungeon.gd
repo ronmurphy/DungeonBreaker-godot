@@ -84,6 +84,13 @@ func _build_dungeon():
 	# Cache wall material for combat transparency toggling (floor blocks use the other material)
 	_terrain_mat = load("res://blocky_game/blocks/terrain_material_wall.tres") as StandardMaterial3D
 
+	# Seed the RNG so the same floor can be reproduced on load.
+	# A new floor generates a fresh seed; loading restores the saved one.
+	if GameData.dungeon_seed == 0:
+		GameData.dungeon_seed = randi() | 1  # |1 avoids seed(0) edge case
+	seed(GameData.dungeon_seed)
+	GameData.scene_state = "dungeon"
+
 	var data: Dictionary = _dungeon_stamper.build_dungeon(_floor_num)
 
 	# Clean up temp viewer now that stamping is done

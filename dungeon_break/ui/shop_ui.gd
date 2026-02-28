@@ -10,6 +10,9 @@ signal shop_closed
 # Magic weapons sold by Zara (WEAPON type with arcane flavor)
 const MAGIC_WEAPON_IDS: Array = ["magic_knife", "fire_staff", "ice_bow"]
 
+# Non-armor items Daniels (armor_shop) always stocks — general goods
+const DANIELS_EXTRAS: Array = ["boomerang"]
+
 # Food items sold by Conner alongside potions (all tiers combined)
 const POTION_SHOP_FOOD: Array = ["bread", "apple", "mushroom", "berry", "honey", "cookie", "energy_bar"]
 
@@ -350,6 +353,9 @@ func _get_shop_items(role: String) -> Array:
 func _item_allowed(id: String, itype: int, role: String, tier: int) -> bool:
 	match role:
 		"armor_shop":
+			# Daniels also stocks a few general-goods items at all tiers
+			if id in DANIELS_EXTRAS:
+				return true
 			if not (itype == ItemDB.ItemType.HELM or itype == ItemDB.ItemType.CHEST
 					or itype == ItemDB.ItemType.LEGS or itype == ItemDB.ItemType.BOOTS):
 				return false

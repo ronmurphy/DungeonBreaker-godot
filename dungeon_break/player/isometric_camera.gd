@@ -53,6 +53,11 @@ var _zoom_tween: Tween = null
 ## Distance to snap to when combat begins (close enough to see the tactical grid clearly)
 const COMBAT_DISTANCE := 18.0
 
+# ── Screen shake ─────────────────────────────────────────────────────────────
+var _shake_trauma: float = 0.0
+const _SHAKE_DECAY  := 3.5   # trauma units drained per second
+const _SHAKE_OFFSET := 0.30  # max positional displacement (metres)
+
 
 func _ready():
 	top_level = true
@@ -148,8 +153,25 @@ func _process(delta: float):
 
 	var desired_pos := target_pos + offset
 
+	# Screen shake — oscillating offset on desired_pos, decays quadratically
+	if _shake_trauma > 0.0:
+		_shake_trauma = maxf(0.0, _shake_trauma - _SHAKE_DECAY * delta)
+		var s := _shake_trauma * _shake_trauma  # quadratic for snappy feel
+		var t := Time.get_ticks_msec() * 0.04
+		desired_pos += Vector3(
+			sin(t * 7.3) * s * _SHAKE_OFFSET,
+			cos(t * 5.7) * s * _SHAKE_OFFSET * 0.3,
+			sin(t * 9.1) * s * _SHAKE_OFFSET
+		)
+
 	# Smooth follow
 	global_position = global_position.lerp(desired_pos, follow_smoothing)
 
 	# Always look at the target
 	look_at(target_pos, Vector3.UP)
+
+
+## Add screen-shake trauma (0..1, stacks, capped at 1.0).
+## 0.08 = light tap,  0.2 = solid hit,  0.4 = guts / explosion.
+func shake(trauma: float = 0.25) -> void:
+	_shake_trauma = minf(_shake_trauma + trauma, 1.0)

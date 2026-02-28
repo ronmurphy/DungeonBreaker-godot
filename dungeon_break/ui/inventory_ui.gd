@@ -89,6 +89,24 @@ func _build_ui():
 	title_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title_lbl)
 
+	# ── Save button ──
+	var save_btn := Button.new()
+	save_btn.text = "💾 Save"
+	save_btn.add_theme_font_size_override("font_size", 12)
+	var ss := StyleBoxFlat.new()
+	ss.bg_color = Color(0.06, 0.12, 0.18, 0.9)
+	ss.border_color = Color(0.3, 0.55, 0.75)
+	ss.set_border_width_all(1)
+	ss.set_corner_radius_all(4)
+	ss.set_content_margin_all(4)
+	save_btn.add_theme_stylebox_override("normal", ss)
+	var ss_h := ss.duplicate() as StyleBoxFlat
+	ss_h.bg_color = Color(0.1, 0.2, 0.3, 0.9)
+	save_btn.add_theme_stylebox_override("hover", ss_h)
+	save_btn.add_theme_color_override("font_color", Color(0.55, 0.85, 1.0))
+	save_btn.pressed.connect(_on_save_pressed)
+	header.add_child(save_btn)
+
 	var close_btn := Button.new()
 	close_btn.text = "✕  Close  [ESC]"
 	close_btn.add_theme_font_size_override("font_size", 12)
@@ -729,3 +747,11 @@ func _quick_use_at_index(idx: int):
 		_show_toast("Equipped  %s" % item.get("name", "item"))
 		if _is_open:
 			_refresh()
+
+
+func _on_save_pressed() -> void:
+	var ok := SaveManager.save_game(GameData.save_slot)
+	if ok:
+		_show_toast("Game saved  (slot %d)" % (GameData.save_slot + 1))
+	else:
+		_show_toast("Save failed!")

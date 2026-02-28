@@ -115,6 +115,7 @@ func _build_camp():
 		if GameData.gold == 0:
 			GameData.add_gold(15)
 
+	GameData.scene_state = "camp"
 	MusicManager.play_camp()
 	print("Game: camp fully initialised")
 

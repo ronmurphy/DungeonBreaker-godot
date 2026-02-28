@@ -100,6 +100,12 @@ const ITEMS := {
 		"description": "A crude spear. Better than nothing.",
 		"attack_bonus": 1, "value": 3,
 	},
+	"boomerang": {
+		"id": "boomerang", "name": "Boomerang", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/boomerang.png",
+		"description": "A carved wooden boomerang. Hits from range. +2 attack range.",
+		"attack_bonus": 2, "value": 12, "range_bonus": 2,
+	},
 	"axe": {
 		"id": "axe", "name": "Battle Axe", "type": ItemType.WEAPON,
 		"icon": "res://assets/art/tools/axe.png",
@@ -340,6 +346,7 @@ const ENEMY_LOOT := [
 	# Weapons
 	[1, 2,  6,  "club"],
 	[1, 2,  5,  "stone_spear"],
+	[1, 3,  4,  "boomerang"],
 	[1, 3,  5,  "sword"],
 	[2, 5,  4,  "blade"],
 	[2, 5,  4,  "axe"],
