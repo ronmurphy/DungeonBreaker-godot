@@ -8,6 +8,8 @@ extends Node
 ##
 ## Called once after terrain loads. Uses VoxelTool to place blocks.
 
+const NpcSpriteScript = preload("res://dungeon_break/entities/npc_sprite.gd")
+
 # ── Block IDs matching voxel_library.tres order ──────────────────────────────
 const AIR       = 0
 const DIRT      = 1
@@ -235,6 +237,68 @@ func _add_campfire_light(pos: Vector3, node_name: String, color: Color, energy: 
 	light.shadow_enabled = false  # Performance: skip shadow for camp lights
 	_scene_root.add_child(light)
 	light.global_position = pos
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# NPC SPAWNING — one slot per rescued NPC, spread around camp
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Six named slots scattered around the bonfire/spire area.
+## "pos" = Vector2i(world_x, world_z), "face" = Vector2(fx, fz) direction NPC faces.
+const NPC_SLOTS: Array = [
+	{ "pos": Vector2i(-18,  0), "face": Vector2( 1,  0) },  # west,  face east
+	{ "pos": Vector2i( -5,-17), "face": Vector2( 0,  1) },  # north, face south
+	{ "pos": Vector2i(  5, -3), "face": Vector2(-1,  1) },  # near bonfire NE
+	{ "pos": Vector2i( -2,  7), "face": Vector2( 1, -1) },  # near bonfire SW
+	{ "pos": Vector2i( 17, -9), "face": Vector2(-1,  1) },  # east area
+	{ "pos": Vector2i( 20,  9), "face": Vector2(-1,  0) },  # east, face west
+]
+
+
+## Spawn billboard sprites for every rescued NPC. Returns the NpcSprite nodes
+## so game.gd can call update_facing() on them each frame.
+func spawn_rescued_npcs() -> Array:
+	if _scene_root == null:
+		return []
+
+	var sprites: Array = []
+	var rescued: Array = GameData.rescued_npcs
+
+	for i in mini(rescued.size(), NPC_SLOTS.size()):
+		var npc_key: String = rescued[i]
+		var slot:    Dictionary = NPC_SLOTS[i]
+		var npc_def: Dictionary = NpcDB.get_def(npc_key)
+		if npc_def.is_empty():
+			continue
+
+		var pos2: Vector2i  = slot["pos"]
+		var face2: Vector2  = slot["face"]
+		var sy    := _surface_y(pos2.x, pos2.y)
+		var world_pos := Vector3(pos2.x + 0.5, sy + 1.5, pos2.y + 0.5)
+		var face_dir  := Vector3(face2.x, 0.0, face2.y).normalized()
+
+		# ── NPC billboard sprite ──
+		var npc_sprite := NpcSpriteScript.new() as NpcSprite
+		npc_sprite.name = "Npc_" + npc_key
+		_scene_root.add_child(npc_sprite)
+		npc_sprite.global_position = world_pos
+		npc_sprite.setup(npc_def.get("sprite_prefix", "") as String, face_dir)
+		sprites.append(npc_sprite)
+
+		# ── Interaction trigger area ──
+		var area := Area3D.new()
+		area.name = "NpcArea_" + npc_key
+		var coll  := CollisionShape3D.new()
+		var shape := SphereShape3D.new()
+		shape.radius = 2.5
+		coll.shape   = shape
+		area.add_child(coll)
+		area.set_meta("interaction", "npc")
+		area.set_meta("npc_key",     npc_key)
+		_scene_root.add_child(area)
+		area.global_position = Vector3(world_pos.x, sy + 1.0, world_pos.z)
+
+	return sprites
 
 
 ## Get the world position of the dungeon entrance (for player navigation).

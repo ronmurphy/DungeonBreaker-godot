@@ -22,10 +22,10 @@ const LOD_SIMPLE_DIST := 60.0    # Simplified sprite below this
 const LOD_CULL_DIST := 100.0     # Invisible beyond this
 
 # ── Enemy sprite sizing ───────────────────────────────────────────────────────
-# Enemy portraits are 1024×1024px. At 0.0015 that's ~1.5 units tall (≈ 1 voxel block).
+# Enemy portraits are 1024×1024px. At 0.003 that's ~3 units tall (≈ 3 voxel blocks).
 # Adjust here if sprites need to be bigger or smaller overall.
-const ENTITY_PIXEL_SIZE_FULL   := 0.0015
-const ENTITY_PIXEL_SIZE_SIMPLE := 0.001
+const ENTITY_PIXEL_SIZE_FULL   := 0.003
+const ENTITY_PIXEL_SIZE_SIMPLE := 0.0015
 
 # ── Texture cache ────────────────────────────────────────────────────────────
 var _texture_cache: Dictionary = {}  # path → Texture2D
@@ -184,7 +184,7 @@ func _create_entity_node() -> Node3D:
 	sprite.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	sprite.pixel_size = ENTITY_PIXEL_SIZE_FULL
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	sprite.transform.origin.y = 0.35  # Centre above ground
+	sprite.transform.origin.y = 1.5   # Centre above ground (scales with pixel size)
 	sprite.shaded = false
 	sprite.render_priority = 2  # Draw on top of grid tiles (priority 1)
 	root.add_child(sprite)

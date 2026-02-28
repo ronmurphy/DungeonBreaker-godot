@@ -14,7 +14,10 @@ const GRASS  = 2
 const LOG_X  = 3
 const LOG_Y  = 4
 const LOG_Z  = 5
-const STAIRS = 6
+const STAIRS    = 6   # stairs_nx — climb toward -X
+const STAIRS_NZ = 9   # stairs_nz — climb toward -Z
+const STAIRS_PX = 10  # stairs_px — climb toward +X
+const STAIRS_PZ = 11  # stairs_pz — climb toward +Z
 const PLANKS = 7
 const TALL_GRASS = 8
 const GLASS  = 12
@@ -238,6 +241,16 @@ func _build_staircases(grid: Array, rooms: Array, cols: int, rows: int, ox: int,
 ## dir = direction away from the room (so tile at i=0 is adjacent, i=1 is one further out).
 ## fill_block fills the solid sub-support so stair blocks don't float.
 func _stamp_stair_approach(wx: int, wz: int, elev: int, dir: Vector2i, fill_block: int) -> void:
+	# dir is the direction away from the room — player climbs in the opposite direction.
+	# stair ID encodes which way you climb (the open/low end faces dir).
+	const DIR_TO_STAIR: Dictionary = {
+		Vector2i( 1,  0): STAIRS,    # extends +X → climb toward -X → stairs_nx
+		Vector2i(-1,  0): STAIRS_PX, # extends -X → climb toward +X → stairs_px
+		Vector2i( 0,  1): STAIRS_NZ, # extends +Z → climb toward -Z → stairs_nz
+		Vector2i( 0, -1): STAIRS_PZ, # extends -Z → climb toward +Z → stairs_pz
+	}
+	var stair_id: int = DIR_TO_STAIR.get(dir, STAIRS)
+
 	var num_stairs := elev - 1   # 0 for elev≤1, 1 for elev=2, 2 for elev=3
 	for i in range(num_stairs):
 		var tx := wx + dir.x * i
@@ -246,8 +259,8 @@ func _stamp_stair_approach(wx: int, wz: int, elev: int, dir: Vector2i, fill_bloc
 		# Fill solid support below this step so it doesn't float
 		for y in range(FLOOR_Y + 1, step_y):
 			_voxel_tool.set_voxel(Vector3i(tx, y, tz), fill_block)
-		# Place the stair block
-		_voxel_tool.set_voxel(Vector3i(tx, step_y, tz), STAIRS)
+		# Place the correctly-oriented stair block
+		_voxel_tool.set_voxel(Vector3i(tx, step_y, tz), stair_id)
 		# Clear headroom from just above the stair up to wall top
 		for y in range(step_y + 1, FLOOR_Y + MAX_ELEVATION + WALL_HEIGHT + 2):
 			_voxel_tool.set_voxel(Vector3i(tx, y, tz), AIR)

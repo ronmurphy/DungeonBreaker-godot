@@ -76,5 +76,9 @@ func _on_return_to_camp():
 
 
 func _on_advance_floor():
+	var rescued := GameData.rescue_random_npc()
+	if rescued != "":
+		var npc_def: Dictionary = NpcDB.get_def(rescued)
+		print("Main: rescued — %s (%s)" % [npc_def.get("name", rescued), rescued])
 	GameData.advance_floor()
 	_load_dungeon(GameData.current_floor)

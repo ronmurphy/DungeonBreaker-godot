@@ -28,6 +28,7 @@ EntityManager="*res://dungeon_break/entities/entity_manager.gd"
 ItemDB="*res://dungeon_break/data/item_db.gd"
 GraphicsManager="*res://dungeon_break/data/graphics_manager.gd"
 MusicManager="*res://dungeon_break/data/music_manager.gd"
+NpcDB="*res://dungeon_break/data/npc_db.gd"
 
 [display]
 

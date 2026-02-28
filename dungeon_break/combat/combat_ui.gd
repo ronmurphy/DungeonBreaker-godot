@@ -675,7 +675,7 @@ func _create_unit_card(u: Dictionary, is_player: bool, unit_color: Color) -> Dic
 
 	var portrait_path := ""
 	if is_player:
-		portrait_path = "res://assets/art/entities/human_male.png"
+		portrait_path = GameData.get_portrait_path()
 	elif u.has("entity_key") and u["entity_key"] != "":
 		portrait_path = EnemyDB.get_portrait_path(u["entity_key"])
 	if portrait_path != "" and ResourceLoader.exists(portrait_path):

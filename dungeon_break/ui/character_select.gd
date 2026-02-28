@@ -3,72 +3,74 @@ extends Control
 ##
 ## Player picks race (Human / Elf / Dwarf / Goblin), gender (Male / Female),
 ## and a name, then clicks "Begin Adventure" to proceed to camp.
+##
+## Portraits: assets/art/player_avatars/{gender_char}{race_char}_port.png
+##   m/f = male/female   h/e/d/g = human/elf/dwarf/goblin
+##   e.g. mh_port.png, fe_port.png
+##
+## In-game sprites: assets/art/player_avatars/{race}_{gender}[_pose].png
 
 signal confirmed()
 
-# Front-idle frame shared by every spritesheet (from character_sprite.gd coords)
-const IDLE_SW := Rect2(739, 0, 509, 771)
+const AVATAR_DIR := "res://assets/art/player_avatars/"
 
 const RACES: Array = [
-	{ "key": "human",  "label": "Human"  },
-	{ "key": "elf",    "label": "Elf"    },
-	{ "key": "dwarf",  "label": "Dwarf"  },
-	{ "key": "goblin", "label": "Goblin" },
+	{ "key": "human",  "label": "Human",  "code": "h" },
+	{ "key": "elf",    "label": "Elf",    "code": "e" },
+	{ "key": "dwarf",  "label": "Dwarf",  "code": "d" },
+	{ "key": "goblin", "label": "Goblin", "code": "g" },
 ]
 
-# Note: elf_male filename has an extra 'd' — matches actual file on disk
-const SHEET_PATHS: Dictionary = {
-	"human_male":    "res://assets/REFS/human_male_spritesheet_transparent.png",
-	"human_female":  "res://assets/REFS/human_female_spritesheet_transparent.png",
-	"elf_male":      "res://assets/REFS/elf_male_spritesheetd_transparent.png",
-	"elf_female":    "res://assets/REFS/elf_female_spritesheet_transparent.png",
-	"dwarf_male":    "res://assets/REFS/dwarf_male_spritesheet_transparent.png",
-	"dwarf_female":  "res://assets/REFS/dwarf_female_spritesheet_transparent.png",
-	"goblin_male":   "res://assets/REFS/goblin_male_spritesheet_transparent.png",
-	"goblin_female": "res://assets/REFS/goblin_female_spritesheet_transparent.png",
-}
+# Portrait path: {gender_char}{race_code}_port.png
+func _portrait_path(race_code: String, gender: String) -> String:
+	var g := "m" if gender == "male" else "f"
+	return AVATAR_DIR + g + race_code + "_port.png"
+
+# In-game sprite prefix: assets/art/player_avatars/{race}_{gender}
+func _sprite_prefix(race: String, gender: String) -> String:
+	return AVATAR_DIR + race + "_" + gender
 
 var _selected_race:   String = "human"
 var _selected_gender: String = "male"
 
-# race_key → { "card": PanelContainer, "preview": TextureRect }
+# race_key → { "card": PanelContainer, "preview": TextureRect, "code": String }
 var _race_data: Dictionary = {}
-# "male"/"female" → Button
+# "male" / "female" → Button
 var _gender_btns: Dictionary = {}
 
 var _name_input: LineEdit = null
 
-# Preloaded textures: sheet_key → Texture2D
-var _tex_cache: Dictionary = {}
+# Portrait texture cache: "{gender_char}{race_code}" → Texture2D
+var _port_cache: Dictionary = {}
 
 
 func _ready() -> void:
 	anchor_right  = 1.0
 	anchor_bottom = 1.0
-	_preload_textures()
+	_preload_portraits()
 	_build_ui()
 	_refresh()
 
 
-func _preload_textures() -> void:
-	for key: String in SHEET_PATHS:
-		var path: String = SHEET_PATHS[key] as String
-		if ResourceLoader.exists(path):
-			_tex_cache[key] = load(path) as Texture2D
-		else:
-			push_warning("CharacterSelect: sheet not found — %s" % path)
+func _preload_portraits() -> void:
+	for item in RACES:
+		var code: String = item["code"] as String
+		for g_char in ["m", "f"]:
+			var path: String = AVATAR_DIR + g_char + code + "_port.png"
+			if ResourceLoader.exists(path):
+				_port_cache[g_char + code] = load(path) as Texture2D
+			else:
+				push_warning("CharacterSelect: portrait not found — %s" % path)
 
 
-# ── UI construction ──────────────────────────────────────────────────────────
+# ── UI construction ───────────────────────────────────────────────────────────
 
 func _build_ui() -> void:
-	# Dark background
 	var bg := ColorRect.new()
 	bg.color = Color(0.05, 0.03, 0.08)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
 
-	# Centered column
 	var center := CenterContainer.new()
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
@@ -110,26 +112,25 @@ func _add_race_row(parent: VBoxContainer) -> void:
 	for item in RACES:
 		var key:   String = item["key"]   as String
 		var label: String = item["label"] as String
-		row.add_child(_make_race_card(key, label))
+		var code:  String = item["code"]  as String
+		row.add_child(_make_race_card(key, label, code))
 
 
-func _make_race_card(race_key: String, race_label: String) -> PanelContainer:
+func _make_race_card(race_key: String, race_label: String, race_code: String) -> PanelContainer:
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(130, 190)
+	card.custom_minimum_size = Vector2(130, 200)
 
 	var inner := VBoxContainer.new()
 	inner.alignment = BoxContainer.ALIGNMENT_CENTER
 	inner.add_theme_constant_override("separation", 6)
 	card.add_child(inner)
 
-	# Sprite preview
 	var preview := TextureRect.new()
-	preview.custom_minimum_size = Vector2(90, 118)
-	preview.stretch_mode       = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	preview.expand_mode        = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	preview.custom_minimum_size = Vector2(100, 140)
+	preview.stretch_mode        = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	preview.expand_mode         = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 	inner.add_child(preview)
 
-	# Race name
 	var lbl := Label.new()
 	lbl.text = race_label
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -137,14 +138,13 @@ func _make_race_card(race_key: String, race_label: String) -> PanelContainer:
 	lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
 	inner.add_child(lbl)
 
-	# Select button
 	var btn := Button.new()
 	btn.text = "Select"
 	btn.custom_minimum_size = Vector2(90, 28)
 	btn.pressed.connect(_on_race_selected.bind(race_key))
 	inner.add_child(btn)
 
-	_race_data[race_key] = { "card": card, "preview": preview }
+	_race_data[race_key] = { "card": card, "preview": preview, "code": race_code }
 	return card
 
 
@@ -198,7 +198,7 @@ func _add_begin_button(parent: VBoxContainer) -> void:
 	parent.add_child(btn)
 
 
-# ── Interaction ──────────────────────────────────────────────────────────────
+# ── Interaction ───────────────────────────────────────────────────────────────
 
 func _on_race_selected(race_key: String) -> void:
 	_selected_race = race_key
@@ -211,40 +211,31 @@ func _on_gender_selected(gender: String) -> void:
 
 
 func _refresh() -> void:
-	# Update every race card's preview and highlight
-	for race_key: String in _race_data:
-		var data: Dictionary = _race_data[race_key]
-		var card: PanelContainer    = data["card"]    as PanelContainer
-		var preview: TextureRect    = data["preview"] as TextureRect
+	var g_char := "m" if _selected_gender == "male" else "f"
 
-		# Show the current-gender variant of this race
-		var sheet_key: String = race_key + "_" + _selected_gender
-		if _tex_cache.has(sheet_key):
-			var base_tex: Texture2D = _tex_cache[sheet_key] as Texture2D
-			var atlas := AtlasTexture.new()
-			atlas.atlas  = base_tex
-			atlas.region = IDLE_SW
-			preview.texture = atlas
+	for race_key: String in _race_data:
+		var data:    Dictionary     = _race_data[race_key]
+		var card:    PanelContainer = data["card"]    as PanelContainer
+		var preview: TextureRect    = data["preview"] as TextureRect
+		var code:    String         = data["code"]    as String
+
+		var cache_key := g_char + code
+		if _port_cache.has(cache_key):
+			preview.texture = _port_cache[cache_key] as Texture2D
 		else:
 			preview.texture = null
 
-		# Highlight the selected card
 		card.modulate = Color(1.3, 1.2, 0.55) if race_key == _selected_race else Color.WHITE
 
-	# Highlight the selected gender button
 	for g: String in _gender_btns:
 		var btn: Button = _gender_btns[g] as Button
 		btn.modulate = Color(1.0, 0.85, 0.25) if g == _selected_gender else Color.WHITE
 
 
 func _on_begin_pressed() -> void:
-	var sheet_key: String = _selected_race + "_" + _selected_gender
-	var fallback: String  = "res://assets/REFS/human_male_spritesheet_transparent.png"
-	var path: String      = SHEET_PATHS.get(sheet_key, fallback) as String
-
-	GameData.player_race        = _selected_race
-	GameData.player_gender      = _selected_gender
-	GameData.player_sheet_path  = path
+	GameData.player_race          = _selected_race
+	GameData.player_gender        = _selected_gender
+	GameData.player_sprite_prefix = _sprite_prefix(_selected_race, _selected_gender)
 
 	var entered_name: String = _name_input.text.strip_edges()
 	if entered_name.length() > 0:

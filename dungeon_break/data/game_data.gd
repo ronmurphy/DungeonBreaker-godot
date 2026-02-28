@@ -55,7 +55,27 @@ var player_class: PlayerClass = PlayerClass.SCOUNDREL
 var player_name: String = "Hero"
 var player_race: String = "human"     # human / elf / dwarf / goblin
 var player_gender: String = "male"    # male / female
-var player_sheet_path: String = ""    # set by character select; empty = default human_male
+var player_sprite_prefix: String = ""  # set by character select; e.g. "res://assets/art/player_avatars/human_male"
+
+# ── Camp NPCs ─────────────────────────────────────────────────────────────────
+## Named NPCs rescued from dungeons (one per floor cleared), in rescue order.
+## Daniels and Conner are always present from game start.
+var rescued_npcs: Array[String] = ["daniels", "conner"]
+
+## Ordered pool — matches NpcDB.NPC_DEFS keys.
+const NPC_RESCUE_POOL: Array = ["daniels", "conner", "zara", "michelle", "mahan", "claude"]
+
+## Rescue a random unrecruited NPC. Returns the key, or "" if all recruited.
+func rescue_random_npc() -> String:
+	var available: Array[String] = []
+	for key: String in NPC_RESCUE_POOL:
+		if key not in rescued_npcs:
+			available.append(key)
+	if available.is_empty():
+		return ""
+	var chosen: String = available[randi() % available.size()]
+	rescued_npcs.append(chosen)
+	return chosen
 
 # Core stats (single-digit)
 var stat_str: int = 2
@@ -104,6 +124,14 @@ func _process(delta: float):
 	world_time += delta * _WORLD_TIME_SPEED
 	if world_time >= 1.0:
 		world_time -= 1.0
+
+## Return the portrait PNG path for the current race/gender selection.
+## e.g. human male → "res://assets/art/player_avatars/mh_port.png"
+func get_portrait_path() -> String:
+	var g := "m" if player_gender == "male" else "f"
+	var r := player_race[0]  # h / e / d / g
+	return "res://assets/art/player_avatars/" + g + r + "_port.png"
+
 
 func get_world_hour() -> float:
 	return world_time * 24.0
@@ -155,6 +183,7 @@ func _init_class(cls: PlayerClass):
 	equip_legs = {}
 	equip_boots = {}
 	status_effects.clear()
+	rescued_npcs = ["daniels", "conner"]
 
 
 ## Change class and reset stats.

@@ -128,9 +128,9 @@ func _build_hero_panel():
 	portrait.custom_minimum_size = Vector2(56, 56)
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	const PORTRAIT_PATH := "res://assets/art/entities/human_male.png"
-	if ResourceLoader.exists(PORTRAIT_PATH):
-		portrait.texture = load(PORTRAIT_PATH)
+	var portrait_path := GameData.get_portrait_path()
+	if ResourceLoader.exists(portrait_path):
+		portrait.texture = load(portrait_path)
 	hbox.add_child(portrait)
 
 	# Stats column

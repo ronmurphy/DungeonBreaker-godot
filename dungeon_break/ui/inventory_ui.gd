@@ -179,8 +179,9 @@ func _build_paper_doll_col(parent: HBoxContainer):
 	portrait.custom_minimum_size = Vector2(72, 72)
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	if ResourceLoader.exists("res://assets/art/entities/human_male.png"):
-		portrait.texture = load("res://assets/art/entities/human_male.png")
+	var portrait_path := GameData.get_portrait_path()
+	if ResourceLoader.exists(portrait_path):
+		portrait.texture = load(portrait_path)
 	pf.add_child(portrait)
 
 	mid.add_child(_make_equip_slot("Chest", -102, Color(0.3, 0.4, 0.65, 0.7)))

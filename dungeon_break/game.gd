@@ -11,6 +11,8 @@ const WandererScript = preload("res://dungeon_break/entities/wanderer_controller
 const DayNightCycleScript = preload("res://dungeon_break/world/day_night_cycle.gd")
 const GameHudScript = preload("res://dungeon_break/ui/game_hud.gd")
 const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
+const ShopUIScript = preload("res://dungeon_break/ui/shop_ui.gd")
+const SageUIScript = preload("res://dungeon_break/ui/sage_ui.gd")
 
 signal enter_dungeon()
 
@@ -25,8 +27,14 @@ var _wanderer_ctrl = null
 var _day_night: Node = null
 var _hud: CanvasLayer = null
 
+# Rescued NPC billboard sprites — updated for camera-facing each frame
+var _npc_sprites: Array = []
+
 # ── Camp structure parent node ───────────────────────────────────────────────
 var _camp_objects: Node3D = null
+
+# Tracks whether a shop/sage UI is currently open (prevents multi-open)
+var _npc_ui_open: bool = false
 
 
 func _ready():
@@ -75,6 +83,7 @@ func _build_camp():
 	await _wait_for_terrain_editable()
 
 	_camp_builder.build_camp()
+	_npc_sprites = _camp_builder.spawn_rescued_npcs()
 	_wanderer_ctrl.spawn_camp_wanderers()
 
 	# Start day/night cycle
@@ -132,6 +141,7 @@ func _unhandled_input(event: InputEvent):
 
 
 func _process(_delta: float):
+	_update_npc_facing()
 	_check_portal_interactions()
 
 	# Update time display in HUD
@@ -140,6 +150,19 @@ func _process(_delta: float):
 		var h: int = int(hour)
 		var m := int((hour - h) * 60)
 		_hud.set_time_text("%s  %02d:%02d" % [_day_night.get_time_name(), h, m])
+
+
+## Update each rescued NPC's front/back texture based on camera position.
+func _update_npc_facing() -> void:
+	if _player == null or _npc_sprites.is_empty():
+		return
+	var cam: Camera3D = _player.get_node_or_null("IsometricCamera")
+	if cam == null:
+		return
+	var cam_pos := cam.global_position
+	for sprite in _npc_sprites:
+		if is_instance_valid(sprite):
+			sprite.update_facing(cam_pos)
 
 
 ## Check if the player is near a camp interaction area and pressing E.
@@ -176,5 +199,40 @@ func _check_portal_interactions():
 				GameData.torch_fuel = 100
 				print("Game: torch refuelled!")
 
+		elif interaction == "npc":
+			var npc_key: String  = child.get_meta("npc_key", "")
+			var npc_def: Dictionary = NpcDB.get_def(npc_key)
+			var npc_name: String = npc_def.get("name", npc_key) as String
+			var role: String     = npc_def.get("role", "") as String
+			near_anything = true
+			if _hud:
+				_hud.show_prompt("[E] %s — %s" % [npc_name, NpcDB.get_role_label(role)])
+			if Input.is_key_pressed(KEY_E) and not _npc_ui_open:
+				_open_npc_ui(npc_key, role)
+
 	if not near_anything and _hud:
 		_hud.hide_prompt()
+
+
+## Open the appropriate shop or sage UI for the given NPC.
+func _open_npc_ui(npc_key: String, role: String) -> void:
+	_npc_ui_open = true
+	if _hud:
+		_hud.hide_prompt()
+
+	if role == "sage":
+		var sage_ui := SageUIScript.new()
+		sage_ui.name = "SageUI"
+		add_child(sage_ui)
+		sage_ui.open()
+		sage_ui.sage_closed.connect(_on_npc_ui_closed)
+	else:
+		var shop_ui := ShopUIScript.new()
+		shop_ui.name = "ShopUI"
+		add_child(shop_ui)
+		shop_ui.open(npc_key)
+		shop_ui.shop_closed.connect(_on_npc_ui_closed)
+
+
+func _on_npc_ui_closed() -> void:
+	_npc_ui_open = false

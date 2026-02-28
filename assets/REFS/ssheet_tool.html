@@ -124,12 +124,18 @@ input[type=file] { display: none; }
   <div class="sep"></div>
 
   <button id="btn-load-img" title="Load a custom image file">Load Image…</button>
-  <button id="btn-load-json" title="Load a saved ssheet.json">Load JSON…</button>
-  <button id="btn-export" title="Export ssheet.json (save next to this HTML)">Export ssheet.json</button>
+  <button id="btn-load-json" title="Load a saved JSON file">Load JSON…</button>
+  <button id="btn-export">Export ssheet.json</button>
   <button id="btn-reset" title="Reset all boxes to built-in defaults">Reset Defaults</button>
   <button id="btn-fit" title="Fit image to window (F)">Fit (F)</button>
 
-  <span id="hint-bar">Scroll=zoom · Space/MMB drag=pan · Drag body=X-move all · Drag corner=resize this · Esc=deselect</span>
+  <div class="sep"></div>
+
+  <label id="lbl-per-sheet" title="Save/load a separate JSON per sheet (e.g. human_male.json) instead of one shared ssheet.json" style="color:#a898c8;font-size:12px;cursor:pointer;white-space:nowrap;">
+    <input type="checkbox" id="cb-per-sheet" style="cursor:pointer;vertical-align:middle;margin-right:4px;">Per-sheet JSON
+  </label>
+
+  <span id="hint-bar">Scroll=zoom · Space/MMB=pan · Drag body=move X-all,Y-only · Corner=resize · Dbl-click=size counterpart · Esc=deselect</span>
 </div>
 
 <div id="canvas-wrap">
@@ -167,22 +173,35 @@ const SHEETS = [
 // Default bounding boxes from character_sprite.gd / spatial.json
 // displayName is shown in the canvas label; name is the JSON export key.
 //
-// Mirror notes (implemented in character_sprite.gd, not a separate sheet crop):
+// Mirror notes (game-side, not a separate sheet crop):
 //   IDLE_NW  = FACE_LEFT  — the only side-facing pose on the sheet
-//   IDLE_SE  = FACE_RIGHT — game uses IDLE_NW region with flip_h=true (no extra crop needed)
-//   WALK_NE  = WALK_UP    — 2-frame animated: frame 1 normal, frame 2 flip_h=true (mirror)
-//   WALK_SW1/WALK_SW2 are size-linked: resizing w or h on either updates the other.
+//   IDLE_SE  = FACE_RIGHT — game uses IDLE_NW + flip_h (no extra crop needed)
+//   WALK_NE  = WALK_UP    — 2-frame: frame 1 normal, frame 2 flip_h mirror
+// Double-click a frame to copy its w/h to its counterpart (one-time, no link).
 const DEFAULT_FRAMES = [
   { name: 'PORTRAIT',  x:    0, y:   0, w: 746, h: 771 },
-  { name: 'IDLE_SW',   x:  739, y:   0, w: 509, h: 771 },
-  { name: 'IDLE_NE',   x: 1241, y:   0, w: 509, h: 771 },
-  { name: 'IDLE_NW',   x: 1743, y:   0, w: 509, h: 771, displayName: 'IDLE_NW / FACE_LEFT' },
-  { name: 'IDLE_SE',   x: 2245, y:   0, w: 507, h: 771, displayName: 'IDLE_SE (→ FACE_RIGHT mirror)' },
-  { name: 'WALK_SW1',  x:    0, y: 764, w: 691, h: 772, displayName: 'WALK_SW1 (size-linked ↔ SW2)' },
-  { name: 'WALK_SW2',  x:  684, y: 764, w: 695, h: 772, displayName: 'WALK_SW2 (size-linked ↔ SW1)' },
-  { name: 'WALK_NE',   x: 1372, y: 764, w: 695, h: 772, displayName: 'WALK_NE / WALK_UP (frame 2 = mirror)' },
-  { name: 'DEAD',      x: 2060, y: 764, w: 692, h: 772 },
+  { name: 'IDLE_SW',   x:  739, y:   0, w: 509, h: 771, displayName: 'IDLE_SW  [↔ dbl=IDLE_NE]' },
+  { name: 'IDLE_NE',   x: 1241, y:   0, w: 509, h: 771, displayName: 'IDLE_NE  [↔ dbl=IDLE_SW]' },
+  { name: 'IDLE_NW',   x: 1743, y:   0, w: 509, h: 771, displayName: 'IDLE_NW/FACE_L  [↔ dbl=IDLE_SE]' },
+  { name: 'IDLE_SE',   x: 2245, y:   0, w: 507, h: 771, displayName: 'IDLE_SE/→mirror  [↔ dbl=IDLE_NW]' },
+  { name: 'WALK_SW1',  x:    0, y: 764, w: 691, h: 772, displayName: 'WALK_SW1  [↔ dbl=WALK_SW2]' },
+  { name: 'WALK_SW2',  x:  684, y: 764, w: 695, h: 772, displayName: 'WALK_SW2  [↔ dbl=WALK_SW1]' },
+  { name: 'WALK_NE',   x: 1372, y: 764, w: 695, h: 772, displayName: 'WALK_NE/WALK_UP  [↔ dbl=DEAD]' },
+  { name: 'DEAD',      x: 2060, y: 764, w: 692, h: 772, displayName: 'DEAD  [↔ dbl=WALK_NE]' },
 ];
+
+// Counterpart pairs for double-click size alignment.
+// Dbl-clicking frame A pushes A's w/h onto counterpart B (one-time, no permanent link).
+const COUNTERPARTS = {
+  'IDLE_SW':  'IDLE_NE',
+  'IDLE_NE':  'IDLE_SW',
+  'IDLE_NW':  'IDLE_SE',
+  'IDLE_SE':  'IDLE_NW',
+  'WALK_SW1': 'WALK_SW2',
+  'WALK_SW2': 'WALK_SW1',
+  'WALK_NE':  'DEAD',
+  'DEAD':     'WALK_NE',
+};
 
 // Distinct colours per frame
 const FRAME_COLORS = [
@@ -398,9 +417,9 @@ function drawFrame(i, selected) {
   ctx.strokeRect(cx + 0.5, cy + 0.5, cw - 1, ch - 1);
   ctx.setLineDash([]);
 
-  // Label — use displayName when set (shows mirror / link notes)
-  const label     = f.displayName || f.name;
-  const fontSize  = Math.round(Math.max(9, Math.min(14, zoom * 20)));
+  // ── Name label (top-left) ──
+  const label    = f.displayName || f.name;
+  const fontSize = Math.round(Math.max(9, Math.min(14, zoom * 20)));
   ctx.font        = `bold ${fontSize}px monospace`;
   ctx.textAlign   = 'left';
   ctx.textBaseline = 'top';
@@ -409,6 +428,24 @@ function drawFrame(i, selected) {
   ctx.fillText(label, tx + 1, ty + 1);
   ctx.fillStyle = col;
   ctx.fillText(label, tx, ty);
+
+  // ── Pixel dimensions (bottom-left), always visible so you can catch off-by-1 ──
+  // Only draw when the box is tall enough on screen to have room
+  if (ch > 28) {
+    const dimLabel  = `${Math.round(f.w)} × ${Math.round(f.h)}`;
+    const dimSize   = Math.round(Math.max(9, Math.min(12, zoom * 17)));
+    ctx.font        = `${dimSize}px monospace`;
+    ctx.textAlign   = 'left';
+    ctx.textBaseline = 'bottom';
+    const bx = cx + 5, by = cy + ch - 5;
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillText(dimLabel, bx + 1, by + 1);
+    // Slightly dimmed version of the frame colour
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle   = col;
+    ctx.fillText(dimLabel, bx, by);
+    ctx.globalAlpha = 1.0;
+  }
 
   // Resize handles (selected only)
   if (selected) {
@@ -527,17 +564,6 @@ canvas.addEventListener('mousemove', e => {
   } else if (drag.type === 'resize') {
     const snap = drag.snapFrames[drag.frameIdx];
     applyResize(frames[drag.frameIdx], snap, drag.handle, dix, diy);
-
-    // WALK_SW1 and WALK_SW2 are size-linked: keep w and h in sync
-    const sw1 = frames.findIndex(f => f.name === 'WALK_SW1');
-    const sw2 = frames.findIndex(f => f.name === 'WALK_SW2');
-    if (drag.frameIdx === sw1 && sw2 >= 0) {
-      frames[sw2].w = frames[sw1].w;
-      frames[sw2].h = frames[sw1].h;
-    } else if (drag.frameIdx === sw2 && sw1 >= 0) {
-      frames[sw1].w = frames[sw2].w;
-      frames[sw1].h = frames[sw2].h;
-    }
   }
 
   render();
@@ -551,17 +577,30 @@ canvas.addEventListener('mouseup', e => {
       f.x = Math.round(f.x); f.y = Math.round(f.y);
       f.w = Math.round(f.w); f.h = Math.round(f.h);
     }
-    // Re-apply WALK_SW size link after snap
-    const sw1 = frames.findIndex(f => f.name === 'WALK_SW1');
-    const sw2 = frames.findIndex(f => f.name === 'WALK_SW2');
-    if (drag.frameIdx === sw1 && sw2 >= 0) {
-      frames[sw2].w = frames[sw1].w; frames[sw2].h = frames[sw1].h;
-    } else if (drag.frameIdx === sw2 && sw1 >= 0) {
-      frames[sw1].w = frames[sw2].w; frames[sw1].h = frames[sw2].h;
-    }
   }
   drag = null;
   canvas.style.cursor = 'crosshair';
+  render();
+});
+
+// Double-click: push this frame's w/h onto its counterpart (one-time snapshot, no link)
+canvas.addEventListener('dblclick', e => {
+  if (spaceDown) return;
+  const cx = e.offsetX, cy = e.offsetY;
+  const hit = hitTest(cx, cy);
+  if (!hit || hit.type !== 'box') return;
+
+  const srcFrame = frames[hit.frameIdx];
+  const partnerName = COUNTERPARTS[srcFrame.name];
+  if (!partnerName) return;
+
+  const dstIdx = frames.findIndex(f => f.name === partnerName);
+  if (dstIdx < 0) return;
+
+  // Copy src w/h to counterpart — position stays independent
+  frames[dstIdx].w = srcFrame.w;
+  frames[dstIdx].h = srcFrame.h;
+  selectedIdx = dstIdx;   // select the updated frame so the user sees the result
   render();
 });
 
@@ -631,6 +670,19 @@ document.addEventListener('keyup', e => {
 // IMAGE LOADING
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Returns the JSON filename for the current sheet depending on per-sheet mode.
+function getJsonFilename() {
+  if (document.getElementById('cb-per-sheet').checked) {
+    return SHEETS[sheetIdx].file.replace(/\.[^/.]+$/, '') + '.json';
+  }
+  return 'ssheet.json';
+}
+
+// Refresh the Export button label to show which file will be written.
+function updateExportBtn() {
+  document.getElementById('btn-export').textContent = 'Export ' + getJsonFilename();
+}
+
 function loadSheetByIdx(idx) {
   sheetIdx = idx;
   document.getElementById('sheet-label').textContent = SHEETS[idx].label;
@@ -641,6 +693,19 @@ function loadSheetByIdx(idx) {
   img.onload = () => { image = img; fitImage(); render(); };
   img.onerror = () => { image = null; render(); };
   img.src = SHEETS[idx].file;
+
+  updateExportBtn();
+
+  // Per-sheet mode: reset to defaults, then try to load this sheet's JSON
+  if (document.getElementById('cb-per-sheet').checked) {
+    frames = cloneFrames();
+    selectedIdx = -1;
+    const jsonFile = SHEETS[idx].file.replace(/\.[^/.]+$/, '') + '.json';
+    fetch(jsonFile)
+      .then(r => { if (!r.ok) throw new Error(); return r.text(); })
+      .then(t => { applyJSON(t); render(); })
+      .catch(() => { render(); }); // use defaults silently if not found
+  }
 }
 
 function fitImage() {
@@ -667,10 +732,11 @@ function exportJSON() {
       h: Math.round(f.h),
     };
   }
+  const filename = getJsonFilename();
   const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href     = URL.createObjectURL(blob);
-  a.download = 'ssheet.json';
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -709,6 +775,12 @@ document.getElementById('btn-prev').addEventListener('click', () =>
 
 document.getElementById('btn-next').addEventListener('click', () =>
   loadSheetByIdx((sheetIdx + 1) % SHEETS.length));
+
+// Toggling per-sheet mode: update the export label and reload the current sheet's JSON
+document.getElementById('cb-per-sheet').addEventListener('change', () => {
+  updateExportBtn();
+  loadSheetByIdx(sheetIdx); // re-triggers image + JSON load with new mode
+});
 
 document.getElementById('btn-fit').addEventListener('click', () => { fitImage(); render(); });
 
