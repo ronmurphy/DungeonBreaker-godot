@@ -285,6 +285,9 @@ func to_save_dict() -> Dictionary:
 	return {
 		"player_class": player_class,
 		"player_name": player_name,
+		"player_race": player_race,
+		"player_gender": player_gender,
+		"player_sprite_prefix": player_sprite_prefix,
 		"stat_str": stat_str,
 		"stat_dex": stat_dex,
 		"stat_int": stat_int,
@@ -317,6 +320,12 @@ func to_save_dict() -> Dictionary:
 func from_save_dict(data: Dictionary):
 	player_class = data.get("player_class", PlayerClass.SCOUNDREL)
 	player_name = data.get("player_name", "Hero")
+	var race: String = data.get("player_race", "human")
+	player_race = race
+	var gender: String = data.get("player_gender", "male")
+	player_gender = gender
+	var prefix: String = data.get("player_sprite_prefix", "")
+	player_sprite_prefix = prefix
 	stat_str = data.get("stat_str", 2)
 	stat_dex = data.get("stat_dex", 5)
 	stat_int = data.get("stat_int", 1)

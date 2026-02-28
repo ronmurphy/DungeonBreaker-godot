@@ -170,8 +170,8 @@ func start_combat(enemies: Array, room: Dictionary, scene_root: Node3D):
 	print("TacticalCombat: started with %d enemies in room %d" % [enemies.size(), room["id"]])
 	combat_started.emit()
 
-	# Start first round
-	_start_round()
+	# Defer first round so dungeon.gd can call ui.setup() and connect signals first
+	call_deferred("_start_round")
 
 
 ## Player selects a tile to move to (called by UI).
@@ -483,6 +483,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 			match weapon_id:
 				"ice_bow":
 					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
 						if tactical_grid and is_instance_valid(tactical_grid):
 							tactical_grid.clear_ranged_path()
 						_fx_ice_impact(to_wpos)
@@ -491,6 +492,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 						_fx_camera_shake(0.10)
 				"fire_staff":
 					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
 						if tactical_grid and is_instance_valid(tactical_grid):
 							tactical_grid.clear_ranged_path()
 						_fx_fire_impact(to_wpos)
@@ -510,6 +512,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 								_apply_damage(i, aoe_dmg)
 				"throwing_knives":
 					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
 						if tactical_grid and is_instance_valid(tactical_grid):
 							tactical_grid.clear_ranged_path()
 						_fx_impact(to_wpos, "slash")
@@ -529,6 +532,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 								_apply_damage(i, pierce_dmg)
 				_:
 					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
 						if tactical_grid and is_instance_valid(tactical_grid):
 							tactical_grid.clear_ranged_path()
 						_fx_impact(to_wpos, "slash")
