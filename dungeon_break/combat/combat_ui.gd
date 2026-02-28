@@ -87,7 +87,7 @@ func _build_ui():
 	ap_style.set_content_margin_all(8)
 	_action_panel.add_theme_stylebox_override("panel", ap_style)
 	_action_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
-	_action_panel.offset_left = -170
+	_action_panel.offset_left = -260
 	_action_panel.offset_right = -12
 	_action_panel.offset_top = -120
 	_action_panel.offset_bottom = 120
@@ -105,7 +105,7 @@ func _build_ui():
 	et_style.border_color = Color(1.0, 0.3, 0.3)
 	_enemy_target_panel.add_theme_stylebox_override("panel", et_style)
 	_enemy_target_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
-	_enemy_target_panel.offset_left = -170
+	_enemy_target_panel.offset_left = -260
 	_enemy_target_panel.offset_right = -12
 	_enemy_target_panel.offset_top = -160
 	_enemy_target_panel.offset_bottom = 160
@@ -123,7 +123,7 @@ func _build_ui():
 	sp_style.border_color = Color(0.5, 0.6, 0.9)
 	_sub_panel.add_theme_stylebox_override("panel", sp_style)
 	_sub_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
-	_sub_panel.offset_left = -170
+	_sub_panel.offset_left = -260
 	_sub_panel.offset_right = -12
 	_sub_panel.offset_top = -160
 	_sub_panel.offset_bottom = 160
@@ -518,7 +518,12 @@ func _build_item_card(item: Dictionary, backpack_idx: int) -> Control:
 
 	var desc_lbl := Label.new()
 	var desc: String = item.get("description", "")
-	desc_lbl.text = desc
+	# Strip flavor text — keep only the last sentence (the effect part).
+	# e.g. "A loaf of bread. Heals 5 HP." → "Heals 5 HP."
+	if ". " in desc:
+		var parts := desc.split(". ")
+		desc = parts[parts.size() - 1]
+	desc_lbl.text = desc.trim_suffix(".")
 	desc_lbl.add_theme_font_size_override("font_size", 10)
 	desc_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 0.65))
 	desc_lbl.clip_text = true
@@ -1009,63 +1014,59 @@ func _unhandled_input(event: InputEvent):
 	if combat_phase == 0:
 		pass
 
+	# Strict-mode: keycode is Variant, must cast explicitly
+	var kc: int = event.keycode
+
 	if _combat.phase == 1:  # MOVE
-		match event.keycode:
-			KEY_S:
-				if _combat:
-					_combat.player_skip_move()
-					get_viewport().set_input_as_handled()
+		# Consume all number keys + combat keys so they don't leak to inventory/hotbar
+		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_S, KEY_ESCAPE]:
+			get_viewport().set_input_as_handled()
+		if kc == KEY_S and _combat:
+			_combat.player_skip_move()
 
 	elif _combat.phase == 2:  # ACT
+		# Always consume combat-relevant keys, regardless of sub-state.
+		# This prevents 1-6 from leaking to inventory quick-use / hotbar.
+		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_S, KEY_ESCAPE]:
+			get_viewport().set_input_as_handled()
+
 		if _selecting_target:
-			# ESC cancels enemy selection, goes back to action sub
-			match event.keycode:
-				KEY_ESCAPE:
-					_selecting_target = false
-					_enemy_target_panel.visible = false
-					_show_action_sub()
-					get_viewport().set_input_as_handled()
+			# Target panel: only ESC is active (click to select enemy)
+			if kc == KEY_ESCAPE:
+				_selecting_target = false
+				_enemy_target_panel.visible = false
+				_show_action_sub()
 
 		elif _in_action_sub:
-			# Action sub: Attack/Guts/Counter/Defend/Back
+			# Action sub: Attack [1] Guts [2] Counter [3] Defend [4] Back [ESC]
 			var cu: Dictionary = _combat.get_current_unit()
 			var attackable: Array = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
-			match event.keycode:
+			match kc:
 				KEY_1:
 					if not attackable.is_empty():
 						_start_target_selection()
-					get_viewport().set_input_as_handled()
 				KEY_2:
 					_do_act("guts")
-					get_viewport().set_input_as_handled()
 				KEY_3:
 					_do_act("counter")
-					get_viewport().set_input_as_handled()
 				KEY_4:
 					_do_act("defend")
-					get_viewport().set_input_as_handled()
 				KEY_ESCAPE:
 					_close_sub_panel()
-					get_viewport().set_input_as_handled()
 
 		elif _in_items_sub:
-			# Items sub: ESC goes back, no number shortcuts (click only)
-			match event.keycode:
-				KEY_ESCAPE:
-					_close_sub_panel()
-					get_viewport().set_input_as_handled()
+			# Items sub: click only — ESC goes back
+			if kc == KEY_ESCAPE:
+				_close_sub_panel()
 
 		else:
-			# Top-level ACT: Action/Items/Flee
-			match event.keycode:
+			# Top-level ACT: Action [1] Items [2] Flee [3]
+			match kc:
 				KEY_1:
 					_show_action_sub()
-					get_viewport().set_input_as_handled()
 				KEY_2:
 					var usable := _get_usable_items()
 					if usable.size() > 0:
 						_show_items_sub()
-					get_viewport().set_input_as_handled()
 				KEY_3:
 					_do_act("flee")
-					get_viewport().set_input_as_handled()

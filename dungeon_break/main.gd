@@ -8,9 +8,85 @@ const SaveSlotUIScript = preload("res://dungeon_break/ui/save_slot_ui.gd")
 
 var _current_scene: Node = null
 
+# ── Screenshot overlay ────────────────────────────────────────────────────────
+var _screenshot_layer: CanvasLayer = null
+var _screenshot_toast: Label = null
+var _screenshot_dir_path: String = ""
+
 
 func _ready():
+	_build_screenshot_overlay()
 	_show_save_slots()
+
+
+func _build_screenshot_overlay():
+	_screenshot_layer = CanvasLayer.new()
+	_screenshot_layer.layer = 128  # above everything
+	add_child(_screenshot_layer)
+
+	_screenshot_toast = Label.new()
+	_screenshot_toast.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_screenshot_toast.offset_left = 12
+	_screenshot_toast.offset_top  = 12
+	_screenshot_toast.add_theme_font_size_override("font_size", 14)
+	_screenshot_toast.add_theme_color_override("font_color", Color(0.2, 1.0, 0.4))
+	_screenshot_toast.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
+	_screenshot_toast.add_theme_constant_override("shadow_offset_x", 1)
+	_screenshot_toast.add_theme_constant_override("shadow_offset_y", 1)
+	_screenshot_toast.mouse_filter = Control.MOUSE_FILTER_STOP
+	_screenshot_toast.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_screenshot_toast.visible = false
+	_screenshot_toast.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			if _screenshot_dir_path != "":
+				OS.shell_open(_screenshot_dir_path)
+	)
+	_screenshot_layer.add_child(_screenshot_toast)
+
+
+func _input(event: InputEvent):
+	if not (event is InputEventKey) or not event.pressed or event.echo:
+		return
+	var kc: int = event.keycode
+	if kc == KEY_S and event.ctrl_pressed:
+		get_viewport().set_input_as_handled()
+		_take_screenshot()
+
+
+func _take_screenshot():
+	# Ensure screenshots folder exists
+	_screenshot_dir_path = OS.get_user_data_dir() + "/screenshots"
+	var dir_path: String = _screenshot_dir_path
+	if not DirAccess.dir_exists_absolute(dir_path):
+		DirAccess.make_dir_recursive_absolute(dir_path)
+
+	# Build filename from current timestamp
+	var dt := Time.get_datetime_dict_from_system()
+	var filename: String = "shot_%04d%02d%02d_%02d%02d%02d.png" % [
+		dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second]
+	var full_path: String = dir_path + "/" + filename
+
+	# Capture and save
+	var img := get_viewport().get_texture().get_image()
+	var err := img.save_png(full_path)
+
+	if err == OK:
+		print("Screenshot saved: %s" % full_path)
+		_show_screenshot_toast("Screenshot saved: " + filename + "\n  (click to open folder)")
+	else:
+		print("Screenshot failed (error %d)" % err)
+		_show_screenshot_toast("Screenshot failed!")
+
+
+func _show_screenshot_toast(msg: String):
+	_screenshot_toast.text = msg
+	_screenshot_toast.modulate.a = 1.0
+	_screenshot_toast.visible = true
+
+	var tw := create_tween()
+	tw.tween_interval(1.8)
+	tw.tween_property(_screenshot_toast, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(func(): _screenshot_toast.visible = false)
 
 
 ## Show the save slot selection screen.
