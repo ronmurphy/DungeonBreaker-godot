@@ -34,6 +34,12 @@ var _enemy_cards: Dictionary = {}   # unit_idx → card data dict
 var _active_unit_idx: int = -1
 var _selecting_target: bool = false
 
+# ── Sub-panel (Action sub / Items sub — shared, mutually exclusive) ───────────
+var _sub_panel: PanelContainer = null
+var _sub_list: VBoxContainer = null
+var _in_action_sub: bool = false
+var _in_items_sub: bool = false
+
 # ── Per-unit color palette ────────────────────────────────────────────────────
 const UNIT_COLORS: Array = [
 	Color(0.9, 0.3, 0.3),    # red
@@ -99,16 +105,34 @@ func _build_ui():
 	et_style.border_color = Color(1.0, 0.3, 0.3)
 	_enemy_target_panel.add_theme_stylebox_override("panel", et_style)
 	_enemy_target_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
-	_enemy_target_panel.offset_left = -400
-	_enemy_target_panel.offset_right = -180
-	_enemy_target_panel.offset_top = -80
-	_enemy_target_panel.offset_bottom = 80
+	_enemy_target_panel.offset_left = -170
+	_enemy_target_panel.offset_right = -12
+	_enemy_target_panel.offset_top = -160
+	_enemy_target_panel.offset_bottom = 160
 	_enemy_target_panel.visible = false
 	add_child(_enemy_target_panel)
 
 	_enemy_target_list = VBoxContainer.new()
 	_enemy_target_list.add_theme_constant_override("separation", 4)
 	_enemy_target_panel.add_child(_enemy_target_list)
+
+	# ── Sub-panel: Action sub / Items sub (shared, left of action panel) ──
+	_sub_panel = PanelContainer.new()
+	_sub_panel.name = "SubPanel"
+	var sp_style := ap_style.duplicate()
+	sp_style.border_color = Color(0.5, 0.6, 0.9)
+	_sub_panel.add_theme_stylebox_override("panel", sp_style)
+	_sub_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_sub_panel.offset_left = -170
+	_sub_panel.offset_right = -12
+	_sub_panel.offset_top = -160
+	_sub_panel.offset_bottom = 160
+	_sub_panel.visible = false
+	add_child(_sub_panel)
+
+	_sub_list = VBoxContainer.new()
+	_sub_list.add_theme_constant_override("separation", 4)
+	_sub_panel.add_child(_sub_list)
 
 	# ── Combat log (bottom-left, sits above enemy panel) ──
 	var log_panel := PanelContainer.new()
@@ -263,12 +287,14 @@ func _on_unit_turn_started(unit: Dictionary):
 		_phase_label.text = unit["name"]
 		_phase_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.2))
 		_action_panel.visible = false
+		_close_sub_panel()
 		_update_enemy_info_panel(unit)
 
 
 func _on_move_phase_started(unit: Dictionary, _tiles: Array):
 	_phase_label.text = "MOVE"
 	_phase_label.add_theme_color_override("font_color", Color(0.4, 0.7, 1.0))
+	_close_sub_panel()
 
 	var tile_count := _tiles.size()
 	if tile_count > 0:
@@ -286,7 +312,8 @@ func _on_act_phase_started(unit: Dictionary):
 
 	_selecting_target = false
 	_enemy_target_panel.visible = false
-	_log("[color=gold]→ Choose an action (1-6 keys or click)[/color]")
+	_close_sub_panel()
+	_log("[color=gold]→ Action [1]  Items [2]  Flee [3][/color]")
 	_show_act_actions(unit)
 	_action_panel.visible = true
 
@@ -308,6 +335,7 @@ func _on_unit_moved(unit: Dictionary, _from: Vector2i, to: Vector2i):
 func _on_combat_ended(victory: bool):
 	_action_panel.visible = false
 	_enemy_target_panel.visible = false
+	_close_sub_panel()
 	if _enemy_info_panel:
 		_enemy_info_panel.visible = false
 
@@ -341,8 +369,9 @@ func _show_move_actions():
 	)
 
 
-func _show_act_actions(unit: Dictionary):
+func _show_act_actions(_unit: Dictionary):
 	_clear_action_list()
+	_close_sub_panel()
 
 	var title := Label.new()
 	title.text = "— ACT —"
@@ -351,40 +380,169 @@ func _show_act_actions(unit: Dictionary):
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_action_list.add_child(title)
 
-	var attackable: Array = []
-	if _combat:
-		var cu: Dictionary = _combat.get_current_unit()
-		attackable = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
+	_add_action_button("Action [1]", "Attack, Guts, Counter, Defend", Color(1.0, 0.4, 0.3),
+		func(): _show_action_sub())
 
+	var usable := _get_usable_items()
+	var has_items := usable.size() > 0
+	_add_action_button("Items [2]", "Use food or potion" if has_items else "No items",
+		Color(0.25, 0.7, 0.35) if has_items else Color(0.25, 0.35, 0.25),
+		func(): if has_items: _show_items_sub())
+
+	_add_action_button("Flee [3]", "Try to escape", Color(0.4, 0.4, 0.4),
+		func(): _do_act("flee"))
+
+
+func _show_action_sub():
+	_in_action_sub = true
+	_in_items_sub = false
+	_action_panel.visible = false
+	for child in _sub_list.get_children():
+		child.queue_free()
+
+	var title := Label.new()
+	title.text = "— ACTION —"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(1.0, 0.55, 0.3))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub_list.add_child(title)
+
+	var cu: Dictionary = _combat.get_current_unit()
+	var attackable: Array = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
 	var has_targets := not attackable.is_empty()
-
-	var a_range: int = unit.get("attack_range", 1)
+	var a_range: int = cu.get("attack_range", 1)
 	var attack_desc: String
 	if has_targets:
-		attack_desc = "Strike adjacent foe" if a_range <= 1 else "Ranged attack  (range %d)" % a_range
+		attack_desc = "Strike foe" if a_range <= 1 else "Ranged (range %d)" % a_range
 	else:
-		attack_desc = "No one in range" if a_range <= 1 else "No target in range %d" % a_range
-	_add_action_button("Attack [1]", attack_desc,
+		attack_desc = "No targets in range"
+	_add_sub_button("Attack [1]", attack_desc,
 		Color(1.0, 0.3, 0.3) if has_targets else Color(0.4, 0.2, 0.2),
-		func(): _start_target_selection() if has_targets else null)
-
-	_add_action_button("Defend [2]", "+4 AC this round", Color(0.3, 0.6, 1.0),
-		func(): _do_act("defend"))
-
-	_add_action_button("Counter [3]", "+4 AC + reflect", Color(1.0, 0.8, 0.2),
-		func(): _do_act("counter"))
+		func(): if has_targets: _start_target_selection())
 
 	var guts_text := "Guts %d/%d" % [GameData.guts, GameData.guts_max]
 	if GameData.guts >= GameData.guts_max:
 		guts_text = "UNLEASH!"
-	_add_action_button("Guts [4]", guts_text, Color(1.0, 0.5, 0.1),
+	_add_sub_button("Guts [2]", guts_text, Color(1.0, 0.5, 0.1),
 		func(): _do_act("guts"))
 
-	_add_action_button("Wait [5]", "End turn", Color(0.5, 0.5, 0.5),
-		func(): _do_act("wait"))
+	_add_sub_button("Counter [3]", "+4 AC + reflect", Color(1.0, 0.8, 0.2),
+		func(): _do_act("counter"))
 
-	_add_action_button("Flee [6]", "Try to escape", Color(0.4, 0.4, 0.4),
-		func(): _do_act("flee"))
+	_add_sub_button("Defend [4]", "+4 AC this round", Color(0.3, 0.6, 1.0),
+		func(): _do_act("defend"))
+
+	_add_sub_button("Back [ESC]", "", Color(0.35, 0.35, 0.35),
+		func(): _close_sub_panel())
+
+	_sub_panel.visible = true
+
+
+func _show_items_sub():
+	_in_items_sub = true
+	_in_action_sub = false
+	_action_panel.visible = false
+	for child in _sub_list.get_children():
+		child.queue_free()
+
+	var title := Label.new()
+	title.text = "— ITEMS —"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.4, 0.9, 0.5))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub_list.add_child(title)
+
+	var usable := _get_usable_items()
+	for entry in usable:
+		var item: Dictionary = entry["item"]
+		var idx: int = entry["index"]
+		_sub_list.add_child(_build_item_card(item, idx))
+
+	_add_sub_button("Back [ESC]", "", Color(0.35, 0.35, 0.35),
+		func(): _close_sub_panel())
+
+	_sub_panel.visible = true
+
+
+func _get_usable_items() -> Array:
+	var result: Array = []
+	for i in GameData.backpack.size():
+		var item: Dictionary = GameData.backpack[i]
+		var t: int = item.get("type", -1)
+		if t == ItemDB.ItemType.FOOD or t == ItemDB.ItemType.POTION:
+			result.append({"item": item, "index": i})
+	return result
+
+
+func _build_item_card(item: Dictionary, backpack_idx: int) -> Control:
+	var card := PanelContainer.new()
+	var card_style := StyleBoxFlat.new()
+	card_style.bg_color = Color(0.04, 0.12, 0.06, 0.92)
+	card_style.border_color = Color(0.3, 0.75, 0.4)
+	card_style.set_border_width_all(2)
+	card_style.set_corner_radius_all(4)
+	card_style.set_content_margin_all(5)
+	card.add_theme_stylebox_override("panel", card_style)
+	card.custom_minimum_size = Vector2(200, 60)
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_use_combat_item(backpack_idx)
+	)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 7)
+	card.add_child(hbox)
+
+	var icon_rect := TextureRect.new()
+	icon_rect.custom_minimum_size = Vector2(48, 48)
+	icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	var icon_path: String = item.get("icon", "")
+	if icon_path != "" and ResourceLoader.exists(icon_path):
+		icon_rect.texture = load(icon_path)
+	hbox.add_child(icon_rect)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 3)
+	hbox.add_child(vbox)
+
+	var name_lbl := Label.new()
+	var item_name: String = item.get("name", "Item")
+	name_lbl.text = item_name
+	name_lbl.add_theme_color_override("font_color", Color(0.9, 1.0, 0.9))
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.clip_text = true
+	vbox.add_child(name_lbl)
+
+	var desc_lbl := Label.new()
+	var desc: String = item.get("description", "")
+	desc_lbl.text = desc
+	desc_lbl.add_theme_font_size_override("font_size", 10)
+	desc_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 0.65))
+	desc_lbl.clip_text = true
+	vbox.add_child(desc_lbl)
+
+	return card
+
+
+func _use_combat_item(backpack_idx: int):
+	if backpack_idx >= GameData.backpack.size():
+		return
+	var item: Dictionary = GameData.backpack[backpack_idx]
+	var item_name: String = item.get("name", "Item")
+	var msg: String = ItemDB.use_item(item)
+	ItemDB.remove_from_backpack(backpack_idx)
+	_log("[color=lightgreen]Used %s — %s[/color]" % [item_name, msg.strip_edges() if msg != "" else "done"])
+	_do_act("wait")
+
+
+func _close_sub_panel():
+	_in_action_sub = false
+	_in_items_sub = false
+	_sub_panel.visible = false
+	_action_panel.visible = true
 
 
 func _start_target_selection():
@@ -392,6 +550,7 @@ func _start_target_selection():
 		return
 
 	_selecting_target = true
+	_sub_panel.visible = false  # hide action sub before showing enemy selector
 	var cu: Dictionary = _combat.get_current_unit()
 	var attackable: Array = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
 
@@ -414,6 +573,13 @@ func _start_target_selection():
 	if attackable.size() == 1:
 		_target_idx = attackable[0]["unit_idx"]
 
+	_add_btn(_enemy_target_list, "Back [ESC]", "", Color(0.35, 0.35, 0.35),
+		func():
+			_selecting_target = false
+			_enemy_target_panel.visible = false
+			_show_action_sub()
+	)
+
 	_enemy_target_panel.visible = true
 
 
@@ -432,7 +598,8 @@ func _build_target_card(u: Dictionary, uid: int) -> Control:
 	card_style.set_corner_radius_all(4)
 	card_style.set_content_margin_all(5)
 	card.add_theme_stylebox_override("panel", card_style)
-	card.custom_minimum_size = Vector2(210, 68)
+	card.custom_minimum_size = Vector2(0, 58)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	card.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
@@ -440,11 +607,11 @@ func _build_target_card(u: Dictionary, uid: int) -> Control:
 	)
 
 	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 7)
+	hbox.add_theme_constant_override("separation", 6)
 	card.add_child(hbox)
 
 	var portrait_rect := TextureRect.new()
-	portrait_rect.custom_minimum_size = Vector2(56, 56)
+	portrait_rect.custom_minimum_size = Vector2(44, 44)
 	portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	var portrait_path := ""
@@ -502,13 +669,22 @@ func _build_target_card(u: Dictionary, uid: int) -> Control:
 
 
 func _do_act(action: String, target_idx: int = -1):
-	_action_panel.visible = false
+	_close_sub_panel()           # resets sub state; briefly restores action_panel
+	_action_panel.visible = false  # hide everything — turn is over
 	_enemy_target_panel.visible = false
 	if _combat:
 		_combat.player_act(action, target_idx)
 
 
 func _add_action_button(label_text: String, desc: String, color: Color, callback: Callable):
+	_add_btn(_action_list, label_text, desc, color, callback)
+
+
+func _add_sub_button(label_text: String, desc: String, color: Color, callback: Callable):
+	_add_btn(_sub_list, label_text, desc, color, callback)
+
+
+func _add_btn(target: VBoxContainer, label_text: String, desc: String, color: Color, callback: Callable):
 	var btn := Button.new()
 	btn.text = label_text
 	btn.custom_minimum_size = Vector2(140, 32)
@@ -531,14 +707,14 @@ func _add_action_button(label_text: String, desc: String, color: Color, callback
 	if callback.is_valid():
 		btn.pressed.connect(callback)
 
-	_action_list.add_child(btn)
+	target.add_child(btn)
 
 	if desc != "":
 		var desc_label := Label.new()
 		desc_label.text = "  " + desc
 		desc_label.add_theme_font_size_override("font_size", 10)
 		desc_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-		_action_list.add_child(desc_label)
+		target.add_child(desc_label)
 
 
 func _clear_action_list():
@@ -842,34 +1018,54 @@ func _unhandled_input(event: InputEvent):
 
 	elif _combat.phase == 2:  # ACT
 		if _selecting_target:
+			# ESC cancels enemy selection, goes back to action sub
 			match event.keycode:
 				KEY_ESCAPE:
 					_selecting_target = false
 					_enemy_target_panel.visible = false
+					_show_action_sub()
 					get_viewport().set_input_as_handled()
-		else:
+
+		elif _in_action_sub:
+			# Action sub: Attack/Guts/Counter/Defend/Back
+			var cu: Dictionary = _combat.get_current_unit()
+			var attackable: Array = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
 			match event.keycode:
 				KEY_1:
-					var cu: Dictionary = _combat.get_current_unit()
-					var attackable: Array = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
 					if not attackable.is_empty():
-						if attackable.size() == 1:
-							_do_act("attack", attackable[0]["unit_idx"])
-						else:
-							_start_target_selection()
+						_start_target_selection()
 					get_viewport().set_input_as_handled()
 				KEY_2:
-					_do_act("defend")
+					_do_act("guts")
 					get_viewport().set_input_as_handled()
 				KEY_3:
 					_do_act("counter")
 					get_viewport().set_input_as_handled()
 				KEY_4:
-					_do_act("guts")
+					_do_act("defend")
 					get_viewport().set_input_as_handled()
-				KEY_5:
-					_do_act("wait")
+				KEY_ESCAPE:
+					_close_sub_panel()
 					get_viewport().set_input_as_handled()
-				KEY_6:
+
+		elif _in_items_sub:
+			# Items sub: ESC goes back, no number shortcuts (click only)
+			match event.keycode:
+				KEY_ESCAPE:
+					_close_sub_panel()
+					get_viewport().set_input_as_handled()
+
+		else:
+			# Top-level ACT: Action/Items/Flee
+			match event.keycode:
+				KEY_1:
+					_show_action_sub()
+					get_viewport().set_input_as_handled()
+				KEY_2:
+					var usable := _get_usable_items()
+					if usable.size() > 0:
+						_show_items_sub()
+					get_viewport().set_input_as_handled()
+				KEY_3:
 					_do_act("flee")
 					get_viewport().set_input_as_handled()

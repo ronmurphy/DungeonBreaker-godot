@@ -23,6 +23,7 @@ var _hero_panel: PanelContainer = null
 var _hero_hp_fill: ColorRect = null
 var _hero_hp_label: Label = null
 var _hero_stats_label: Label = null
+var _hero_weapon_label: Label = null
 var _hero_panel_style: StyleBoxFlat = null
 
 
@@ -105,7 +106,7 @@ func _build_hero_panel():
 	_hero_panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_hero_panel.offset_left   = -248
 	_hero_panel.offset_right  = -8
-	_hero_panel.offset_top    = -88
+	_hero_panel.offset_top    = -104
 	_hero_panel.offset_bottom = -8
 	_hero_panel.visible = false
 
@@ -167,6 +168,12 @@ func _build_hero_panel():
 	_hero_hp_label.add_theme_font_size_override("font_size", 11)
 	_hero_hp_label.add_theme_color_override("font_color", Color(0.5, 0.9, 0.65))
 	vbox.add_child(_hero_hp_label)
+
+	# Weapon name (own line below HP)
+	_hero_weapon_label = Label.new()
+	_hero_weapon_label.add_theme_font_size_override("font_size", 11)
+	_hero_weapon_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.9))
+	vbox.add_child(_hero_weapon_label)
 
 
 ## Call once after the HUD is added — shows/hides the hero stats panel.
@@ -346,11 +353,11 @@ func _update_hero_panel():
 	var weapon_name: String = GameData.equip_weapon.get("name", "Unarmed") if GameData.equip_weapon else "Unarmed"
 	var class_str: String = GameData.CLASS_NAMES.get(GameData.player_class, "Hero")
 	_hero_stats_label.text = "%s  ·  %s  ·  Floor %d" % [GameData.player_name, class_str, GameData.current_floor]
-	_hero_hp_label.text = "HP %d/%d   AC %d   ATK %d   %s" % [
+	_hero_hp_label.text = "HP %d/%d   AC %d   ATK %d" % [
 		GameData.hp, GameData.hp_max,
 		GameData.get_total_ac(),
-		GameData.get_attack_power(),
-		weapon_name]
+		GameData.get_attack_power()]
+	_hero_weapon_label.text = weapon_name
 
 
 ## Update the time-of-day display (called by game.gd / dungeon.gd _process).
