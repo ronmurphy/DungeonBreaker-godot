@@ -83,6 +83,7 @@ var _attack_tiles: Array[Vector2i] = []
 var _scene_root: Node3D = null
 
 var _sfx_player: AudioStreamPlayer = null
+var _slash_shader: Shader = null
 
 
 ## Start tactical combat in a room.
@@ -383,6 +384,20 @@ func _start_enemy_turn(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
 	phase = Phase.ENEMY_THINKING
 
+	# Frozen: skip this turn, thaw next
+	if unit.get("frozen_turns", 0) > 0:
+		unit["frozen_turns"] -= 1
+		_flash_unit(unit)
+		if tactical_grid:
+			_fx_float_text(
+				tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+				"FROZEN!", Color(0.4, 0.85, 1.0)
+			)
+		action_resolved.emit("[color=cyan]%s is frozen solid and cannot act![/color]" % unit["name"])
+		await get_tree().create_timer(0.6).timeout
+		_advance_turn()
+		return
+
 	# Simple AI: move toward nearest player, attack if adjacent
 	var player_pos: Vector2i = _units[0]["grid_pos"]
 	var dist_to_player: int = absi(unit["grid_pos"].x - player_pos.x) + absi(unit["grid_pos"].y - player_pos.y)
@@ -463,21 +478,89 @@ func _do_attack(attacker_idx: int, target_idx: int):
 				path_tiles = _get_line_path_tiles(from_gpos, to_gpos)
 			tactical_grid.highlight_ranged_path(path_tiles)
 
-			var impact_cb := func() -> void:
-				# Clear flight path when projectile lands
-				if tactical_grid and is_instance_valid(tactical_grid):
-					tactical_grid.clear_ranged_path()
-				_fx_impact(to_wpos, "slash")
-				_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.9, 0.25))
-				_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
-				_fx_camera_shake(0.10)
+			# Build weapon-specific impact callback
+			var impact_cb: Callable
+			match weapon_id:
+				"ice_bow":
+					impact_cb = func() -> void:
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_ice_impact(to_wpos)
+						_fx_float_text(to_wpos, "-%d  FROZEN!" % dmg, Color(0.4, 0.9, 1.0))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.10)
+				"fire_staff":
+					impact_cb = func() -> void:
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_fire_impact(to_wpos)
+						_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.5, 0.1))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.18)
+						# AoE splash — half damage to all units adjacent to target
+						var aoe_dmg: int = maxi(1, dmg / 2)
+						for i in _units.size():
+							if i == target_idx:
+								continue
+							var u: Dictionary = _units[i]
+							if not u["alive"]:
+								continue
+							var d: int = absi(u["grid_pos"].x - to_gpos.x) + absi(u["grid_pos"].y - to_gpos.y)
+							if d <= 1:
+								_apply_damage(i, aoe_dmg)
+				"throwing_knives":
+					impact_cb = func() -> void:
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_impact(to_wpos, "slash")
+						_fx_float_text(to_wpos, "-%d  Pierce!" % dmg, Color(0.8, 0.9, 1.0))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.10)
+						# Pierce: apply half damage to all enemies along the line path
+						var knife_path: Array[Vector2i] = _get_line_path_tiles(from_gpos, to_gpos)
+						var pierce_dmg: int = maxi(1, dmg / 2)
+						for i in _units.size():
+							if i == target_idx:
+								continue
+							var u: Dictionary = _units[i]
+							if not u["alive"] or u["type"] == "player":
+								continue
+							if u["grid_pos"] in knife_path:
+								_apply_damage(i, pierce_dmg)
+				_:
+					impact_cb = func() -> void:
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_impact(to_wpos, "slash")
+						_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.9, 0.25))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.10)
+
+			# Apply damage (suppress FX — projectile handles impact visuals)
+			_apply_damage(target_idx, dmg, true)
+
+			# Weapon-specific status effects
+			if weapon_id == "ice_bow":
+				target["frozen_turns"] = 1
+
+			# Launch projectile
 			if weapon_id == "boomerang":
 				_fx_boomerang(from_wpos, to_wpos, impact_cb)
+			elif weapon_id == "throwing_knives":
+				_fx_throwing_knives(from_wpos, to_wpos, impact_cb)
 			else:
 				_fx_projectile(from_wpos, to_wpos, weapon_id, impact_cb)
-			_apply_damage(target_idx, dmg, true)   # suppress FX — projectile handles them
-			action_resolved.emit("[color=yellow]%s[/color] %s %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
-				attacker["name"], _ranged_verb(weapon_id), target["name"], player_roll, enemy_roll, dmg])
+
+			# Build log suffix for special effects
+			var log_suffix := ""
+			if weapon_id == "ice_bow":
+				log_suffix = "  [color=cyan](Frozen!)[/color]"
+			elif weapon_id == "fire_staff":
+				log_suffix = "  [color=orange](+AoE)[/color]"
+			elif weapon_id == "throwing_knives":
+				log_suffix = "  [color=lightblue](Pierce)[/color]"
+			action_resolved.emit("[color=yellow]%s[/color] %s %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]%s" % [
+				attacker["name"], _ranged_verb(weapon_id), target["name"], player_roll, enemy_roll, dmg, log_suffix])
 		else:
 			_apply_damage(target_idx, dmg)
 			action_resolved.emit("[color=yellow]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
@@ -801,6 +884,11 @@ func _init_fx() -> void:
 	_sfx_player = AudioStreamPlayer.new()
 	_scene_root.add_child(_sfx_player)
 
+	# Cache slash sweep shader
+	var shader_path := "res://dungeon_break/combat/slash_effect.gdshader"
+	if ResourceLoader.exists(shader_path):
+		_slash_shader = load(shader_path)
+
 
 func _fx_camera_shake(trauma: float) -> void:
 	var cam := get_viewport().get_camera_3d()
@@ -858,6 +946,10 @@ func _fx_impact(world_pos: Vector3, impact_type: String = "slash") -> void:
 	tw.tween_property(sprite, "scale", Vector3.ONE * 1.5, 0.11).set_ease(Tween.EASE_OUT)
 	tw.tween_property(sprite, "modulate:a", 0.0, 0.26)
 	tw.chain().tween_callback(sprite.queue_free)
+
+	# Shader-based slash sweep overlay (slash impacts only)
+	if impact_type == "slash":
+		_fx_slash_sweep(world_pos, tint)
 
 	# Secondary spark burst
 	if not _FX_SPARK.is_empty():
@@ -965,11 +1057,12 @@ func _fx_guts_burst(world_pos: Vector3) -> void:
 ## Attack verb for ranged weapons (used in combat log).
 func _ranged_verb(weapon_id: String) -> String:
 	match weapon_id:
-		"fire_staff": return "blasts"
-		"ice_bow":    return "freezes"
-		"crossbow":   return "shoots"
-		"boomerang":  return "hurls"
-		_:            return "launches at"
+		"fire_staff":      return "blasts"
+		"ice_bow":         return "freezes"
+		"crossbow":        return "shoots"
+		"boomerang":       return "hurls"
+		"throwing_knives": return "hurls knives at"
+		_:                 return "launches at"
 
 
 ## Flying projectile from `from_pos` to `to_pos`.
@@ -1016,11 +1109,29 @@ func _fx_projectile(from_pos: Vector3, to_pos: Vector3, weapon_id: String, on_la
 	_scene_root.add_child(proj)
 	proj.global_position = from_pos
 
+	# Guard prevents on_land firing twice if both tween and fallback timer trigger
+	var landed := false
+
 	var tw := proj.create_tween()
 	tw.tween_property(proj, "global_position", to_pos, travel_time) \
 		.set_trans(Tween.TRANS_LINEAR)
-	tw.tween_callback(func():
-		proj.queue_free()
+	tw.tween_callback(func() -> void:
+		if landed:
+			return
+		landed = true
+		if is_instance_valid(proj):
+			proj.queue_free()
+		if on_land.is_valid():
+			on_land.call()
+	)
+
+	# Fallback: free proj and fire on_land if tween dies before completing
+	get_tree().create_timer(travel_time + 0.4).timeout.connect(func() -> void:
+		if landed:
+			return
+		landed = true
+		if is_instance_valid(proj):
+			proj.queue_free()
 		if on_land.is_valid():
 			on_land.call()
 	)
@@ -1121,8 +1232,8 @@ func _fx_boomerang(from_pos: Vector3, to_pos: Vector3, on_land: Callable = Calla
 
 	# ── Build V-shaped boomerang mesh ──────────────────────────────────────────
 	var boom := Node3D.new()
-	boom.global_position = from_pos
 	_scene_root.add_child(boom)
+	boom.global_position = from_pos
 
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.72, 0.50, 0.28)   # wood brown
@@ -1177,7 +1288,8 @@ func _fx_boomerang(from_pos: Vector3, to_pos: Vector3, on_land: Callable = Calla
 	var r3: Vector3 = from_pos
 
 	# ── Tween outbound then return ─────────────────────────────────────────────
-	var tw: Tween = create_tween()
+	# Tween lives on boom (not self) so it survives combat_manager cleanup
+	var tw: Tween = boom.create_tween()
 
 	tw.tween_method(func(t: float) -> void:
 		if not is_instance_valid(boom):
@@ -1204,6 +1316,12 @@ func _fx_boomerang(from_pos: Vector3, to_pos: Vector3, on_land: Callable = Calla
 	, 0.0, 1.0, 0.32)
 
 	tw.tween_callback(func() -> void:
+		if is_instance_valid(boom):
+			boom.queue_free()
+	)
+
+	# Fallback: guarantee cleanup if tween is interrupted (e.g. scene change mid-flight)
+	get_tree().create_timer(1.2).timeout.connect(func() -> void:
 		if is_instance_valid(boom):
 			boom.queue_free()
 	)
@@ -1235,3 +1353,226 @@ func _get_enemy_spawn_positions(room: Dictionary, ox: int, oz: int, count: int) 
 		positions.append(Vector2i(cx + 3, cy + positions.size()))
 
 	return positions
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WEAPON SPECIAL EFFECTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Ice bow impact — ring of ice shards bursting outward + blue light flash.
+func _fx_ice_impact(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# Ice shard ring (8 thin box shards)
+	for i in 8:
+		var shard := MeshInstance3D.new()
+		var smesh := BoxMesh.new()
+		smesh.size = Vector3(0.06, 0.06, 0.24)
+		shard.mesh = smesh
+		shard.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.6, 0.9, 1.0, 0.9)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = Color(0.3, 0.75, 1.0)
+		mat.emission_energy_multiplier = 2.2
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		shard.material_override = mat
+		_scene_root.add_child(shard)
+		shard.global_position = world_pos
+
+		var angle: float = (float(i) / 8.0) * TAU
+		var target_pos := world_pos + Vector3(cos(angle) * 1.1, randf_range(0.1, 0.7), sin(angle) * 1.1)
+		shard.look_at(target_pos)
+
+		var tw := shard.create_tween().set_parallel(true)
+		tw.tween_property(shard, "global_position", target_pos, 0.28).set_ease(Tween.EASE_OUT)
+		tw.tween_property(shard, "modulate:a", 0.0, 0.35).set_delay(0.12)
+		tw.chain().tween_callback(shard.queue_free)
+
+	# Blue light flash
+	var flash := OmniLight3D.new()
+	flash.light_color = Color(0.35, 0.75, 1.0)
+	flash.light_energy = 4.5
+	flash.omni_range = 3.5
+	flash.shadow_enabled = false
+	_scene_root.add_child(flash)
+	flash.global_position = world_pos
+	var ftw := flash.create_tween()
+	ftw.tween_property(flash, "light_energy", 0.0, 0.35)
+	ftw.tween_callback(flash.queue_free)
+
+
+## Fire staff AoE impact — expanding fireball core + ember sparks + orange flash.
+func _fx_fire_impact(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# Expanding fireball core
+	var core := MeshInstance3D.new()
+	var cmesh := SphereMesh.new()
+	cmesh.radius = 0.20
+	cmesh.height = 0.40
+	core.mesh = cmesh
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var cmat := StandardMaterial3D.new()
+	cmat.albedo_color = Color(1.0, 0.55, 0.1, 0.9)
+	cmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	cmat.emission_enabled = true
+	cmat.emission = Color(1.0, 0.3, 0.0)
+	cmat.emission_energy_multiplier = 3.5
+	cmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	core.material_override = cmat
+	_scene_root.add_child(core)
+	core.global_position = world_pos
+
+	var ctw := core.create_tween().set_parallel(true)
+	ctw.tween_property(core, "scale", Vector3.ONE * 3.5, 0.30).set_ease(Tween.EASE_OUT)
+	ctw.tween_property(core, "modulate:a", 0.0, 0.36)
+	ctw.chain().tween_callback(core.queue_free)
+
+	# 8 ember sparks flying outward
+	for i in 8:
+		var ember := MeshInstance3D.new()
+		var emesh := SphereMesh.new()
+		emesh.radius = 0.07
+		emesh.height = 0.14
+		ember.mesh = emesh
+		ember.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var emat := StandardMaterial3D.new()
+		emat.albedo_color = Color(1.0, 0.40, 0.0, 1.0)
+		emat.emission_enabled = true
+		emat.emission = Color(1.0, 0.2, 0.0)
+		emat.emission_energy_multiplier = 2.8
+		emat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		ember.material_override = emat
+		_scene_root.add_child(ember)
+		ember.global_position = world_pos
+
+		var angle: float = (float(i) / 8.0) * TAU + randf_range(-0.3, 0.3)
+		var radius: float = randf_range(0.7, 1.5)
+		var target_pos := world_pos + Vector3(cos(angle) * radius, randf_range(0.2, 1.0), sin(angle) * radius)
+
+		var etw := ember.create_tween().set_parallel(true)
+		etw.tween_property(ember, "global_position", target_pos, 0.35).set_ease(Tween.EASE_OUT)
+		etw.tween_property(ember, "modulate:a", 0.0, 0.40).set_delay(0.10)
+		etw.chain().tween_callback(ember.queue_free)
+
+	# Orange light flash
+	var flash := OmniLight3D.new()
+	flash.light_color = Color(1.0, 0.50, 0.1)
+	flash.light_energy = 5.5
+	flash.omni_range = 4.5
+	flash.shadow_enabled = false
+	_scene_root.add_child(flash)
+	flash.global_position = world_pos
+	var ftw := flash.create_tween()
+	ftw.tween_property(flash, "light_energy", 0.0, 0.38)
+	ftw.tween_callback(flash.queue_free)
+
+
+## Three throwing knives fly from `from_pos` to `to_pos` in quick succession.
+## `on_land` fires after the last knife arrives.
+func _fx_throwing_knives(from_pos: Vector3, to_pos: Vector3, on_land: Callable = Callable()) -> void:
+	if _scene_root == null:
+		if on_land.is_valid():
+			on_land.call()
+		return
+
+	var travel_time := 0.18
+	var knife_count := 3
+	var offsets: Array = [
+		Vector3(-0.14, 0.06, 0.0),
+		Vector3(0.0, 0.0, 0.0),
+		Vector3(0.14, 0.06, 0.0),
+	]
+
+	var dir := (to_pos - from_pos).normalized()
+
+	for ki in knife_count:
+		var delay: float = ki * 0.09
+		var off: Vector3 = offsets[ki]
+		var knife_from := from_pos + off
+		var knife_to := to_pos + off * 0.25  # converge slightly on impact
+
+		var knife := MeshInstance3D.new()
+		var kmesh := BoxMesh.new()
+		kmesh.size = Vector3(0.05, 0.05, 0.28)
+		knife.mesh = kmesh
+		knife.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var kmat := StandardMaterial3D.new()
+		kmat.albedo_color = Color(0.80, 0.85, 0.95)
+		kmat.metallic = 0.92
+		kmat.roughness = 0.12
+		kmat.emission_enabled = true
+		kmat.emission = Color(0.45, 0.50, 1.0)
+		kmat.emission_energy_multiplier = 0.75
+		kmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		knife.material_override = kmat
+		_scene_root.add_child(knife)
+		knife.global_position = knife_from
+
+		# Orient knife along direction of travel
+		if dir.length_squared() > 0.01:
+			knife.look_at(knife_from + dir)
+
+		var tw := knife.create_tween()
+		tw.tween_interval(delay)
+		tw.tween_property(knife, "global_position", knife_to, travel_time) \
+			.set_trans(Tween.TRANS_LINEAR)
+		tw.tween_callback(func() -> void:
+			if is_instance_valid(knife):
+				knife.queue_free()
+		)
+
+		# Fallback: guarantee knife is freed even if tween is interrupted
+		var knife_timeout := delay + travel_time + 0.4
+		get_tree().create_timer(knife_timeout).timeout.connect(func() -> void:
+			if is_instance_valid(knife):
+				knife.queue_free()
+		)
+
+	# Fire on_land after the last knife arrives (SceneTree timer survives node cleanup)
+	var last_land := (knife_count - 1) * 0.09 + travel_time + 0.02
+	if on_land.is_valid():
+		get_tree().create_timer(last_land).timeout.connect(on_land)
+
+
+## Shader-based slash sweep — billboarded quad at impact point.
+## Layered on top of the sprite-based _fx_impact for melee/arrow hits.
+func _fx_slash_sweep(world_pos: Vector3, tint: Color) -> void:
+	if _scene_root == null or _slash_shader == null:
+		return
+
+	var quad := MeshInstance3D.new()
+	var qmesh := QuadMesh.new()
+	qmesh.size = Vector2(1.3, 1.3)
+	quad.mesh = qmesh
+	quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var smat := ShaderMaterial.new()
+	smat.shader = _slash_shader
+	if not _FX_SLASH.is_empty() and ResourceLoader.exists(_FX_SLASH[0]):
+		smat.set_shader_parameter("mask_texture", load(_FX_SLASH[0]))
+	smat.set_shader_parameter("color", tint * 1.2)
+	smat.set_shader_parameter("intensity", 1.8)
+	smat.set_shader_parameter("speed", 3.2)
+	smat.set_shader_parameter("threshold", 0.28)
+	smat.set_shader_parameter("fade", 1.0)
+	quad.material_override = smat
+	_scene_root.add_child(quad)
+	quad.global_position = world_pos
+	quad.scale = Vector3.ZERO
+
+	var tw := quad.create_tween().set_parallel(true)
+	tw.tween_property(quad, "scale", Vector3.ONE * 1.4, 0.08).set_ease(Tween.EASE_OUT)
+	tw.tween_method(func(v: float) -> void:
+		if is_instance_valid(quad):
+			smat.set_shader_parameter("fade", v)
+	, 1.0, 0.0, 0.22).set_delay(0.06)
+	tw.chain().tween_callback(quad.queue_free)

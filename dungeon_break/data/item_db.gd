@@ -112,6 +112,12 @@ const ITEMS := {
 		"description": "A heavy battle axe.",
 		"attack_bonus": 4, "value": 35,
 	},
+	"throwing_knives": {
+		"id": "throwing_knives", "name": "Throwing Knives", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/throwing_knives.png",
+		"description": "Balanced blades that pierce through enemies in a line. +2 attack range.",
+		"attack_bonus": 3, "value": 35, "range_bonus": 2, "pierce": true,
+	},
 
 	# ── ARMOR (HELM) ────────────────────────────────────────────────────────
 	"helm_iron": {
@@ -351,6 +357,7 @@ const ENEMY_LOOT := [
 	[2, 5,  4,  "blade"],
 	[2, 5,  4,  "axe"],
 	[3, 6,  3,  "crossbow"],
+	[3, 6,  3,  "throwing_knives"],
 	[4, 7,  2,  "magic_knife"],
 	[5, 99, 2,  "knights_sword"],
 	[6, 99, 1,  "morningstar"],

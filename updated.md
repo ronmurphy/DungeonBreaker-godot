@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document
-*Last updated: 2026-02-27 (session 3)*
+*Last updated: 2026-02-28 (session 4)*
 
 ---
 
@@ -367,7 +367,7 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] FFT-style tactical grid combat
 - [x] Initiative order (SPD + d6)
 - [x] Move phase: blue tiles shown, click to move
-- [x] Act phase: attack, defend actions
+- [x] Act phase: attack, defend, counter, guts, wait, flee actions
 - [x] Clash roll damage system
 - [x] Enemy AI: approach + attack
 - [x] Combat ends on player win/loss
@@ -376,18 +376,87 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Combat camera: on combat start, pitch snaps to 40° and camera zooms to distance 18 (0.45s cubic tween); scroll/pitch keys (R/T) locked; Q/E yaw snaps immediately for correct frustum culling
 - [x] Zoom restore: after combat ends, zoom-out (0.6s cubic tween) is deferred until after the wall-opacity fade completes so the reveal feels intentional
 
+**Tactical Grid Highlights:**
+- Blue = move range, Orange = enemy, Green = player, White cursor = dedicated `_cursor_mesh` (not in `_markers` dict)
+- Teal diamond = ranged weapon attack zone (replaces red for ranged weapons, `COLOR_RANGED_ZONE`)
+- Bright cyan = active projectile flight path (`COLOR_RANGED_PATH`) — shown on launch, cleared when projectile lands
+- Boomerang path tiles use same Bezier parameters as the visual arc, sampling both outbound + return arcs
+
+**Combat FX System (`combat_manager.gd`):**
+- Screen shake: `isometric_camera.gd:shake(trauma)` — trauma-decay quadratic falloff
+- Impact sprites: Sprite3D (slash/spark) scale-up + fade-out (0.26s); secondary spark burst offset randomly
+- Slash shader sweep: `slash_effect.gdshader` — billboarded QuadMesh, `blend_add + unshaded`, scrolling UV mask using slash sprite, `fade` uniform for clean fade-out via `tween_method`; layered on every slash-type impact
+- Floating damage numbers: Label3D rises 1.8m + fades over 0.65s (delayed 0.22s)
+- Guts burst: two expanding magic circles + 6-way star spray
+- SFX: `Craft.ogg` = hit, `Select.ogg` = miss/dodge, `Fire.ogg` = guts unleash (pitch-varied)
+
+**Ranged Combat:**
+- `attack_range` = `PLAYER_ATTACK_RANGE(1) + equip_weapon.range_bonus`
+- Crossbow (range 3): bolt sprite, 0.20s travel
+- Fire Staff (range 4): fireball sprite, 0.28s travel + AoE splash on land
+- Ice Bow (range 4): frost bolt, 0.22s travel + freeze on land
+- Boomerang (range 3): 3D V-shaped mesh, two BoxMesh arms, OmniLight blue glow; Bezier outbound arc (LEFT) 0.40s → `on_land` callback → return arc (RIGHT) 0.32s; tween owned by `boom` node (survives combat_manager cleanup)
+- Throwing Knives (range 3): 3 silver BoxMesh knives in sequence (0/90/180ms delay, 180ms each); pierce mechanic hits all enemies on Bresenham line for half damage
+
+**Special Weapon Mechanics:**
+- **Ice Bow**: `on_land` triggers `_fx_ice_impact()` (8 BoxMesh shards ring + blue OmniLight) + sets `target["frozen_turns"] = 1`; frozen enemy's next `_start_enemy_turn()` skips AI entirely, shows "FROZEN!" float text, decrements counter
+- **Fire Staff**: `on_land` triggers `_fx_fire_impact()` (expanding SphereMesh + 8 ember sparks + orange OmniLight) + loops `_units` for Manhattan dist ≤ 1, applies `dmg/2` to each adjacent unit
+- **Throwing Knives**: 3 knives via `_fx_throwing_knives()`; pierce in `on_land` callback — Bresenham line, half damage to non-primary enemies on path
+- **Boomerang**: No special mechanic; visual only (arc flight, blue glow)
+
+**Projectile Robustness (session 4 fix):**
+- All projectile meshes own their own tweens (`node.create_tween()` not `self.create_tween()`) so they survive combat_manager being freed after combat ends
+- Each projectile has a fallback `get_tree().create_timer()` that frees the mesh and fires `on_land` if the tween is interrupted mid-flight
+- `landed` bool guard in `_fx_projectile()` prevents `on_land` firing twice
+
+**Key combat_manager.gd signal/callback order:**
+- `combat_started` fires inside `start_combat()` before `ui.setup()` connects → `_build_enemy_cards()` must be called directly in `setup()`, not from `_on_combat_started()`
+- `impact_cb` for ranged attacks owns path-tile clearing, FX, and special-effect logic; fires when projectile tween completes
+- `_advance_turn()` called 0.5s after `player_act()` resolves (fixed delay, independent of projectile animation length)
+
+**Input isolation fix (session 4):**
+- `combat_ui._unhandled_input()` now calls `get_viewport().set_input_as_handled()` after every combat key (1-6 for actions, S for skip, ESC for cancel target); previously these leaked to `inventory_ui._unhandled_input()` which uses 1-6 for quick-equip, causing silent item equips during combat
+
 ### UI
 - [x] Game HUD: time clock, hero panel in dungeon
 - [x] Combat UI: portrait tracker with colored dots, active unit highlight, enemy info panel, combat log, target cards
 - [x] Inventory: paper doll + 6×4 backpack grid + character stats panel
 - [x] Quick-use hotkeys (F, 1–6)
 - [x] Toast notifications for inventory actions
+- [x] Save button (💾) in inventory header → `SaveManager.save_game(slot)` → toast feedback
+- [x] Character select screen (race/gender/class picker before new game)
+
+### Player Sprites
+- [x] `CharacterSprite` node (`character_sprite.gd`) — individual PNGs from `assets/art/player_avatars/`
+- [x] Prefix pattern: `res://assets/art/player_avatars/{race}_{gender}` (e.g. `human_male`)
+- [x] Poses: idle, `_back`, `_run`, `_run_back`, `_attack`, `_ready`, `_sad`, `_worried`, `_happy`, `_angry`, `_thumbs_up`, `_jumping`, `_jumping_back`
+- [x] Walk animation: flip_h toggled every 0.25s for diagonal dirs; sideways is static
+- [x] pixel_size = 0.0045 for player (433×688px); enemies use `EntityManager.ENTITY_PIXEL_SIZE_FULL = 0.003`
+- [x] Portraits: `assets/art/player_avatars/{g}{r}_port.png` (g=m/f, r=h/e/d/g)
+- [x] `GameData.get_portrait_path()` + `GameData.player_sprite_prefix`
+
+### NPC Shop System
+- [x] Daniels (armor) + Conner (potion) always available in camp from game start
+- [x] Zara (magic), Michelle (structure), Mahan (weapon), Claude (sage) rescued 1-per-floor-cleared
+- [x] Shop UI (`ui/shop_ui.gd`): tiered inventory by floor (0-1 / 2-4 / 5+) via `_get_shop_tier()`
+- [x] Sage UI (`ui/sage_ui.gd`): mechanic hints, "Another Hint" button
+- [x] `rescued_npcs` saved/restored in GameData's save dict
+- [x] NPC UI open flag (`_npc_ui_open`) prevents stacking
 
 ### Data Systems
 - [x] GameData: full player state, class system, save/load dict
-- [x] ItemDB: item creation, equipping, backpack management
+- [x] ItemDB: item creation, equipping, backpack management; 40+ items across weapons/armor/food/potions
 - [x] EnemyDB: entities.json loading, portrait paths
 - [x] 9 player classes with distinct base stats
+- [x] Weapons with ranged mechanics: crossbow, fire_staff, ice_bow, boomerang, throwing_knives
+
+### Save System
+- [x] `SaveManager` autoload — `save_game(slot)`, `load_game(slot)`, `get_slot_info(slot)`, `delete_slot(slot)`
+- [x] Files: `user://dungeon_break_save_N.json` (N = 0..2, MAX_SLOTS=3)
+- [x] `dungeon_seed` in GameData — set before `build_dungeon()`, reset to 0 on `_on_advance_floor()` for fresh layouts
+- [x] `scene_state` ("camp"/"dungeon") determines where to restore on load
+- [x] Save slot UI (`ui/save_slot_ui.gd`): name/class/floor/HP/timestamp per slot, overwrite confirmation
+- [x] Flow: main.gd → SaveSlotUI (3 cards) → New Game (char select) OR Load (restores GameData → camp or dungeon)
 
 ---
 
@@ -398,6 +467,7 @@ The camp is meant to be populated with named characters:
 - **Joe** — soul broker, retired adventurer, first NPC met. "You look new."
 - **Mira** — cartographer, self-mapping mini-map mechanic
 - **Old Pell** — healer, tends the Azure Flame. "A necromancer is just a cleric that arrived a bit too late." (no elaboration)
+- Joe/Mira/Old Pell have no dialogue yet (NPC shops Daniels/Conner/etc. are working)
 - Tutorial quest: find the duck chest (duck.glb) surrounded by enemies
 
 ### Visual Novel Cutscenes
@@ -416,12 +486,14 @@ Gothic fantasy painted art panels + text below, click to advance. 3–5 scene pa
 - CA-generated spiral descent zone (visual descent between floors)
 - Currently just a scene reload. JS version had a fade veil with "FLOOR N / The Depths Await"
 
+### Advanced Weapon Mechanics (not yet wired)
+- Ice Bow slow (currently freezes 1 turn — could add move-range reduction)
+- Rocket launcher AoE (item exists in reference project at `items/rocket_launcher/`)
+- Grappling hook repositioning (item exists in reference project)
+
 ### Inventory
 - True drag-and-drop (currently click-to-select + click-to-equip)
 - Hotbar slot management UI
-
-### Save System
-- `GameData.to_save_dict()` / `from_save_dict()` exists but no file I/O wired yet
 
 ---
 
@@ -435,6 +507,17 @@ Gothic fantasy painted art panels + text below, click to advance. 3–5 scene pa
 
 ---
 
+## Reference Project (Effects Goldmine)
+
+A second full Godot game at `/home/brad/Documents/Godot/theLongNights-godot/project/` shares the same art assets and is a source for combat effects code to adapt:
+
+- **Projectiles:** `blocky_game/projectiles/` — boomerang, ice_arrow, fireball, throwing_knife, flying_blade, arrow, goblin_bomb, scatter_shot, spear_projectile, plasma_shot, energy_beam, necrotic_bolt, void_bolt, meteor, thorn, acid_spit, thrown_torch
+- **Item scripts:** `blocky_game/items/` — boomerang/, ice_bow/, fire_staff/, crossbow/, throwing_knives/, grappling_hook/, rocket_launcher/
+- **FX shaders:** `blocky_game/items/impact_effect.gdshader`, `slash_effect.gdshader`, `spatial_slash_effect.gdshader`
+- **Art:** Same `assets/art/textures/` (slash_01-05, spark_01-07, star_01-07, magic_01-05, circle_01-05), also has `assets/art/effects/` and unique tool art (`iceShard.png`, `ice_bow.png`, `fire_staff.png`, `fire_01.png`, `fire_02.png`)
+
+---
+
 ## Development Notes
 
 - **JS prototype location:** `/home/brad/Documents/dungeon-break/` — kept as reference, not active
@@ -442,3 +525,6 @@ Gothic fantasy painted art panels + text below, click to advance. 3–5 scene pa
 - **Why Godot?** The JS version kept breaking under complexity (3D rendering, combat state, UI all fighting each other). Godot gives proper scene tree, signals, and typed GDScript.
 - **Zylann template cleanup:** The blocky_terrain, smooth_terrain, multipass_generator, and grid_pathfinding template folders were deleted. Kept: `blocky_game/blocks/` (for voxel library/textures) and `common/` (utility scripts). `addons/` kept in full.
 - **Wall material split:** `blocky_game/blocks/terrain_material_wall.tres` is a separate StandardMaterial3D (same texture atlas as `terrain_material.tres`) assigned only to the three dungeon wall block types (log_y, stone_bricks, void_stone_bricks) in `voxel_library.tres`. This gives walls their own mesh surface so `dungeon.gd` can fade them independently during combat via `_set_wall_combat_mode()`. Floor blocks (planks, ruin_stone, void_stone, dirt, stone, etc.) continue using the original `terrain_material.tres`.
+- **Projectile robustness pattern:** All projectile meshes must own their tweens via `node.create_tween()` (NOT `self.create_tween()` on the combat_manager). Otherwise, when combat ends and the combat_manager is freed, the tween dies and the mesh sits frozen in world space. Each projectile also has a fallback `get_tree().create_timer()` (SceneTree-owned, survives any node being freed) that cleans up the mesh and fires `on_land` if the tween is interrupted.
+- **Slash shader (`dungeon_break/combat/slash_effect.gdshader`):** `blend_add, unshaded, cull_disabled, depth_draw_never`; vertex shader handles billboarding (preserves node scale); `fade` uniform (0→1) animated via `tween_method` + `smat.set_shader_parameter()` since `MeshInstance3D` has no `modulate` property (that's CanvasItem only). Shader cached once in `_init_fx()` via `_slash_shader: Shader`; each use creates a fresh `ShaderMaterial` with the shared shader.
+- **GDScript lambda capture:** `get_tree().create_timer()` timers survive node cleanup — safe for deferred callbacks. `node.create_tween()` tweens die when the node is freed — don't use `self.create_tween()` for long-lived visuals spawned as children of another node.
