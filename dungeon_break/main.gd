@@ -17,6 +17,7 @@ var _load_bg_rect: ColorRect = null       # pixelated warped fractal — animate
 var _load_bg_mat: ShaderMaterial = null
 var _load_wipe_rect: ColorRect = null     # fractal noise wipe — plays when dungeon is ready
 var _load_wipe_mat: ShaderMaterial = null
+var _load_floor_label: Label = null       # "Floor X" text shown during loading
 
 # ── Screenshot overlay ────────────────────────────────────────────────────────
 var _screenshot_layer: CanvasLayer = null
@@ -75,11 +76,26 @@ func _build_load_overlay():
 	_load_wipe_rect.visible = false
 	_load_overlay_layer.add_child(_load_wipe_rect)
 
+	# 4 — Floor label: centered text showing current floor number
+	_load_floor_label = Label.new()
+	_load_floor_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_load_floor_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_load_floor_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_load_floor_label.add_theme_font_size_override("font_size", 48)
+	_load_floor_label.add_theme_color_override("font_color", Color(0.85, 0.75, 1.0))
+	_load_floor_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.6))
+	_load_floor_label.add_theme_constant_override("shadow_offset_x", 2)
+	_load_floor_label.add_theme_constant_override("shadow_offset_y", 2)
+	_load_floor_label.visible = false
+	_load_overlay_layer.add_child(_load_floor_label)
+
 
 func _show_load_overlay():
 	_load_solid_rect.visible = true
 	_load_bg_rect.visible = true
 	_load_wipe_rect.visible = false
+	_load_floor_label.text = "Floor %d" % GameData.current_floor
+	_load_floor_label.visible = true
 
 
 func _hide_load_overlay():
@@ -93,10 +109,11 @@ func _hide_load_overlay():
 	tw.tween_method(
 		func(v: float): _load_wipe_mat.set_shader_parameter("progress", v),
 		0.0, 0.5, 0.75)
-	# Band fully covers screen — safe to hide the loading bg
+	# Band fully covers screen — safe to hide the loading bg and label
 	tw.tween_callback(func():
 		_load_bg_rect.visible = false
-		_load_solid_rect.visible = false)
+		_load_solid_rect.visible = false
+		_load_floor_label.visible = false)
 	tw.tween_method(
 		func(v: float): _load_wipe_mat.set_shader_parameter("progress", v),
 		0.5, 1.0, 0.75)
@@ -278,6 +295,10 @@ func _clear_current():
 
 func _on_enter_dungeon():
 	GameData.in_dungeon = true
+	# Skip floors the player has fully cleared (all clearable rooms beaten)
+	while GameData.is_floor_cleared(GameData.current_floor):
+		GameData.current_floor += 1
+		GameData.dungeon_seed = 0
 	_load_dungeon(GameData.current_floor)
 
 
@@ -291,6 +312,4 @@ func _on_advance_floor():
 	if rescued != "":
 		var npc_def: Dictionary = NpcDB.get_def(rescued)
 		print("Main: rescued — %s (%s)" % [npc_def.get("name", rescued), rescued])
-	GameData.dungeon_seed = 0  # generate a fresh seed for the new floor
-	GameData.advance_floor()
 	_load_dungeon(GameData.current_floor)

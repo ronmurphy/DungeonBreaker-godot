@@ -203,7 +203,8 @@ func find_path(from: Vector2i, to: Vector2i, max_steps: int = 100) -> Array[Vect
 			var next: Vector2i = current + dir
 			if next in visited:
 				continue
-			if not is_walkable(next):
+			# Allow the destination tile even if blocked (occupied by the target unit)
+			if next != to and not is_walkable(next):
 				continue
 			visited[next] = true
 			parents[next] = current

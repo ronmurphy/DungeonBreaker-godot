@@ -72,6 +72,10 @@ var active_companions: Array[String] = []
 ## Rooms in this dict are skipped for enemy spawning when the floor is re-entered.
 var cleared_rooms: Dictionary = {}
 
+## Total clearable room count per floor — key = floor number as String, value = int.
+## Set during dungeon generation; used to check if a floor is fully cleared.
+var floor_room_counts: Dictionary = {}
+
 ## Ordered pool — matches NpcDB.NPC_DEFS keys.
 const NPC_RESCUE_POOL: Array = ["daniels", "conner", "zara", "michelle", "mahan", "claude"]
 
@@ -202,6 +206,7 @@ func _init_class(cls: PlayerClass):
 	companions.clear()
 	active_companions.clear()
 	cleared_rooms.clear()
+	floor_room_counts.clear()
 	scene_state  = "camp"
 	dungeon_seed = 0
 
@@ -382,6 +387,22 @@ func is_room_cleared(floor: int, room_id: int) -> bool:
 	return room_id in (cleared_rooms[fkey] as Array)
 
 
+## Store the total number of clearable rooms for a floor.
+func set_floor_room_count(floor: int, count: int):
+	floor_room_counts[str(floor)] = count
+
+
+## Returns true if every clearable room on the floor has been cleared.
+func is_floor_cleared(floor: int) -> bool:
+	var fkey: String = str(floor)
+	if not floor_room_counts.has(fkey):
+		return false
+	var total: int = floor_room_counts[fkey] as int
+	if not cleared_rooms.has(fkey):
+		return false
+	return (cleared_rooms[fkey] as Array).size() >= total
+
+
 ## Get deck multiplier for current floor (controls encounter density).
 ## Floor 1–3: 1x, Floor 4–6: 2x, Floor 7+: 3x.
 func get_deck_multiplier() -> int:
@@ -428,6 +449,7 @@ func to_save_dict() -> Dictionary:
 		"companions":        companions.duplicate(true),
 		"active_companions": active_companions.duplicate(),
 		"cleared_rooms":     cleared_rooms.duplicate(true),
+		"floor_room_counts": floor_room_counts.duplicate(true),
 	}
 
 
@@ -486,3 +508,8 @@ func from_save_dict(data: Dictionary):
 		for v in raw_ids:
 			int_ids.append(int(v))
 		cleared_rooms[fkey] = int_ids
+	# Load floor room counts (JSON stores keys as strings, values as floats)
+	var saved_frc: Dictionary = data.get("floor_room_counts", {})
+	floor_room_counts = {}
+	for fkey2: String in saved_frc:
+		floor_room_counts[fkey2] = int(saved_frc[fkey2])

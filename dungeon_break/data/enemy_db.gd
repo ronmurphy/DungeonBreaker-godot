@@ -144,16 +144,18 @@ func apply_variant(stats: Dictionary) -> Dictionary:
 ## Get the ready-pose texture path for an entity key.
 func get_ready_texture_path(key: String) -> String:
 	var m := get_enemy(key)
-	if m.has("sprite_ready"):
-		return ENTITY_ART_PATH + m["sprite_ready"]
+	var rdy: Variant = m.get("sprite_ready", null)
+	if rdy != null and rdy is String and (rdy as String) != "":
+		return ENTITY_ART_PATH + (rdy as String)
 	return ENTITY_ART_PATH + key + "_ready_pose_enhanced.png"
 
 
 ## Get the attack-pose texture path for an entity key.
 func get_attack_texture_path(key: String) -> String:
 	var m := get_enemy(key)
-	if m.has("sprite_attack"):
-		return ENTITY_ART_PATH + m["sprite_attack"]
+	var atk: Variant = m.get("sprite_attack", null)
+	if atk != null and atk is String and (atk as String) != "":
+		return ENTITY_ART_PATH + (atk as String)
 	return ENTITY_ART_PATH + key + "_attack_pose_enhanced.png"
 
 

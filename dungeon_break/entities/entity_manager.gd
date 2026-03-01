@@ -132,14 +132,26 @@ func play_attack_flash(entity: Node3D, attack_tex_path: String) -> void:
 	var sprite: Sprite3D = entity.get_meta("sprite", null)
 	if sprite == null:
 		return
-	var attack_tex := _get_texture(attack_tex_path)
+	# Try cache first, then load() directly (bypass ResourceLoader.exists which can fail for some paths)
+	var attack_tex: Texture2D = null
+	if _texture_cache.has(attack_tex_path):
+		attack_tex = _texture_cache[attack_tex_path]
+	else:
+		attack_tex = load(attack_tex_path) as Texture2D
+		if attack_tex != null:
+			_texture_cache[attack_tex_path] = attack_tex
 	if attack_tex == null:
+		push_warning("EntityManager: attack texture not found — %s" % attack_tex_path)
 		return
 	var base_tex: Texture2D = sprite.texture
 	sprite.texture = attack_tex
-	get_tree().create_timer(0.45).timeout.connect(func() -> void:
-		if is_instance_valid(sprite):
-			sprite.texture = base_tex
+	# Capture entity (not sprite) to avoid "lambda capture freed" errors when the
+	# entity is despawned/pooled before the timer fires.
+	get_tree().create_timer(0.75).timeout.connect(func() -> void:
+		if is_instance_valid(entity):
+			var s: Sprite3D = entity.get_meta("sprite", null)
+			if s != null:
+				s.texture = base_tex
 	)
 
 

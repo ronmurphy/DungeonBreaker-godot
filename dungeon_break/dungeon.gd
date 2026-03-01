@@ -202,6 +202,13 @@ func _spawn_enemies(data: Dictionary):
 	var ox: int = data["offset_x"]
 	var oz: int = data["offset_z"]
 
+	# Count and store the total number of clearable rooms for this floor
+	var clearable_count: int = 0
+	for room in rooms:
+		if room["room_type"] not in ["start", "bonfire", "merchant", "fountain", "alchemy"]:
+			clearable_count += 1
+	GameData.set_floor_room_count(_floor_num, clearable_count)
+
 	var floor_enemies: Array = EnemyDB.get_enemies_for_floor(_floor_num)
 	if floor_enemies.is_empty():
 		push_warning("Dungeon: no enemies for floor %d" % _floor_num)
@@ -464,9 +471,12 @@ func _on_combat_ended(victory: bool, room: Dictionary):
 		GameData.mark_room_cleared(_floor_num, room["id"])
 		print("Dungeon: room %d cleared!" % room["id"])
 
-		# If boss room cleared, enable the floor portal
+		# If boss room cleared, enable the floor portal and advance floor
 		if room["room_type"] == "boss":
 			_enable_boss_portal()
+			GameData.dungeon_seed = 0
+			GameData.advance_floor()
+			print("Dungeon: boss defeated — advanced to floor %d" % GameData.current_floor)
 	else:
 		# Player died — return to camp with penalty
 		GameData.hp = GameData.hp_max / 2
@@ -486,8 +496,8 @@ func _enable_boss_portal():
 			light.light_energy = 3.0
 			light.omni_range = 8.0
 			light.shadow_enabled = false
-			light.global_position = child.global_position
 			_dungeon_objects.add_child(light)
+			light.global_position = child.global_position
 			break
 
 
@@ -506,7 +516,6 @@ func _do_return_to_camp():
 
 
 func _do_advance_floor():
-	GameData.advance_floor()
 	EntityManager.despawn_all()
 	advance_floor.emit()
 

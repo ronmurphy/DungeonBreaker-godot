@@ -2,17 +2,15 @@ extends CanvasLayer
 ## FFT-style Combat UI — tactical overlay during grid combat.
 ##
 ## Shows:
-##   - Portrait tracker (left) — unit cards with colored dots, active-unit indent
+##   - Portrait tracker (top-left) — unit cards with colored dots, active-unit indent
 ##   - Action menu (right) — vertical list, FFT-style
 ##   - Combat log (bottom-left, above enemy panel)
 ##   - Enemy info panel (bottom-left) — visible during enemy turns
-##   - Phase indicator — "YOUR TURN" / "MOVE" / "ACT" / enemy name
 
 var _combat: Node = null  # TacticalCombatManager reference
 
 # ── UI nodes ──────────────────────────────────────────────────────────────────
 var _turn_bar: HBoxContainer = null          # null — kept for signal compat
-var _phase_label: Label = null
 var _action_panel: PanelContainer = null
 var _action_list: VBoxContainer = null
 var _combat_log: RichTextLabel = null
@@ -66,16 +64,6 @@ func setup(combat_manager: Node):
 
 
 func _build_ui():
-	# ── Phase indicator (top-left) ──
-	_phase_label = Label.new()
-	_phase_label.name = "PhaseLabel"
-	_phase_label.add_theme_font_size_override("font_size", 20)
-	_phase_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.4))
-	_phase_label.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_phase_label.offset_left = 12
-	_phase_label.offset_top = 48
-	_phase_label.text = "COMBAT"
-	add_child(_phase_label)
 
 	# ── Action menu (right side, vertical) ──
 	_action_panel = PanelContainer.new()
@@ -225,14 +213,14 @@ func _build_ui():
 	_enemy_info_stats.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
 	ei_vbox.add_child(_enemy_info_stats)
 
-	# ── Portrait tracker (left side, center-anchored) ──
+	# ── Portrait tracker (left side, top-anchored) ──
 	_portrait_panel = VBoxContainer.new()
 	_portrait_panel.name = "PortraitTracker"
-	_portrait_panel.set_anchors_preset(Control.PRESET_CENTER_LEFT)
+	_portrait_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_portrait_panel.offset_left = 8
 	_portrait_panel.offset_right = 188
-	_portrait_panel.offset_top = -200
-	_portrait_panel.offset_bottom = 200
+	_portrait_panel.offset_top = 8
+	_portrait_panel.offset_bottom = 500
 	_portrait_panel.add_theme_constant_override("separation", 4)
 	add_child(_portrait_panel)
 
@@ -292,13 +280,9 @@ func _on_unit_turn_started(unit: Dictionary):
 				break
 
 	if unit["type"] == "player":
-		_phase_label.text = "YOUR TURN"
-		_phase_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.5))
 		if _enemy_info_panel:
 			_enemy_info_panel.visible = false
 	elif unit["type"] == "companion":
-		_phase_label.text = unit["name"] + " ♦"
-		_phase_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
 		_action_panel.visible = false
 		# Only close sub panel if NOT showing a recruit/swap modal
 		if not _in_recruit_sub:
@@ -306,8 +290,6 @@ func _on_unit_turn_started(unit: Dictionary):
 		if _enemy_info_panel:
 			_enemy_info_panel.visible = false
 	else:
-		_phase_label.text = unit["name"]
-		_phase_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.2))
 		_action_panel.visible = false
 		# Only close sub panel if NOT showing a recruit/swap modal
 		if not _in_recruit_sub:
@@ -316,8 +298,6 @@ func _on_unit_turn_started(unit: Dictionary):
 
 
 func _on_move_phase_started(unit: Dictionary, _tiles: Array):
-	_phase_label.text = "MOVE"
-	_phase_label.add_theme_color_override("font_color", Color(0.4, 0.7, 1.0))
 	_close_sub_panel()
 
 	var tile_count := _tiles.size()
@@ -331,9 +311,6 @@ func _on_move_phase_started(unit: Dictionary, _tiles: Array):
 
 
 func _on_act_phase_started(unit: Dictionary):
-	_phase_label.text = "ACT"
-	_phase_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))
-
 	_selecting_target = false
 	_enemy_target_panel.visible = false
 	_close_sub_panel()
@@ -364,11 +341,9 @@ func _on_combat_ended(victory: bool):
 		_enemy_info_panel.visible = false
 
 	if victory:
-		_phase_label.text = "VICTORY!"
-		_phase_label.add_theme_color_override("font_color", Color(0.3, 1.0, 0.4))
+		_log("[color=lime]═══ VICTORY! ═══[/color]")
 	else:
-		_phase_label.text = "DEFEAT"
-		_phase_label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
+		_log("[color=red]═══ DEFEAT ═══[/color]")
 
 	await get_tree().create_timer(2.0).timeout
 	queue_free()

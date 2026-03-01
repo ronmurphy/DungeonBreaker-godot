@@ -179,7 +179,7 @@ func _build_occupied_slot(col: VBoxContainer, slot: int, info: Dictionary) -> vo
 
 	var scene: String = info.get("scene_state", "camp") as String
 	var floor_num: int = info.get("floor", 1) as int
-	var loc_text := "Camp" if scene == "camp" else "Floor %d" % floor_num
+	var loc_text := "Camp  -  Floor %d" % floor_num if scene == "camp" else "Dungeon  -  Floor %d" % floor_num
 	var loc_lbl := Label.new()
 	loc_lbl.text = loc_text
 	loc_lbl.add_theme_font_size_override("font_size", 12)

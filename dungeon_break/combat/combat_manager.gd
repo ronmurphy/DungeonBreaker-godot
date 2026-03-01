@@ -490,7 +490,7 @@ func _start_enemy_turn(unit_idx: int):
 		dist_to_target = absi(unit["grid_pos"].x - target_pos_grid.x) + absi(unit["grid_pos"].y - target_pos_grid.y)
 		if dist_to_target <= unit["attack_range"]:
 			_do_enemy_attack(unit_idx, nearest_target_idx)
-			await get_tree().create_timer(0.4).timeout
+			await get_tree().create_timer(0.7).timeout
 		else:
 			action_resolved.emit("%s watches warily." % unit["name"])
 	else:
@@ -780,6 +780,12 @@ func _do_companion_attack(attacker_idx: int, target_idx: int):
 	var attacker: Dictionary = _units[attacker_idx]
 	var target: Dictionary = _units[target_idx]
 
+	# Show companion's attack pose sprite
+	var c_key: String = attacker.get("entity_key", "")
+	var c_entity: Node3D = attacker.get("entity", null) as Node3D
+	if c_key != "" and is_instance_valid(c_entity):
+		EntityManager.play_attack_flash(c_entity, EnemyDB.get_attack_texture_path(c_key))
+
 	var atk_roll: int = _clash_roll(attacker["attack"])
 	var def_roll: int = _clash_roll(target["defense"])
 
@@ -1060,11 +1066,9 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 
 	# Flash the enemy's world sprite to its attack pose
 	var entity_key: String = attacker.get("entity_key", "")
-	if entity_key != "" and is_instance_valid(attacker.get("entity", null)):
-		EntityManager.play_attack_flash(
-			attacker["entity"],
-			EnemyDB.get_attack_texture_path(entity_key)
-		)
+	var unit_entity: Node3D = attacker.get("entity", null) as Node3D
+	if entity_key != "" and is_instance_valid(unit_entity):
+		EntityManager.play_attack_flash(unit_entity, EnemyDB.get_attack_texture_path(entity_key))
 
 	var enemy_roll: int = _clash_roll(attacker["attack"])
 	var ac_bonus: int = GameData.ac_bonus_temp if target["type"] == "player" else 0
@@ -1290,15 +1294,19 @@ func _compute_attack_targets(unit_idx: int):
 func _flash_unit(unit: Dictionary):
 	if unit["type"] not in ["enemy", "companion"]:
 		return
-	if not is_instance_valid(unit.get("entity", null)):
+	var flash_entity: Node3D = unit.get("entity", null) as Node3D
+	if not is_instance_valid(flash_entity):
 		return
-	var sprite: Sprite3D = unit["entity"].get_meta("sprite", null)
+	var sprite: Sprite3D = flash_entity.get_meta("sprite", null)
 	if sprite:
 		var flash_color: Color = Color(1.0, 1.0, 0.3) if unit["type"] == "enemy" else Color(0.5, 1.0, 0.6)
 		sprite.modulate = flash_color
+		# Capture entity, not sprite, to avoid "lambda capture freed" errors
 		get_tree().create_timer(0.25).timeout.connect(func():
-			if is_instance_valid(sprite):
-				sprite.modulate = Color.WHITE
+			if is_instance_valid(flash_entity):
+				var s: Sprite3D = flash_entity.get_meta("sprite", null)
+				if s != null:
+					s.modulate = Color.WHITE
 		)
 
 
