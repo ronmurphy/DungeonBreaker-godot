@@ -456,11 +456,30 @@ func _show_items_sub():
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_sub_list.add_child(title)
 
-	var usable := _get_usable_items()
-	for entry in usable:
-		var item: Dictionary = entry["item"]
-		var idx: int = entry["index"]
-		_sub_list.add_child(_build_item_card(item, idx))
+	var grid := GridContainer.new()
+	grid.columns = 5
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	_sub_list.add_child(grid)
+
+	var groups := _group_backpack_items([ItemDB.ItemType.FOOD, ItemDB.ItemType.POTION])
+	for g in groups:
+		grid.add_child(_build_item_grid_slot(g))
+
+	# Fill remaining slots up to 25 (5×5) with empties
+	var remaining: int = 25 - groups.size()
+	for _i in maxi(0, remaining):
+		var empty := Button.new()
+		empty.custom_minimum_size = Vector2(44, 44)
+		var es := StyleBoxFlat.new()
+		es.bg_color = Color(0.06, 0.06, 0.08, 0.5)
+		es.border_color = Color(0.14, 0.14, 0.18)
+		es.set_border_width_all(1)
+		es.set_corner_radius_all(3)
+		es.set_content_margin_all(2)
+		empty.add_theme_stylebox_override("normal", es)
+		empty.disabled = true
+		grid.add_child(empty)
 
 	_add_sub_button("Back [ESC]", "", Color(0.35, 0.35, 0.35),
 		func(): _close_sub_panel())
@@ -679,62 +698,74 @@ func _get_usable_items() -> Array:
 	return result
 
 
-func _build_item_card(item: Dictionary, backpack_idx: int) -> Control:
-	var card := PanelContainer.new()
-	var card_style := StyleBoxFlat.new()
-	card_style.bg_color = Color(0.04, 0.12, 0.06, 0.92)
-	card_style.border_color = Color(0.3, 0.75, 0.4)
-	card_style.set_border_width_all(2)
-	card_style.set_corner_radius_all(4)
-	card_style.set_content_margin_all(5)
-	card.add_theme_stylebox_override("panel", card_style)
-	card.custom_minimum_size = Vector2(200, 60)
-	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	card.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_use_combat_item(backpack_idx)
-	)
+func _build_item_grid_slot(group: Dictionary) -> Control:
+	var item: Dictionary = group["item"]
+	var count: int = group["count"]
+	var first_idx: int = group["indices"][0]
 
-	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 7)
-	card.add_child(hbox)
+	# Container so we can overlay the count badge
+	var container := Control.new()
+	container.custom_minimum_size = Vector2(44, 44)
 
-	var icon_rect := TextureRect.new()
-	icon_rect.custom_minimum_size = Vector2(48, 48)
-	icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	var btn := Button.new()
+	btn.custom_minimum_size = Vector2(44, 44)
+	btn.clip_contents = true
+	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	var s := StyleBoxFlat.new()
+	var item_type: int = item.get("type", -1)
+	if item_type == ItemDB.ItemType.FOOD:
+		s.bg_color = Color(0.1, 0.14, 0.07, 0.92)
+		s.border_color = Color(0.5, 0.75, 0.3)
+	else:  # POTION
+		s.bg_color = Color(0.14, 0.07, 0.14, 0.92)
+		s.border_color = Color(0.75, 0.3, 0.75)
+	s.set_border_width_all(1)
+	s.set_corner_radius_all(3)
+	s.set_content_margin_all(2)
+	btn.add_theme_stylebox_override("normal", s)
+	var sh := s.duplicate() as StyleBoxFlat
+	sh.bg_color = s.bg_color.lightened(0.15)
+	btn.add_theme_stylebox_override("hover", sh)
+
+	# Icon
 	var icon_path: String = item.get("icon", "")
 	if icon_path != "" and ResourceLoader.exists(icon_path):
-		icon_rect.texture = load(icon_path)
-	hbox.add_child(icon_rect)
+		var tr := TextureRect.new()
+		tr.texture = load(icon_path)
+		tr.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.custom_minimum_size = Vector2(38, 38)
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(tr)
 
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vbox.add_theme_constant_override("separation", 3)
-	hbox.add_child(vbox)
-
-	var name_lbl := Label.new()
-	var item_name: String = item.get("name", "Item")
-	name_lbl.text = item_name
-	name_lbl.add_theme_color_override("font_color", Color(0.9, 1.0, 0.9))
-	name_lbl.add_theme_font_size_override("font_size", 12)
-	name_lbl.clip_text = true
-	vbox.add_child(name_lbl)
-
-	var desc_lbl := Label.new()
+	# Tooltip
 	var desc: String = item.get("description", "")
-	# Strip flavor text — keep only the last sentence (the effect part).
-	# e.g. "A loaf of bread. Heals 5 HP." → "Heals 5 HP."
-	if ". " in desc:
-		var parts := desc.split(". ")
-		desc = parts[parts.size() - 1]
-	desc_lbl.text = desc.trim_suffix(".")
-	desc_lbl.add_theme_font_size_override("font_size", 10)
-	desc_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 0.65))
-	desc_lbl.clip_text = true
-	vbox.add_child(desc_lbl)
+	btn.tooltip_text = "%s\n%s" % [item.get("name", "Item"), desc]
 
-	return card
+	# Click → use
+	var idx: int = first_idx
+	btn.pressed.connect(func(): _use_combat_item(idx))
+
+	btn.set_anchors_preset(Control.PRESET_FULL_RECT)
+	container.add_child(btn)
+
+	# Count badge (bottom-right)
+	if count > 1:
+		var badge := Label.new()
+		badge.text = "x%d" % count
+		badge.add_theme_font_size_override("font_size", 10)
+		badge.add_theme_color_override("font_color", Color.WHITE)
+		badge.add_theme_constant_override("shadow_offset_x", 1)
+		badge.add_theme_constant_override("shadow_offset_y", 1)
+		badge.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		badge.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		badge.set_anchors_preset(Control.PRESET_FULL_RECT)
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		container.add_child(badge)
+
+	return container
 
 
 func _use_combat_item(backpack_idx: int):
@@ -1212,6 +1243,26 @@ func _hp_bar_color(ratio: float) -> Color:
 		return Color(0.85, 0.65, 0.1)   # yellow
 	else:
 		return Color(0.8, 0.15, 0.1)    # red
+
+
+## Group backpack items by id for visual stacking.
+## Returns: [{item: Dictionary, indices: Array[int], count: int}, ...]
+func _group_backpack_items(filter_types: Array = []) -> Array:
+	var groups: Array = []
+	var id_map: Dictionary = {}
+	for i in GameData.backpack.size():
+		var item: Dictionary = GameData.backpack[i]
+		if not filter_types.is_empty() and item.get("type", -1) not in filter_types:
+			continue
+		var item_id: String = item.get("id", "_%d" % i)
+		if item_id in id_map:
+			var gi: int = id_map[item_id]
+			groups[gi]["indices"].append(i)
+			groups[gi]["count"] += 1
+		else:
+			id_map[item_id] = groups.size()
+			groups.append({"item": item, "indices": [i], "count": 1})
+	return groups
 
 
 # ── Combat log ────────────────────────────────────────────────────────────────

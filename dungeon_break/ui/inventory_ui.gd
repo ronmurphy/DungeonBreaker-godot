@@ -35,6 +35,7 @@ var _equip_slots: Dictionary = {}
 
 var _selected_index: int = -1
 var _is_open: bool = false
+var _backpack_groups: Array = []  # cached result of _group_backpack_items()
 
 
 func _ready():
@@ -487,7 +488,18 @@ func _refresh_backpack():
 	for child in _backpack_grid.get_children():
 		child.queue_free()
 
-	for i in GameData.BACKPACK_SIZE:
+	_backpack_groups = _group_backpack_items()
+
+	for gi in _backpack_groups.size():
+		var g: Dictionary = _backpack_groups[gi]
+		var item: Dictionary = g["item"]
+		var count: int = g["count"]
+		var is_selected: bool = _selected_index in g["indices"]
+
+		# Container for icon + count badge overlay
+		var container := Control.new()
+		container.custom_minimum_size = Vector2(46, 46)
+
 		var btn := Button.new()
 		btn.custom_minimum_size = Vector2(46, 46)
 		btn.clip_contents = true
@@ -496,48 +508,74 @@ func _refresh_backpack():
 		s.set_corner_radius_all(3)
 		s.set_content_margin_all(2)
 
-		if i < GameData.backpack.size():
-			var item: Dictionary = GameData.backpack[i]
-			var icon_path: String = item.get("icon", "")
-
-			if icon_path != "" and ResourceLoader.exists(icon_path):
-				var tex: Texture2D = load(icon_path)
-				if tex:
-					var tr := TextureRect.new()
-					tr.texture = tex
-					tr.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-					tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-					tr.custom_minimum_size = Vector2(40, 40)
-					tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-					btn.add_child(tr)
-			else:
-				btn.text = item.get("name", "?").substr(0, 3)
-				btn.add_theme_font_size_override("font_size", 9)
-
-			match item.get("type", -1):
-				0:          s.bg_color = Color(0.2, 0.1, 0.1, 0.9);  s.border_color = Color(0.8, 0.3, 0.3)
-				1, 2, 3, 4: s.bg_color = Color(0.1, 0.1, 0.2, 0.9);  s.border_color = Color(0.3, 0.5, 0.85)
-				5:          s.bg_color = Color(0.1, 0.14, 0.07, 0.9); s.border_color = Color(0.5, 0.75, 0.3)
-				6:          s.bg_color = Color(0.14, 0.07, 0.14, 0.9);s.border_color = Color(0.75, 0.3, 0.75)
-				_:          s.bg_color = Color(0.1, 0.1, 0.1, 0.9);  s.border_color = Color(0.3, 0.3, 0.35)
-
-			if i == _selected_index:
-				s.border_color = Color(1.0, 1.0, 0.4)
-				s.set_border_width_all(2)
-			else:
-				s.set_border_width_all(1)
-
-			btn.pressed.connect(_on_item_clicked.bind(i))
+		var icon_path: String = item.get("icon", "")
+		if icon_path != "" and ResourceLoader.exists(icon_path):
+			var tex: Texture2D = load(icon_path)
+			if tex:
+				var tr := TextureRect.new()
+				tr.texture = tex
+				tr.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+				tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				tr.custom_minimum_size = Vector2(40, 40)
+				tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				btn.add_child(tr)
 		else:
-			s.bg_color = Color(0.06, 0.06, 0.08, 0.6)
-			s.border_color = Color(0.14, 0.14, 0.18)
+			btn.text = item.get("name", "?").substr(0, 3)
+			btn.add_theme_font_size_override("font_size", 9)
+
+		match item.get("type", -1):
+			0:          s.bg_color = Color(0.2, 0.1, 0.1, 0.9);  s.border_color = Color(0.8, 0.3, 0.3)
+			1, 2, 3, 4: s.bg_color = Color(0.1, 0.1, 0.2, 0.9);  s.border_color = Color(0.3, 0.5, 0.85)
+			5:          s.bg_color = Color(0.1, 0.14, 0.07, 0.9); s.border_color = Color(0.5, 0.75, 0.3)
+			6:          s.bg_color = Color(0.14, 0.07, 0.14, 0.9);s.border_color = Color(0.75, 0.3, 0.75)
+			_:          s.bg_color = Color(0.1, 0.1, 0.1, 0.9);  s.border_color = Color(0.3, 0.3, 0.35)
+
+		if is_selected:
+			s.border_color = Color(1.0, 1.0, 0.4)
+			s.set_border_width_all(2)
+		else:
 			s.set_border_width_all(1)
 
 		btn.add_theme_stylebox_override("normal", s)
 		var sh := s.duplicate()
 		sh.bg_color = s.bg_color.lightened(0.12)
 		btn.add_theme_stylebox_override("hover", sh)
-		_backpack_grid.add_child(btn)
+		btn.tooltip_text = item.get("name", "")
+		btn.pressed.connect(_on_group_clicked.bind(gi))
+
+		btn.set_anchors_preset(Control.PRESET_FULL_RECT)
+		container.add_child(btn)
+
+		# Count badge (bottom-right)
+		if count > 1:
+			var badge := Label.new()
+			badge.text = "x%d" % count
+			badge.add_theme_font_size_override("font_size", 9)
+			badge.add_theme_color_override("font_color", Color.WHITE)
+			badge.add_theme_constant_override("shadow_offset_x", 1)
+			badge.add_theme_constant_override("shadow_offset_y", 1)
+			badge.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+			badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			badge.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+			badge.set_anchors_preset(Control.PRESET_FULL_RECT)
+			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			container.add_child(badge)
+
+		_backpack_grid.add_child(container)
+
+	# Fill remaining slots up to 24 with empties
+	var remaining: int = GameData.BACKPACK_SIZE - _backpack_groups.size()
+	for _i in maxi(0, remaining):
+		var empty := Button.new()
+		empty.custom_minimum_size = Vector2(46, 46)
+		var es := StyleBoxFlat.new()
+		es.bg_color = Color(0.06, 0.06, 0.08, 0.6)
+		es.border_color = Color(0.14, 0.14, 0.18)
+		es.set_border_width_all(1)
+		es.set_corner_radius_all(3)
+		es.set_content_margin_all(2)
+		empty.add_theme_stylebox_override("normal", es)
+		_backpack_grid.add_child(empty)
 
 
 func _refresh_detail():
@@ -554,6 +592,9 @@ func _refresh_detail():
 		return
 
 	_detail_name.text = item.get("name", "Unknown")
+	var stack_count := _get_selected_stack_count()
+	if stack_count > 1:
+		_detail_name.text = "%s  (x%d)" % [item.get("name", "Unknown"), stack_count]
 	_detail_desc.text = item.get("description", "")
 
 	var stats_text := ""
@@ -669,6 +710,12 @@ func _get_selected_item() -> Dictionary:
 func _on_item_clicked(index: int):
 	_selected_index = index
 	_refresh()
+
+
+func _on_group_clicked(group_idx: int):
+	if group_idx < _backpack_groups.size():
+		_selected_index = _backpack_groups[group_idx]["indices"][0]
+		_refresh()
 
 
 func _on_slot_clicked(slot_idx: int):
@@ -804,3 +851,30 @@ func _on_save_pressed() -> void:
 		_show_toast("Game saved  (slot %d)" % (GameData.save_slot + 1))
 	else:
 		_show_toast("Save failed!")
+
+
+func _get_selected_stack_count() -> int:
+	for g in _backpack_groups:
+		if _selected_index in g["indices"]:
+			return g["count"]
+	return 1
+
+
+## Group backpack items by id for visual stacking.
+## Returns: [{item: Dictionary, indices: Array[int], count: int}, ...]
+func _group_backpack_items(filter_types: Array = []) -> Array:
+	var groups: Array = []
+	var id_map: Dictionary = {}
+	for i in GameData.backpack.size():
+		var item: Dictionary = GameData.backpack[i]
+		if not filter_types.is_empty() and item.get("type", -1) not in filter_types:
+			continue
+		var item_id: String = item.get("id", "_%d" % i)
+		if item_id in id_map:
+			var gi: int = id_map[item_id]
+			groups[gi]["indices"].append(i)
+			groups[gi]["count"] += 1
+		else:
+			id_map[item_id] = groups.size()
+			groups.append({"item": item, "indices": [i], "count": 1})
+	return groups
