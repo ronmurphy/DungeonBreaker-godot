@@ -1,0 +1,234 @@
+# Dungeon Break — Project State Document (continued)
+*Continued from `updated.md`. Last updated: 2026-03-01 (session 6)*
+
+> This file picks up where `updated.md` left off. See that file for the base project overview, tech stack, combat system, class table, and room type reference.
+
+---
+
+## Session 6 Summary — What Was Built
+
+### 1. Bonfire Rest Mechanic
+
+The campfire in camp now has an interaction zone. When the player stands near it, the HUD shows **"[E] Rest (restores HP, advances 8 hrs)"**. Pressing E:
+- Heals the player to full HP
+- Calls `GameData.heal_companions()` — restores all companions to full HP
+- Advances `GameData.world_time` by `8.0 / 24.0` (fmod-wrapped to keep in 0–1 range)
+
+A `_bonfire_rest_pending: bool` flag in `game.gd` prevents the time from advancing every frame while E is held.
+
+**Files changed:**
+- `dungeon_break/generator/camp_builder.gd` — `_build_bonfire()` now adds an `Area3D` with `set_meta("interaction", "bonfire")` and a 5×4×5 BoxShape3D, matching the azure flame pattern
+- `dungeon_break/game.gd` — added `_bonfire_rest_pending` flag and bonfire branch in `_check_portal_interactions()`
+- `dungeon_break/data/game_data.gd` — added `heal_companions()` method
+
+---
+
+### 2. Save Slot UI Portraits
+
+The save/load screen now shows **two portraits per occupied slot**:
+- **Left**: hero portrait (`{g}{r}_port.png` — e.g. `mh_port.png` for male human)
+- **Right**: first active companion's portrait (falls back to ready-pose image if no portrait exists)
+- **Centre**: name, class, location (unchanged)
+
+A compact HP bar and gold count appear below.
+
+**Portrait resolution order (companion):**
+1. `EnemyDB.get_portrait_path(key)` → reads `sprite_portrait` from `entities.json`
+2. `EnemyDB.get_ready_texture_path(key)` → reads `sprite_ready` from `entities.json`
+3. Dim placeholder `ColorRect` if neither exists
+
+**Critical bug fixed:** `active_companions` in the save file is an `Array` of `String` keys, not an Array of Dictionaries. The old code checked `active[0] is Dictionary` which always returned false, leaving `first_companion_key` empty. Fixed to `if active[0] is String`.
+
+**Files changed:**
+- `dungeon_break/data/save_manager.gd` — `get_slot_info()` now returns `player_race`, `player_gender`, `first_companion_key`; fixed active_companions type check
+- `dungeon_break/ui/save_slot_ui.gd` — `_build_occupied_slot()` restructured with portrait row; added `_make_portrait(path, size)` helper
+
+---
+
+### 3. Companion Roster UI — Portraits Added
+
+The companion roster (opened from the Azure Flame in camp) previously had no artwork. Both the **active party** cards and **bench** cards now show a 44px portrait on the left, with name/stats on the right.
+
+Uses the same portrait → ready-pose fallback as the save screen. The `_make_portrait(key, size)` helper takes an entity key and resolves the path internally.
+
+**Files changed:**
+- `dungeon_break/ui/companion_roster_ui.gd` — `_build_active_card()` and `_build_bench_card()` restructured; `_make_portrait(key, size)` added
+
+---
+
+### 4. Dungeon Loading Screen — Two-Shader Transition
+
+Replaced the blank grey dungeon loading screen with an animated fractal sequence.
+
+#### Shaders (both from godotshaders.com, CC0)
+| File | Shader | Used for |
+|---|---|---|
+| `dungeon_break/ui/dungeon_load_bg.gdshader` | Pixelated Warped Fractal Noise | Animated loading background |
+| `dungeon_break/ui/dungeon_load_transition.gdshader` | Fractal Noise Scene Transition | Diagonal wipe reveal |
+
+#### Visual sequence
+1. Player enters dungeon portal → loading bg appears instantly (dark blue/purple animated pixelated fractal)
+2. Dungeon generates in the background (voxels, rooms, enemies, player spawn)
+3. `dungeon_ready` signal fires from `dungeon.gd`
+4. Wipe transition plays: fractal noise band sweeps diagonally across (0.75s wipe-in)
+5. At midpoint (full screen coverage): loading bg hidden, dungeon is now live behind it
+6. Band continues sweeping off screen (0.75s wipe-out), revealing the dungeon
+7. All overlay rects hidden — zero shader cost at runtime
+
+#### Implementation
+Three stacked `ColorRect` nodes in one `CanvasLayer` (layer 64, above game, below screenshot toast):
+
+| Rect | Shader | Purpose |
+|---|---|---|
+| `_load_solid_rect` | none — solid `Color(0.02, 0.01, 0.06)` | Blocks grey dungeon through vignette-transparent edges of bg shader |
+| `_load_bg_rect` | `dungeon_load_bg.gdshader` | Animated fractal loading screen |
+| `_load_wipe_rect` | `dungeon_load_transition.gdshader` | Diagonal fractal wipe reveal |
+
+All three are `visible = false` when not active (Godot 4: invisible CanvasItems do not run their shaders — zero GPU cost).
+
+The wipe shader's `progress` uniform sweeps a diagonal fractal band:
+- `progress = 0.0` → transparent (nothing visible)
+- `progress = 0.5` → band covers full screen
+- `progress = 1.0` → transparent again (dungeon fully revealed)
+
+**Files changed:**
+- `dungeon_break/ui/dungeon_load_bg.gdshader` *(new)*
+- `dungeon_break/ui/dungeon_load_transition.gdshader` *(new)*
+- `dungeon_break/dungeon.gd` — added `signal dungeon_ready()`, emitted at end of `_build_dungeon()`
+- `dungeon_break/main.gd` — `_build_load_overlay()`, `_show_load_overlay()`, `_hide_load_overlay()` added; `_load_dungeon()` now calls `_show_load_overlay()` and connects `dungeon_ready → _hide_load_overlay` with `CONNECT_ONE_SHOT`
+
+---
+
+## Current State After Session 6
+
+### Camp
+- Terrain island with voxel buildings, wandering NPCs
+- **Bonfire**: Press E to rest — full heal + companion heal + +8 hours world time
+- **Azure Flame**: Opens companion roster UI (manage active party / bench)
+- **Portal**: Enter dungeon (triggers fractal loading screen)
+- Day/night cycle driven by `GameData.world_time`
+
+### Save / Load Screen
+- Three slot cards with hero portrait (left), name/class/location (centre), companion portrait (right)
+- HP bar, gold count, timestamp
+- New Game / Load / Overwrite confirmation
+
+### Companion System
+- `GameData.companions`: Array of dicts (key, name, hp, hp_max, attack, defense, tactic)
+- `GameData.active_companions`: Array of String keys (max slots based on floor)
+- `GameData.get_companion_slots()`: 2 slots floor 1–2, 3 slots floor 3–5, 4 slots floor 6+
+- Tactics: balanced / healer / berserker / defender (set per companion in roster UI)
+- Companion follower entities trail behind player in dungeon (despawn on combat, respawn after)
+- `heal_companions()`: restores all companions to `hp_max`
+
+### Dungeon
+- BSP-generated floors with upper rooms (floor_height=3, staircase approach)
+- Room types: start, normal, treasure, boss, vault, corridor
+- `dungeon_ready` signal fires when fully built (used by loading screen)
+- Wall material fades to 8% alpha on combat start, restores after
+
+### Combat
+- FFT-style tactical grid, phase-based
+- Companion units participate in combat alongside player
+- Defeated enemies can be recruited as companions (ghost conversion)
+
+---
+
+---
+
+## Session 6 (continued) — Camp Visual Overhaul
+
+All changes are in `dungeon_break/generator/camp_builder.gd` only.
+
+### New block constants added
+`TALL_GRASS = 8`, `DEAD_SHRUB = 26`, `STONE_BRICKS = 63`
+
+### `_build_markers()` → `_build_trees()`
+Replaced 5 identical stick posts with 10 proper multi-block trees in natural-feeling clusters (NW, N, NE, S, SW, E). Each tree:
+- 4-block `LOG_Y` trunk
+- 3×3 `LEAVES` canopy at trunk top and one block above
+- Single `LEAVES` cap block
+
+Positions stored in `TREE_POSITIONS` const (replaces `MARKER_POSITIONS`).
+
+### `_build_paths()` + `_stamp_path()`
+Stone brick paths connecting all three landmarks via a central hub:
+- Bonfire (-9,-9) → Plaza (-2,-2)
+- Plaza (2,2) → Spire (9,9)
+- Plaza (2,0) → Azure Flame (31,0)
+
+Uses float lerp stepping, stamps `STONE_BRICKS` at `_surface_y` per step.
+
+### `_build_central_plaza()` + `_build_well()`
+5×5 `STONE_BRICKS` hub at (0,0) where all paths converge. Well at its centre:
+- 3×3 stone base, stone ring with open shaft, two `LOG_Y` posts, `PLANKS` beam
+- Soft blue-white `OmniLight3D` (energy 0.8, range 6)
+
+### `_build_dock()`
+Wooden pier east of the Azure Flame (x=35→46, z=-1..1):
+- `PLANKS` deck, `LOG_Y` support pillars at x=35/39/43
+- Amber `OmniLight3D` lantern at the pier end (energy 1.5, range 8)
+
+### `_scatter_foliage()`
+Seeded RNG (seed=42, reproducible) scatters across open GRASS:
+- 30 × `TALL_GRASS` (anywhere on island, radius 0–38)
+- 15 × `DEAD_SHRUB` (island edges, radius 20–38)
+
+Skips: structure zones, non-GRASS surfaces (paths/plaza/dock auto-excluded).
+
+### `build_camp()` call order
+```
+_build_bonfire → _build_spire → _build_azure_flame
+→ _build_trees → _build_paths → _build_central_plaza → _build_dock → _scatter_foliage
+```
+Paths run before foliage so STONE_BRICKS surfaces are already in place when foliage checks for GRASS.
+
+---
+
+## Session 6 (continued) — Well Position Fix
+
+Player spawns at world origin (0,0) in camp. The well was centred at (0,0) inside the 5×5 plaza, so the player landed on top of it on every load.
+
+**Fix**: moved well 3 blocks north — `_build_well(0, -3, _surface_y(0, -3))` in `_build_central_plaza()`. The plaza floor remains at (0,0) as the path hub; the well sits just north of centre, still visually inside the plaza but clear of the spawn point.
+
+**File changed**: `dungeon_break/generator/camp_builder.gd`
+
+---
+
+## Known Pending Work
+
+| Item | Priority | Notes |
+|---|---|---|
+| Camp NPC dialogue | High | Joe, Mira, Old Pell — interaction zones exist, no dialogue tree yet |
+| Camp NPC shop buildings | Medium | Small market stalls near the plaza for each NPC — blacksmith, alchemist, trader |
+| Vault room loot pass | Medium | Currently has chest + gold ore; needs richer decoration and varied loot |
+| Stair block rotation | Low | Direction-aware stair block facing — geometry works, rotation deferred |
+| Class-specific mechanics | Medium | Reanimator (raise dead), Confessor (faith buffs) unimplemented |
+| Visual novel cutscenes | Low | Planned for story beats (rescue sequences, boss defeat, floor transitions) |
+| Helix zone transitions | Low | Animated floor transition visual between dungeon floors |
+| Drag-and-drop inventory | Low | Current inventory is click-to-equip only |
+| Companion tactics UI | Medium | Tactic selector (balanced/healer/berserker/defender) in roster UI — wired but untested in combat |
+| Save slot delete | Low | No way to clear a save slot from the UI |
+| World map / floor select | Low | Show dungeon floors reached, allow revisiting earlier floors |
+| Sloped / wedge blocks | Low | Triangular prism shapes for ramps and rooftops. Requires 4 block IDs per slope (N/S/E/W variants) + custom mesh and collision per entry in voxel_library.tres. Direction-aware stamping logic needed (same problem as stair rotation). Water's 3-ID family is existing precedent for multi-ID block groups. |
+
+---
+
+## File Index (additions since updated.md)
+
+```
+dungeon_break/
+  ui/
+    companion_roster_ui.gd      ← portraits added to active + bench cards
+    save_slot_ui.gd             ← hero + companion portraits on save cards
+    dungeon_load_bg.gdshader    ← NEW: pixelated warped fractal loading bg
+    dungeon_load_transition.gdshader  ← NEW: fractal noise diagonal wipe
+  data/
+    save_manager.gd             ← get_slot_info() extended; active_companions bug fix
+    game_data.gd                ← heal_companions() added
+  generator/
+    camp_builder.gd             ← bonfire Area3D; full visual overhaul (trees, paths, plaza, well, dock, foliage); well moved north
+  game.gd                       ← bonfire rest handler + _bonfire_rest_pending flag
+  dungeon.gd                    ← signal dungeon_ready() added
+  main.gd                       ← two-shader loading overlay system
+```

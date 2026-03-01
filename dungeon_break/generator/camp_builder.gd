@@ -11,15 +11,18 @@ extends Node
 const NpcSpriteScript = preload("res://dungeon_break/entities/npc_sprite.gd")
 
 # ── Block IDs matching voxel_library.tres order ──────────────────────────────
-const AIR       = 0
-const DIRT      = 1
-const GRASS     = 2
-const LOG_X     = 3
-const LOG_Y     = 4
-const LOG_Z     = 5
-const PLANKS    = 7
-const GLASS     = 12
-const LEAVES    = 25
+const AIR         = 0
+const DIRT        = 1
+const GRASS       = 2
+const LOG_X       = 3
+const LOG_Y       = 4
+const LOG_Z       = 5
+const PLANKS      = 7
+const TALL_GRASS  = 8
+const GLASS       = 12
+const LEAVES      = 25
+const DEAD_SHRUB  = 26
+const STONE_BRICKS = 63
 
 const _CHANNEL = VoxelBuffer.CHANNEL_TYPE
 
@@ -29,13 +32,18 @@ const AZURE_FLAME_POS := Vector3i(32, 0, 0)    # East edge (pulled in from 42 to
 const BONFIRE_POS     := Vector3i(-9, 0, -9)    # Northwest, near centre
 const SPIRE_POS       := Vector3i(9, 0, 9)      # Southeast, near centre
 
-# ── Decoration positions — scatter props around camp ─────────────────────────
-const MARKER_POSITIONS := [
-	Vector3i(20, 0, -15),   # East marker
-	Vector3i(-20, 0, 15),   # West marker
-	Vector3i(0, 0, -25),    # North marker
-	Vector3i(-15, 0, -20),  # NW marker
-	Vector3i(15, 0, 20),    # SE marker
+# ── Tree positions — 10 hand-placed, natural-feeling clusters ────────────────
+const TREE_POSITIONS := [
+	Vector2i(-20,  -8),   # NW cluster
+	Vector2i(-15, -18),   # NW cluster
+	Vector2i( -5, -22),   # North
+	Vector2i( 16, -22),   # NE cluster
+	Vector2i( 22, -14),   # NE cluster
+	Vector2i(-10,  22),   # South cluster
+	Vector2i(  8,  25),   # South cluster
+	Vector2i(-22,  18),   # SW cluster
+	Vector2i(-28,   8),   # West
+	Vector2i( 28, -15),   # East
 ]
 
 var _terrain: VoxelTerrain = null
@@ -61,7 +69,11 @@ func build_camp():
 	_build_bonfire(BONFIRE_POS)
 	_build_spire(SPIRE_POS)
 	_build_azure_flame(AZURE_FLAME_POS)
-	_build_markers()
+	_build_trees()
+	_build_paths()         # before foliage so paths block foliage placement
+	_build_central_plaza() # includes well
+	_build_dock()
+	_scatter_foliage()
 
 	print("CampBuilder: camp structures placed")
 
@@ -224,15 +236,181 @@ func _build_azure_flame(pos: Vector3i):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MARKERS — Small decorative posts around the camp
+# TREES — 10 proper multi-block trees replacing the old stick markers
 # ══════════════════════════════════════════════════════════════════════════════
-func _build_markers():
-	for mpos in MARKER_POSITIONS:
-		var sy := _surface_y(mpos.x, mpos.z)
-		# Simple log post with a leaf block on top
-		_voxel_tool.set_voxel(Vector3i(mpos.x, sy + 1, mpos.z), LOG_Y)
-		_voxel_tool.set_voxel(Vector3i(mpos.x, sy + 2, mpos.z), LOG_Y)
-		_voxel_tool.set_voxel(Vector3i(mpos.x, sy + 3, mpos.z), LEAVES)
+func _build_trees():
+	for tp in TREE_POSITIONS:
+		var tx: int = tp.x
+		var tz: int = tp.y
+		var sy := _surface_y(tx, tz)
+
+		# 4-block trunk
+		for y in range(sy + 1, sy + 5):
+			_voxel_tool.set_voxel(Vector3i(tx, y, tz), LOG_Y)
+
+		# Canopy ring 1 — 3×3 LEAVES at trunk top (sy+4)
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				_voxel_tool.set_voxel(Vector3i(tx + dx, sy + 4, tz + dz), LEAVES)
+
+		# Canopy ring 2 — 3×3 LEAVES one above (sy+5)
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				_voxel_tool.set_voxel(Vector3i(tx + dx, sy + 5, tz + dz), LEAVES)
+
+		# Cap — single block (sy+6)
+		_voxel_tool.set_voxel(Vector3i(tx, sy + 6, tz), LEAVES)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PATHS — Stone brick paths connecting the three landmarks via a central plaza
+# ══════════════════════════════════════════════════════════════════════════════
+func _build_paths():
+	_stamp_path(-9, -9,  -2, -2)   # Bonfire → Plaza
+	_stamp_path( 2,  2,   9,  9)   # Plaza → Spire
+	_stamp_path( 2,  0,  31,  0)   # Plaza → Azure Flame (east)
+
+
+func _stamp_path(ax: int, az: int, bx: int, bz: int):
+	var steps := maxi(abs(bx - ax), abs(bz - az))
+	if steps == 0:
+		return
+	for i in range(steps + 1):
+		var t := float(i) / float(steps)
+		var px := roundi(lerp(float(ax), float(bx), t))
+		var pz := roundi(lerp(float(az), float(bz), t))
+		var sy := _surface_y(px, pz)
+		_voxel_tool.set_voxel(Vector3i(px, sy, pz), STONE_BRICKS)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CENTRAL PLAZA — 5×5 stone hub at (0,0) with a well at the centre
+# ══════════════════════════════════════════════════════════════════════════════
+func _build_central_plaza():
+	# 5×5 stone plaza following terrain per-block
+	for x in range(-2, 3):
+		for z in range(-2, 3):
+			var sy := _surface_y(x, z)
+			_voxel_tool.set_voxel(Vector3i(x, sy, z), STONE_BRICKS)
+			for y in range(sy + 1, sy + 4):
+				_voxel_tool.set_voxel(Vector3i(x, y, z), AIR)
+
+	# Well is 3 blocks north of plaza centre (keeps it clear of player spawn)
+	_build_well(0, -3, _surface_y(0, -3))
+
+
+func _build_well(cx: int, cz: int, sy: int):
+	# 3×3 stone base (filled)
+	for x in range(cx - 1, cx + 2):
+		for z in range(cz - 1, cz + 2):
+			_voxel_tool.set_voxel(Vector3i(x, sy + 1, z), STONE_BRICKS)
+
+	# Ring at sy+2 — perimeter stone, centre = AIR (the shaft opening)
+	for x in range(cx - 1, cx + 2):
+		for z in range(cz - 1, cz + 2):
+			if x == cx and z == cz:
+				_voxel_tool.set_voxel(Vector3i(x, sy + 2, z), AIR)
+			else:
+				_voxel_tool.set_voxel(Vector3i(x, sy + 2, z), STONE_BRICKS)
+
+	# Two LOG_Y posts east and west of shaft
+	_voxel_tool.set_voxel(Vector3i(cx - 1, sy + 3, cz), LOG_Y)
+	_voxel_tool.set_voxel(Vector3i(cx + 1, sy + 3, cz), LOG_Y)
+
+	# Plank beam across the top
+	for x in range(cx - 1, cx + 2):
+		_voxel_tool.set_voxel(Vector3i(x, sy + 4, cz), PLANKS)
+
+	# Soft moonlit glow
+	if _scene_root:
+		_add_campfire_light(
+			Vector3(cx + 0.5, sy + 4.5, cz + 0.5),
+			"WellLight", Color(0.85, 0.9, 1.0), 0.8, 6.0)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DOCK — Wooden pier extending east from the island shore near Azure Flame
+# ══════════════════════════════════════════════════════════════════════════════
+func _build_dock():
+	var dock_x_start := 35
+	var dock_x_end   := 46
+	var dock_y := maxi(_surface_y(dock_x_start, 0) + 1, 3)
+
+	# Deck planks — 3 blocks wide (z = -1..1)
+	for x in range(dock_x_start, dock_x_end + 1):
+		for z in range(-1, 2):
+			_voxel_tool.set_voxel(Vector3i(x, dock_y, z), PLANKS)
+			for y in range(dock_y + 1, dock_y + 4):
+				_voxel_tool.set_voxel(Vector3i(x, y, z), AIR)
+
+	# Support pillars every 4 blocks (x = 35, 39, 43)
+	for px in [dock_x_start, dock_x_start + 4, dock_x_start + 8]:
+		for z in range(-1, 2):
+			for y in range(0, dock_y):
+				_voxel_tool.set_voxel(Vector3i(px, y, z), LOG_Y)
+
+	# Amber lantern light at the end of the pier
+	if _scene_root:
+		_add_campfire_light(
+			Vector3(dock_x_end + 0.5, dock_y + 1.5, 0.5),
+			"DockLight", Color(1.0, 0.7, 0.3), 1.5, 8.0)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FOLIAGE — Scatter tall grass and dead shrubs across open island ground
+# ══════════════════════════════════════════════════════════════════════════════
+func _scatter_foliage():
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 42  # fixed seed — same scatter every build
+
+	# Zones to avoid (cx, cz, radius)
+	var avoid_cx: Array[int] = [BONFIRE_POS.x, SPIRE_POS.x, AZURE_FLAME_POS.x, 0, 35]
+	var avoid_cz: Array[int] = [BONFIRE_POS.z, SPIRE_POS.z, AZURE_FLAME_POS.z, 0,  0]
+	var avoid_r:  Array[int] = [             8,           8,                 8, 5, 10]
+
+	var foliage_blocks: Array[int] = [TALL_GRASS, DEAD_SHRUB]
+	var foliage_counts: Array[int] = [        30,         15]
+	var foliage_min_r:  Array[int] = [         0,         20]
+	var foliage_max_r:  Array[int] = [        38,         38]
+
+	for fi in range(foliage_blocks.size()):
+		var block: int   = foliage_blocks[fi]
+		var count: int   = foliage_counts[fi]
+		var min_r: float = float(foliage_min_r[fi])
+		var max_r: int   = foliage_max_r[fi]
+
+		var placed   := 0
+		var attempts := 0
+		while placed < count and attempts < count * 25:
+			attempts += 1
+			var fx: int = rng.randi_range(-max_r, max_r)
+			var fz: int = rng.randi_range(-max_r, max_r)
+
+			# Must be within island ring
+			var dist := sqrt(float(fx * fx + fz * fz))
+			if dist < min_r or dist > float(max_r):
+				continue
+
+			# Skip structure zones
+			var too_close := false
+			for ai in range(avoid_cx.size()):
+				var dx: int = fx - avoid_cx[ai]
+				var dz: int = fz - avoid_cz[ai]
+				if sqrt(float(dx * dx + dz * dz)) < float(avoid_r[ai]):
+					too_close = true
+					break
+			if too_close:
+				continue
+
+			# Only place on plain GRASS (not path stone, plaza, dock planks)
+			var sy := _surface_y(fx, fz)
+			if _voxel_tool.get_voxel(Vector3i(fx, sy, fz)) != GRASS:
+				continue
+			if _voxel_tool.get_voxel(Vector3i(fx, sy + 1, fz)) != AIR:
+				continue
+
+			_voxel_tool.set_voxel(Vector3i(fx, sy + 1, fz), block)
+			placed += 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
