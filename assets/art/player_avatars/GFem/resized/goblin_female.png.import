@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://d1jyohf822itk"
-path="res://.godot/imported/goblin_female_happy.png-968efcf6d0530d399dfaccde32050cde.ctex"
+uid="uid://bh8js6smvbwgc"
+path="res://.godot/imported/goblin_female.png-779144b56a124d484c07d3c86688a90e.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/art/player_avatars/goblin_female_happy.png"
-dest_files=["res://.godot/imported/goblin_female_happy.png-968efcf6d0530d399dfaccde32050cde.ctex"]
+source_file="res://assets/art/player_avatars/GFem/resized/goblin_female.png"
+dest_files=["res://.godot/imported/goblin_female.png-779144b56a124d484c07d3c86688a90e.ctex"]
 
 [params]
 
