@@ -12,6 +12,7 @@ const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
 
 signal return_to_camp()
 signal advance_floor()
+signal dungeon_ready()
 
 @onready var _terrain: VoxelTerrain = $VoxelTerrain
 @onready var _players: Node = $Players
@@ -166,6 +167,7 @@ func _build_dungeon():
 
 	MusicManager.play_dungeon()
 	print("Dungeon: floor %d ready — %d rooms" % [_floor_num, data["rooms"].size()])
+	dungeon_ready.emit()
 
 
 func _spawn_player(pos: Vector3):

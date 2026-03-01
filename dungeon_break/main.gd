@@ -8,6 +8,16 @@ const SaveSlotUIScript = preload("res://dungeon_break/ui/save_slot_ui.gd")
 
 var _current_scene: Node = null
 
+# ── Dungeon load transition overlay ───────────────────────────────────────────
+const DungeonLoadShader   = preload("res://dungeon_break/ui/dungeon_load_transition.gdshader")
+const DungeonLoadBgShader = preload("res://dungeon_break/ui/dungeon_load_bg.gdshader")
+var _load_overlay_layer: CanvasLayer = null
+var _load_solid_rect: ColorRect = null    # solid base — stops grey dungeon showing through shader edges
+var _load_bg_rect: ColorRect = null       # pixelated warped fractal — animates while dungeon generates
+var _load_bg_mat: ShaderMaterial = null
+var _load_wipe_rect: ColorRect = null     # fractal noise wipe — plays when dungeon is ready
+var _load_wipe_mat: ShaderMaterial = null
+
 # ── Screenshot overlay ────────────────────────────────────────────────────────
 var _screenshot_layer: CanvasLayer = null
 var _screenshot_toast: Label = null
@@ -15,8 +25,82 @@ var _screenshot_dir_path: String = ""
 
 
 func _ready():
+	_build_load_overlay()
 	_build_screenshot_overlay()
 	_show_save_slots()
+
+
+func _build_load_overlay():
+	_load_overlay_layer = CanvasLayer.new()
+	_load_overlay_layer.layer = 64  # above game, below screenshot toast
+	add_child(_load_overlay_layer)
+
+	# 1 — Solid base (blocks grey dungeon; bg shader has transparent vignette edges)
+	_load_solid_rect = ColorRect.new()
+	_load_solid_rect.color = Color(0.02, 0.01, 0.06)
+	_load_solid_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_load_solid_rect.mouse_filter = Control.MOUSE_FILTER_STOP
+	_load_solid_rect.visible = false
+	_load_overlay_layer.add_child(_load_solid_rect)
+
+	# 2 — Animated loading background: pixelated warped fractal
+	_load_bg_mat = ShaderMaterial.new()
+	_load_bg_mat.shader = DungeonLoadBgShader
+	_load_bg_mat.set_shader_parameter("speed", 0.08)
+	_load_bg_mat.set_shader_parameter("zoom", 2.0)
+	_load_bg_mat.set_shader_parameter("pixelation", 6.0)
+	_load_bg_mat.set_shader_parameter("color_low",  Color(0.02, 0.04, 0.22, 1.0))
+	_load_bg_mat.set_shader_parameter("color_mid",  Color(0.28, 0.02, 0.24, 1.0))
+	_load_bg_mat.set_shader_parameter("color_high", Color(0.55, 0.45, 0.85, 1.0))
+
+	_load_bg_rect = ColorRect.new()
+	_load_bg_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_load_bg_rect.mouse_filter = Control.MOUSE_FILTER_STOP
+	_load_bg_rect.material = _load_bg_mat
+	_load_bg_rect.visible = false
+	_load_overlay_layer.add_child(_load_bg_rect)
+
+	# 3 — Wipe transition: fractal noise band sweeps diagonally to reveal dungeon
+	_load_wipe_mat = ShaderMaterial.new()
+	_load_wipe_mat.shader = DungeonLoadShader
+	_load_wipe_mat.set_shader_parameter("progress", 0.0)
+	_load_wipe_mat.set_shader_parameter("color", Color(0.02, 0.01, 0.06, 1.0))
+	_load_wipe_mat.set_shader_parameter("zoom", 2.5)
+	_load_wipe_mat.set_shader_parameter("speed", 0.08)
+
+	_load_wipe_rect = ColorRect.new()
+	_load_wipe_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_load_wipe_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_load_wipe_rect.material = _load_wipe_mat
+	_load_wipe_rect.visible = false
+	_load_overlay_layer.add_child(_load_wipe_rect)
+
+
+func _show_load_overlay():
+	_load_solid_rect.visible = true
+	_load_bg_rect.visible = true
+	_load_wipe_rect.visible = false
+
+
+func _hide_load_overlay():
+	# The wipe shader sweeps a fractal band diagonally (transparent → full coverage at p=0.5 → transparent).
+	# Phase 1 (0→0.5): band enters and covers the loading bg.
+	# Phase 2 (0.5→1.0): band exits, revealing the dungeon beneath.
+	_load_wipe_mat.set_shader_parameter("progress", 0.0)
+	_load_wipe_rect.visible = true
+
+	var tw := create_tween()
+	tw.tween_method(
+		func(v: float): _load_wipe_mat.set_shader_parameter("progress", v),
+		0.0, 0.5, 0.75)
+	# Band fully covers screen — safe to hide the loading bg
+	tw.tween_callback(func():
+		_load_bg_rect.visible = false
+		_load_solid_rect.visible = false)
+	tw.tween_method(
+		func(v: float): _load_wipe_mat.set_shader_parameter("progress", v),
+		0.5, 1.0, 0.75)
+	tw.tween_callback(func(): _load_wipe_rect.visible = false)
 
 
 func _build_screenshot_overlay():
@@ -168,6 +252,7 @@ func _load_camp():
 
 ## Load a dungeon floor.
 func _load_dungeon(floor_num: int):
+	_show_load_overlay()
 	_clear_current()
 	EntityManager.despawn_all()
 
@@ -179,6 +264,7 @@ func _load_dungeon(floor_num: int):
 
 	dungeon.return_to_camp.connect(_on_return_to_camp)
 	dungeon.advance_floor.connect(_on_advance_floor)
+	dungeon.dungeon_ready.connect(_hide_load_overlay, CONNECT_ONE_SHOT)
 	print("Main: dungeon floor %d loaded" % floor_num)
 
 
