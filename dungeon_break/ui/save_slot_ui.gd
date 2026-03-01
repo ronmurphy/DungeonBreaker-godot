@@ -141,7 +141,25 @@ func _build_empty_slot(col: VBoxContainer, slot: int) -> void:
 
 
 func _build_occupied_slot(col: VBoxContainer, slot: int, info: Dictionary) -> void:
-	# Character name
+	# ── Portrait row: [hero portrait] [name/class/loc] [companion portrait] ──
+	var portrait_row := HBoxContainer.new()
+	portrait_row.add_theme_constant_override("separation", 6)
+	col.add_child(portrait_row)
+
+	# Hero portrait (left)
+	var race: String = info.get("player_race", "human") as String
+	var gender: String = info.get("player_gender", "male") as String
+	var g := "f" if gender == "female" else "m"
+	var r := race[0] if race.length() > 0 else "h"
+	var hero_port_path := "res://assets/art/player_avatars/%s%s_port.png" % [g, r]
+	portrait_row.add_child(_make_portrait(hero_port_path, 52))
+
+	# Centre: name / class / location
+	var centre := VBoxContainer.new()
+	centre.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	centre.add_theme_constant_override("separation", 2)
+	portrait_row.add_child(centre)
+
 	var name_lbl := Label.new()
 	var pname: String = info.get("player_name", "Hero") as String
 	name_lbl.text = pname
@@ -149,28 +167,37 @@ func _build_occupied_slot(col: VBoxContainer, slot: int, info: Dictionary) -> vo
 	name_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.7))
 	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_lbl.clip_text = true
-	col.add_child(name_lbl)
+	centre.add_child(name_lbl)
 
-	# Class name
 	var cls_idx: int = info.get("player_class", 0) as int
 	var cls_lbl := Label.new()
 	cls_lbl.text = CLASS_NAMES[cls_idx] if cls_idx < CLASS_NAMES.size() else "?"
 	cls_lbl.add_theme_font_size_override("font_size", 13)
 	cls_lbl.add_theme_color_override("font_color", Color(0.7, 0.65, 0.85))
 	cls_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(cls_lbl)
+	centre.add_child(cls_lbl)
 
-	# Location
 	var scene: String = info.get("scene_state", "camp") as String
 	var floor_num: int = info.get("floor", 1) as int
-	var loc_text := "Camp" if scene == "camp" else "Dungeon — Floor %d" % floor_num
+	var loc_text := "Camp" if scene == "camp" else "Floor %d" % floor_num
 	var loc_lbl := Label.new()
 	loc_lbl.text = loc_text
 	loc_lbl.add_theme_font_size_override("font_size", 12)
 	loc_lbl.add_theme_color_override("font_color",
 		Color(0.5, 0.9, 0.6) if scene == "camp" else Color(0.9, 0.6, 0.3))
 	loc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(loc_lbl)
+	centre.add_child(loc_lbl)
+
+	# Companion portrait (right) — portrait if it exists, else ready-pose fallback
+	var comp_key: String = info.get("first_companion_key", "") as String
+	var comp_port_path := ""
+	if comp_key != "":
+		var port := EnemyDB.get_portrait_path(comp_key)
+		if port != "" and ResourceLoader.exists(port):
+			comp_port_path = port
+		else:
+			comp_port_path = EnemyDB.get_ready_texture_path(comp_key)
+	portrait_row.add_child(_make_portrait(comp_port_path, 52))
 
 	# HP bar
 	var hp: int     = info.get("hp",     0) as int
@@ -266,6 +293,28 @@ func _confirm_new(slot: int, col: VBoxContainer, btn_row: HBoxContainer) -> void
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+func _make_portrait(path: String, size: int) -> Control:
+	var container := Control.new()
+	container.custom_minimum_size = Vector2(size, size)
+	container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	if path != "" and ResourceLoader.exists(path):
+		var tex := TextureRect.new()
+		tex.texture = load(path)
+		tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex.set_anchors_preset(Control.PRESET_FULL_RECT)
+		container.add_child(tex)
+	else:
+		# Dim placeholder box when no portrait available
+		var placeholder := ColorRect.new()
+		placeholder.color = Color(0.1, 0.09, 0.14)
+		placeholder.set_anchors_preset(Control.PRESET_FULL_RECT)
+		container.add_child(placeholder)
+
+	return container
+
 
 func _style_btn(btn: Button, accent: Color) -> void:
 	var s := StyleBoxFlat.new()

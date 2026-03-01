@@ -197,17 +197,28 @@ func _build_active_card(key: String) -> Control:
 	vb.add_theme_constant_override("separation", 4)
 	card.add_child(vb)
 
+	# Portrait + name row
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 6)
+	vb.add_child(top_row)
+	top_row.add_child(_make_portrait(key, 44))
+
+	var info_vb := VBoxContainer.new()
+	info_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_vb.add_theme_constant_override("separation", 2)
+	top_row.add_child(info_vb)
+
 	var name_lbl := Label.new()
 	name_lbl.text = c.get("name", key)
 	name_lbl.add_theme_color_override("font_color", Color(0.5, 1.0, 0.6))
 	name_lbl.add_theme_font_size_override("font_size", 13)
-	vb.add_child(name_lbl)
+	info_vb.add_child(name_lbl)
 
 	var hp_lbl := Label.new()
 	hp_lbl.text = "HP %d / %d  ATK %d  DEF %d" % [c.get("hp", 0), c.get("hp_max", 1), c.get("attack", 0), c.get("defense", 0)]
 	hp_lbl.add_theme_font_size_override("font_size", 11)
 	hp_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 0.75))
-	vb.add_child(hp_lbl)
+	info_vb.add_child(hp_lbl)
 
 	# ── Tactic selector ──
 	var tactic_hdr := Label.new()
@@ -281,17 +292,28 @@ func _build_bench_card(c: Dictionary) -> Control:
 	vb.add_theme_constant_override("separation", 4)
 	card.add_child(vb)
 
+	# Portrait + name row
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 6)
+	vb.add_child(top_row)
+	top_row.add_child(_make_portrait(key, 44))
+
+	var info_vb := VBoxContainer.new()
+	info_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info_vb.add_theme_constant_override("separation", 2)
+	top_row.add_child(info_vb)
+
 	var name_lbl := Label.new()
 	name_lbl.text = c.get("name", key)
 	name_lbl.add_theme_color_override("font_color", Color(0.85, 0.65, 0.2))
 	name_lbl.add_theme_font_size_override("font_size", 13)
-	vb.add_child(name_lbl)
+	info_vb.add_child(name_lbl)
 
 	var hp_lbl := Label.new()
 	hp_lbl.text = "HP %d / %d  ATK %d  DEF %d" % [c.get("hp", 0), c.get("hp_max", 1), c.get("attack", 0), c.get("defense", 0)]
 	hp_lbl.add_theme_font_size_override("font_size", 11)
 	hp_lbl.add_theme_color_override("font_color", Color(0.75, 0.65, 0.45))
-	vb.add_child(hp_lbl)
+	info_vb.add_child(hp_lbl)
 
 	var slots: int = GameData.get_companion_slots()
 	var can_activate: bool = GameData.active_companions.size() < slots
@@ -307,6 +329,31 @@ func _build_bench_card(c: Dictionary) -> Control:
 	vb.add_child(set_btn)
 
 	return card
+
+
+func _make_portrait(key: String, size: int) -> Control:
+	var container := Control.new()
+	container.custom_minimum_size = Vector2(size, size)
+	container.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+	var path := EnemyDB.get_portrait_path(key)
+	if path == "" or not ResourceLoader.exists(path):
+		path = EnemyDB.get_ready_texture_path(key)
+
+	if path != "" and ResourceLoader.exists(path):
+		var tex := TextureRect.new()
+		tex.texture = load(path)
+		tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tex.set_anchors_preset(Control.PRESET_FULL_RECT)
+		container.add_child(tex)
+	else:
+		var placeholder := ColorRect.new()
+		placeholder.color = Color(0.08, 0.07, 0.1)
+		placeholder.set_anchors_preset(Control.PRESET_FULL_RECT)
+		container.add_child(placeholder)
+
+	return container
 
 
 func _on_close():

@@ -129,6 +129,18 @@ func _build_bonfire(pos: Vector3i):
 		var fire_pos := Vector3(pos.x + 0.5, sy + 2.0, pos.z + 0.5)
 		_add_campfire_light(fire_pos, "BonfireLight", Color(1.0, 0.6, 0.2), 2.5, 12.0)
 
+		# Interaction area
+		var area := Area3D.new()
+		area.name = "Bonfire"
+		var coll := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(5, 4, 5)
+		coll.shape = shape
+		area.add_child(coll)
+		area.set_meta("interaction", "bonfire")
+		_scene_root.add_child(area)
+		area.global_position = Vector3(pos.x + 0.5, sy + 2.0, pos.z + 0.5)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SPIRE — Dungeon entrance: a stone column with a glowing portal marker

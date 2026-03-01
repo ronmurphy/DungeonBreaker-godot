@@ -37,6 +37,9 @@ var _camp_objects: Node3D = null
 # Tracks whether a shop/sage UI is currently open (prevents multi-open)
 var _npc_ui_open: bool = false
 
+# Prevents bonfire rest from firing every frame while E is held
+var _bonfire_rest_pending: bool = false
+
 
 func _ready():
 	# Create container for camp 3D objects (lights, areas, etc.)
@@ -193,6 +196,20 @@ func _check_portal_interactions():
 				print("Game: entering dungeon portal!")
 				enter_dungeon.emit()
 				return
+		elif interaction == "bonfire":
+			near_anything = true
+			if _hud:
+				_hud.show_prompt("[E] Rest  (restores HP, advances 8 hrs)")
+			if Input.is_key_pressed(KEY_E):
+				if not _bonfire_rest_pending:
+					_bonfire_rest_pending = true
+					GameData.heal(GameData.hp_max)
+					GameData.heal_companions()
+					GameData.world_time = fmod(GameData.world_time + 8.0 / 24.0, 1.0)
+					print("Game: Bonfire — rested, healed, time advanced 8 hrs")
+			else:
+				_bonfire_rest_pending = false
+
 		elif interaction == "azure_flame":
 			near_anything = true
 			var flame_prompt: String = "[E] Rest & Refuel"

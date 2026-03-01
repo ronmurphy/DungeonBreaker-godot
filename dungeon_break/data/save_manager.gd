@@ -53,16 +53,25 @@ func get_slot_info(slot: int) -> Dictionary:
 	var data := load_game(slot)
 	if data.is_empty():
 		return {}
+	# active_companions is an Array of String keys (not dicts)
+	var active: Array = data.get("active_companions", []) as Array
+	var first_comp_key: String = ""
+	if active.size() > 0 and active[0] is String:
+		first_comp_key = active[0] as String
+
 	return {
-		"slot":         slot,
-		"player_name":  data.get("player_name",  "Hero"),
-		"player_class": data.get("player_class",  0),
-		"floor":        data.get("current_floor", 1),
-		"hp":           data.get("hp",            0),
-		"hp_max":       data.get("hp_max",        1),
-		"scene_state":  data.get("scene_state",   "camp"),
-		"timestamp":    data.get("timestamp",     0),
-		"gold":         data.get("gold",          0),
+		"slot":                slot,
+		"player_name":         data.get("player_name",   "Hero"),
+		"player_class":        data.get("player_class",   0),
+		"player_race":         data.get("player_race",    "human"),
+		"player_gender":       data.get("player_gender",  "male"),
+		"floor":               data.get("current_floor",  1),
+		"hp":                  data.get("hp",             0),
+		"hp_max":              data.get("hp_max",         1),
+		"scene_state":         data.get("scene_state",    "camp"),
+		"timestamp":           data.get("timestamp",      0),
+		"gold":                data.get("gold",           0),
+		"first_companion_key": first_comp_key,
 	}
 
 
