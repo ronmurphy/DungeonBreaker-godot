@@ -104,6 +104,15 @@ func _build_dungeon():
 		push_error("Dungeon: failed to generate floor %d" % _floor_num)
 		return
 
+	# Restore cleared state for any rooms beaten on a previous visit to this floor.
+	# Must happen before _spawn_enemies() so those rooms are skipped.
+	var boss_already_cleared: bool = false
+	for room in data["rooms"]:
+		if GameData.is_room_cleared(_floor_num, room["id"]):
+			room["state"] = "cleared"
+			if room["room_type"] == "boss":
+				boss_already_cleared = true
+
 	# Spawn player at start room
 	var start_pos: Vector3 = _dungeon_stamper.get_start_position()
 	_spawn_player(start_pos)
@@ -150,6 +159,10 @@ func _build_dungeon():
 	# Start room (id 0) is always pre-revealed — player spawns there
 	_visited_rooms[0] = true
 	_enable_room_lights(0)
+
+	# If the boss room was already cleared on a previous visit, re-open the portal
+	if boss_already_cleared:
+		_enable_boss_portal()
 
 	MusicManager.play_dungeon()
 	print("Dungeon: floor %d ready — %d rooms" % [_floor_num, data["rooms"].size()])
@@ -446,6 +459,7 @@ func _on_combat_ended(victory: bool, room: Dictionary):
 
 	if victory:
 		room["state"] = "cleared"
+		GameData.mark_room_cleared(_floor_num, room["id"])
 		print("Dungeon: room %d cleared!" % room["id"])
 
 		# If boss room cleared, enable the floor portal

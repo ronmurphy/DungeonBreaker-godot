@@ -195,14 +195,16 @@ func _check_portal_interactions():
 				return
 		elif interaction == "azure_flame":
 			near_anything = true
-			var flame_prompt: String = "[E] Azure Flame"
+			var flame_prompt: String = "[E] Rest & Refuel"
 			if not GameData.companions.is_empty():
-				flame_prompt = "[E] Azure Flame  [R] Companions"
+				flame_prompt = "[E] Rest & Refuel  [R] Companions"
 			if _hud:
 				_hud.show_prompt(flame_prompt)
 			if Input.is_key_pressed(KEY_E):
 				GameData.torch_fuel = 100
-				print("Game: torch refuelled!")
+				GameData.heal(GameData.hp_max)
+				GameData.heal_companions()
+				print("Game: Azure Flame — rested, healed, torch refuelled!")
 			elif Input.is_key_pressed(KEY_R) and not _npc_ui_open:
 				_open_companion_roster()
 
