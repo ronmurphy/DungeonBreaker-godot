@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document
-*Last updated: 2026-02-28 (session 4, continued)*
+*Last updated: 2026-02-28 (session 5)*
 
 ---
 
@@ -190,12 +190,12 @@ IDLE → MOVE → ACT → RESOLVING → (ENEMY_THINKING) → back to MOVE for ne
 `SPD + d6` for each unit. Stored in `_turn_order[]` as sorted indices into `_units[]`.
 
 ### Units Array
-`_units[0]` = player, `_units[1..]` = enemies.
+`_units[0]` = player, `_units[1..]` = companions then enemies (insertion order).
 Each unit dict:
 ```gdscript
 {
-  "type": "player"/"enemy",
-  "entity": Node3D,
+  "type": "player"/"enemy"/"companion"/"dismissed",
+  "entity": Node3D,          # null for player (controlled by dungeon.gd)
   "grid_pos": Vector2i,
   "name": String,
   "hp": int, "hp_max": int,
@@ -203,11 +203,12 @@ Each unit dict:
   "speed": int, "move_range": int, "attack_range": int,
   "alive": bool,
   "has_moved": bool, "has_acted": bool,
-  "entity_key": String,   # enemy DB key
-  "variant": String,      # enemy variant
+  "entity_key": String,      # enemy/companion DB key
+  "variant": String,         # enemy variant ("normal"/"elite"/"ghost")
 }
 ```
-No `unit_idx` stored inside the dict — always use `get_units().find()` or array index.
+`"dismissed"` = sent to camp bench mid-combat (swap); skips turns, not permadead.
+No `unit_idx` stored inside the dict — always use array index.
 
 ### Ranges
 - Player: move 4 tiles, attack 1 tile (melee)
@@ -355,7 +356,8 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Camp island built from voxels (bonfire, spire, azure flame, dungeon portal)
 - [x] NPC wanderers walking around
 - [x] Portal interaction (E to enter dungeon)
-- [x] Azure Flame interaction (E to refuel torch)
+- [x] Azure Flame interaction (E to refuel torch, R to manage companions)
+- [x] Companion Roster UI (Azure Flame → R): active party + bench, tactic assignment per companion
 - [x] Starter gear given on first run
 
 ### Dungeon
@@ -391,7 +393,7 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Zoom restore: after combat ends, zoom-out (0.6s cubic tween) is deferred until after the wall-opacity fade completes so the reveal feels intentional
 
 **Tactical Grid Highlights:**
-- Blue = move range, Orange = enemy, Green = player, White cursor = dedicated `_cursor_mesh` (not in `_markers` dict)
+- Blue = move range, Orange = enemy, Green = player, Amber/COLOR_ALLY = companion, White cursor = dedicated `_cursor_mesh` (not in `_markers` dict)
 - Teal diamond = ranged weapon attack zone (replaces red for ranged weapons, `COLOR_RANGED_ZONE`)
 - Bright cyan = active projectile flight path (`COLOR_RANGED_PATH`) — shown on launch, cleared when projectile lands
 - Boomerang path tiles use same Bezier parameters as the visual arc, sampling both outbound + return arcs
@@ -452,6 +454,60 @@ MCP's `validate_script` cannot resolve autoloads (GameData, MusicManager, etc.) 
 - [x] Portraits: `assets/art/player_avatars/{g}{r}_port.png` (g=m/f, r=h/e/d/g)
 - [x] `GameData.get_portrait_path()` + `GameData.player_sprite_prefix`
 
+### Companion / Recruit System
+
+**Recruitment (combat):**
+- During player's ACT phase: `[5] Recruit` button appears when alive enemies exist
+- Sub-panel lists each enemy with portrait, HP bar, and recruit chance %
+- Chance formula: `clamp((1 - hp_ratio) * 0.90 + 0.05, 0.05, 0.85) + stat_lck * 0.01`; bosses capped at 25%
+- On success: enemy unit type changes to `"companion"`, added to `GameData.companions` + `active_companions`
+- Party full → swap modal ("who goes back to camp?"); already-have-same-type → replace modal ("keep old or new?")
+- **Modal pause:** `player_act()` awaits `recruit_decision_made` signal before advancing the turn, so the modal never auto-closes mid-combat; resolved by `_finalize_recruit()` (keep new) or `recruit_decision_complete()` (keep old)
+
+**Companion slots:** `1 + (current_floor - 1) / 3` — floor 1–3 = 1 slot, floor 4–6 = 2, etc.
+
+**Companion data dict (stored in `GameData.companions`):**
+```gdscript
+{
+  "key": "rat", "name": "Ratley", "hp": 12, "hp_max": 18,
+  "attack": 6, "defense": 10, "speed": 5,
+  "move_range": 3, "attack_range": 1,
+  "equip_weapon": {}, "equip_armor": {},
+  "recruited_floor": 2, "tactic": "balanced"
+}
+```
+
+**Combat AI — 4 tactics (assigned at camp, persisted in companion dict):**
+| Tactic | Heal threshold | Movement | Special |
+|---|---|---|---|
+| Balanced | Player ≤25%, self ≤10% | Nearest enemy | Default |
+| Healer | Player ≤50%, self ≤30% | Retreats to player if adjacent enemy | Proactive item use |
+| Berserker | Never heals | Charges lowest-HP enemy | Fast 0.15s pause |
+| Defender | Player ≤25% only | Interposes between player and nearest threat | Enemies prefer targeting Defenders (appear 2× closer in `_get_nearest_player_faction`) |
+
+**Enemy AI targeting fix:** `_get_nearest_player_faction()` replaced hardcoded `_units[0]` target; enemies now pursue whichever player-faction unit (player or companion) is closest.
+
+**Dungeon followers:** Companion follower entities spawn when entering a dungeon floor and trail behind the player using a 80-frame position history (each subsequent companion lags 20 more frames). Hidden during combat; snapped to player position and re-shown after combat. Dead companions (permadeath) are despawned from the follower list. Followers have a subtle green modulate tint.
+
+**Combat entity cleanup:** All companion combat entities (spawned fresh per-fight in `_trigger_room_combat`) are despawned in `combat_manager._cleanup()` — follower entities take over after combat ends. This prevents ghost entities lingering at grid positions post-combat.
+
+**Permadeath:** Companions that die in combat are removed from `GameData.companions` and `active_companions` in `_cleanup()`. Dismissed companions stay on the bench roster.
+
+**Camp management (`companion_roster_ui.gd`):**
+- Opened from Azure Flame with `[R]` (shown only when roster non-empty)
+- Two columns: Active Party (left) + Roster Bench (right)
+- Each active card shows: name, HP/ATK/DEF, tactic selector (4 buttons: Balanced / Healer / Berserker / Defender), "Send to Camp" button
+- Bench cards show "Set Active" (disabled when party full)
+- `GameData.set_companion_tactic(key, tactic)` persists tactic choice
+
+**Bonfire rest:** `GameData.heal_companions()` called alongside player heal — sets all companion `hp = hp_max`.
+
+**Equip to companion (inventory_ui.gd):** Weapon/armor items show "→ CompanionName" equip button; equipping moves item from backpack to `companion["equip_weapon"]` or `["equip_armor"]`; old item returns to backpack.
+
+**Save/load:** `companions` and `active_companions` arrays included in `GameData.to_save_dict()` / `from_save_dict()`.
+
+---
+
 ### NPC Shop System
 - [x] Daniels (armor) + Conner (potion) always available in camp from game start
 - [x] Zara (magic), Michelle (structure), Mahan (weapon), Claude (sage) rescued 1-per-floor-cleared
@@ -491,10 +547,9 @@ The camp is meant to be populated with named characters:
 ### Visual Novel Cutscenes
 Gothic fantasy painted art panels + text below, click to advance. 3–5 scene panels + character busts reused across dialogue beats.
 
-### Companion System
-- Ghost enemies on death have a chance to become companions
-- `spawnPet()` system (exists in JS version, not yet ported to Godot)
-- Tints by class: Necromancer = pale red, Cleric = pale gold, others = green
+### Companion System (partially done — see "What Has Been Built")
+- Tints by player class (Necromancer = pale red etc.) — not yet implemented
+- `spawnPet()` ghost-on-death mechanic from JS version — not yet ported
 
 ### Class-Specific Mechanics
 - **Reanimator**: companions cap at player level; shades auto-attack at start of enemy phase
@@ -546,3 +601,5 @@ A second full Godot game at `/home/brad/Documents/Godot/theLongNights-godot/proj
 - **Projectile robustness pattern:** All projectile meshes must own their tweens via `node.create_tween()` (NOT `self.create_tween()` on the combat_manager). Otherwise, when combat ends and the combat_manager is freed, the tween dies and the mesh sits frozen in world space. Each projectile also has a fallback `get_tree().create_timer()` (SceneTree-owned, survives any node being freed) that cleans up the mesh and fires `on_land` if the tween is interrupted.
 - **Slash shader (`dungeon_break/combat/slash_effect.gdshader`):** `blend_add, unshaded, cull_disabled, depth_draw_never`; vertex shader handles billboarding (preserves node scale); `fade` uniform (0→1) animated via `tween_method` + `smat.set_shader_parameter()` since `MeshInstance3D` has no `modulate` property (that's CanvasItem only). Shader cached once in `_init_fx()` via `_slash_shader: Shader`; each use creates a fresh `ShaderMaterial` with the shared shader.
 - **GDScript lambda capture:** `get_tree().create_timer()` timers survive node cleanup — safe for deferred callbacks. `node.create_tween()` tweens die when the node is freed — don't use `self.create_tween()` for long-lived visuals spawned as children of another node.
+- **Blocking player_act() for modal input:** When `player_act()` triggers a UI modal that needs a decision before the turn can advance, use a signal: set `_waiting_for_recruit_decision = true` + emit the modal signal; in `player_act()` check the flag and `await recruit_decision_made` before the turn-advance timer. Resolution paths emit the signal from `_finalize_recruit()` (accept) or `recruit_decision_complete()` (decline). This prevents the 0.5s post-action timer from auto-closing the modal.
+- **Companion entity lifecycle:** Companions have two separate entities — a *follower entity* (spawned once at dungeon entry, trails player, green-tinted, persists across rooms) and a *combat entity* (spawned fresh by `_trigger_room_combat`, placed on the tactical grid, despawned in `_cleanup()`). Never confuse these two. The follower is hidden during combat and snapped back to player position on re-show to avoid appearing as a ghost enemy.
