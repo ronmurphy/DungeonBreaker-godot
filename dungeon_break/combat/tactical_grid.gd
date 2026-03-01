@@ -237,6 +237,10 @@ func highlight_enemy(pos: Vector2i):
 	_place_marker(pos, COLOR_ENEMY)
 
 
+func highlight_companion(pos: Vector2i):
+	_place_marker(pos, COLOR_ALLY)
+
+
 func highlight_cursor(pos: Vector2i):
 	if _cursor_mesh == null:
 		return

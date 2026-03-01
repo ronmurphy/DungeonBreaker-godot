@@ -47,6 +47,9 @@ signal act_phase_started(unit: Dictionary)
 signal action_resolved(log_text: String)
 signal unit_defeated(unit: Dictionary)
 signal unit_moved(unit: Dictionary, from: Vector2i, to: Vector2i)
+signal companion_swap_needed(incoming_unit_idx: int)
+signal companion_replace_needed(incoming_unit_idx: int, entity_key: String)
+signal recruit_decision_made
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -54,6 +57,14 @@ const PLAYER_MOVE_RANGE := 4    # tiles per turn
 const PLAYER_ATTACK_RANGE := 1  # melee = 1 tile (Manhattan)
 const ENEMY_MOVE_RANGE := 3
 const ENEMY_ATTACK_RANGE := 1
+
+const _DISMISSAL_MSGS: Array = [
+	"%s heads back to camp for some well-earned rest!",
+	"%s waves goodbye and wanders toward safety.",
+	"%s mumbles something about soup and heads campward.",
+	"%s tips a friendly nod and retreats to camp.",
+	"%s claps you on the shoulder and disappears toward camp.",
+]
 
 # ── Combat phases ────────────────────────────────────────────────────────────
 enum Phase { IDLE, MOVE, ACT, RESOLVING, ENEMY_THINKING, ENDED }
@@ -75,6 +86,10 @@ var _current_unit_idx: int = -1  # index in _turn_order
 var _room: Dictionary = {}
 var _round: int = 0
 
+# True while waiting for the player to resolve a recruit swap/replace modal.
+# player_act() awaits recruit_decision_made before advancing the turn.
+var _waiting_for_recruit_decision: bool = false
+
 # Currently highlighted move tiles (player)
 var _move_tiles: Array[Vector2i] = []
 var _attack_tiles: Array[Vector2i] = []
@@ -87,7 +102,7 @@ var _slash_shader: Shader = null
 
 
 ## Start tactical combat in a room.
-func start_combat(enemies: Array, room: Dictionary, scene_root: Node3D):
+func start_combat(enemies: Array, companions: Array, room: Dictionary, scene_root: Node3D):
 	_room = room
 	_scene_root = scene_root
 	_units.clear()
@@ -130,6 +145,34 @@ func start_combat(enemies: Array, room: Dictionary, scene_root: Node3D):
 		"has_acted": false,
 	})
 
+	# ── Place companion units (after player, before enemies) ──
+	for ci in companions.size():
+		var centity: Node3D = companions[ci]
+		if not is_instance_valid(centity):
+			continue
+		var ckey: String = centity.get_meta("entity_key", "")
+		var cpos: Vector2i = player_pos + Vector2i(-1 - ci, 0)
+		centity.global_position = tactical_grid.grid_to_world(cpos)
+		var cspd: int = centity.get_meta("speed", 4) + randi_range(1, 6)
+		_units.append({
+			"type": "companion",
+			"entity": centity,
+			"grid_pos": cpos,
+			"name": centity.get_meta("name", "Companion"),
+			"entity_key": ckey,
+			"hp": centity.get_meta("hp", 10),
+			"hp_max": centity.get_meta("hp_max", 10),
+			"attack": centity.get_meta("attack", 5),
+			"defense": centity.get_meta("defense", 8),
+			"speed": cspd,
+			"move_range": centity.get_meta("move_range", 3),
+			"attack_range": centity.get_meta("attack_range", 1),
+			"alive": true,
+			"has_moved": false,
+			"has_acted": false,
+		})
+		tactical_grid.set_blocked(cpos, true)
+
 	# ── Place enemy units ──
 	var spawn_positions: Array[Vector2i] = _get_enemy_spawn_positions(room, ox, oz, enemies.size())
 	for i in enemies.size():
@@ -167,7 +210,7 @@ func start_combat(enemies: Array, room: Dictionary, scene_root: Node3D):
 
 	tactical_grid.set_blocked(player_pos, true)
 
-	print("TacticalCombat: started with %d enemies in room %d" % [enemies.size(), room["id"]])
+	print("TacticalCombat: started with %d enemies, %d companions in room %d" % [enemies.size(), companions.size(), room["id"]])
 	combat_started.emit()
 
 	# Defer first round so dungeon.gd can call ui.setup() and connect signals first
@@ -237,12 +280,19 @@ func player_act(action: String, target_unit_idx: int = -1):
 			_do_counter(unit_idx)
 		"guts":
 			_do_guts(unit_idx)
+		"recruit":
+			_do_recruit(unit_idx, target_unit_idx)
 		"wait":
 			action_resolved.emit("%s waits." % unit["name"])
 		"flee":
 			_do_flee()
 
 	unit["has_acted"] = true
+
+	# If recruit opened a swap/replace modal, pause here until player decides.
+	if _waiting_for_recruit_decision:
+		await recruit_decision_made
+		_waiting_for_recruit_decision = false
 
 	# End this unit's turn
 	await get_tree().create_timer(0.5).timeout
@@ -354,6 +404,8 @@ func _advance_turn():
 
 	if unit["type"] == "player":
 		_start_player_turn(unit_idx)
+	elif unit["type"] == "companion":
+		_start_companion_turn(unit_idx)
 	else:
 		_start_enemy_turn(unit_idx)
 
@@ -398,44 +450,463 @@ func _start_enemy_turn(unit_idx: int):
 		_advance_turn()
 		return
 
-	# Simple AI: move toward nearest player, attack if adjacent
-	var player_pos: Vector2i = _units[0]["grid_pos"]
-	var dist_to_player: int = absi(unit["grid_pos"].x - player_pos.x) + absi(unit["grid_pos"].y - player_pos.y)
+	# Simple AI: move toward nearest player-faction unit, attack if in range
+	var nearest_target_idx: int = _get_nearest_player_faction(unit["grid_pos"])
+	if nearest_target_idx < 0:
+		action_resolved.emit("%s watches warily." % unit["name"])
+		_advance_turn()
+		return
+
+	var target_pos_grid: Vector2i = _units[nearest_target_idx]["grid_pos"]
+	var dist_to_target: int = absi(unit["grid_pos"].x - target_pos_grid.x) + absi(unit["grid_pos"].y - target_pos_grid.y)
 
 	# Flash the enemy to show it's their turn
 	_flash_unit(unit)
 
 	await get_tree().create_timer(0.3).timeout
 
-	if dist_to_player > unit["attack_range"]:
-		# Move toward player
-		var path: Array[Vector2i] = tactical_grid.find_path(unit["grid_pos"], player_pos)
+	if dist_to_target > unit["attack_range"]:
+		# Move toward target
+		var path: Array[Vector2i] = tactical_grid.find_path(unit["grid_pos"], target_pos_grid)
 		if not path.is_empty():
 			# Move up to move_range steps along path
-			var steps := mini(unit["move_range"], path.size() - 1)  # don't step ON player
+			var steps := mini(unit["move_range"], path.size() - 1)  # don't step ON target
 			if steps > 0:
-				var target_pos: Vector2i = path[steps - 1]
+				var move_target: Vector2i = path[steps - 1]
 				# Make sure we don't step on another unit
 				var occupied := _get_occupied_positions(unit_idx)
-				while steps > 0 and target_pos in occupied:
+				while steps > 0 and move_target in occupied:
 					steps -= 1
 					if steps > 0:
-						target_pos = path[steps - 1]
+						move_target = path[steps - 1]
 				if steps > 0:
-					_move_unit(unit_idx, target_pos)
+					_move_unit(unit_idx, move_target)
 					await get_tree().create_timer(0.2).timeout
 
-	# Re-check distance after moving
-	dist_to_player = absi(unit["grid_pos"].x - player_pos.x) + absi(unit["grid_pos"].y - player_pos.y)
-
-	if dist_to_player <= unit["attack_range"]:
-		# Attack player
-		_do_enemy_attack(unit_idx, 0)
-		await get_tree().create_timer(0.4).timeout
+	# Re-check nearest target after moving
+	nearest_target_idx = _get_nearest_player_faction(unit["grid_pos"])
+	if nearest_target_idx >= 0:
+		target_pos_grid = _units[nearest_target_idx]["grid_pos"]
+		dist_to_target = absi(unit["grid_pos"].x - target_pos_grid.x) + absi(unit["grid_pos"].y - target_pos_grid.y)
+		if dist_to_target <= unit["attack_range"]:
+			_do_enemy_attack(unit_idx, nearest_target_idx)
+			await get_tree().create_timer(0.4).timeout
+		else:
+			action_resolved.emit("%s watches warily." % unit["name"])
 	else:
 		action_resolved.emit("%s watches warily." % unit["name"])
 
 	_advance_turn()
+
+
+## Returns index of nearest alive unit with type "player" or "companion"
+## from the given grid position. Defenders are weighted as if twice as close
+## so enemies preferentially target them.
+func _get_nearest_player_faction(from_pos: Vector2i) -> int:
+	var best_idx: int = -1
+	var best_dist: float = INF
+	for i in _units.size():
+		var u: Dictionary = _units[i]
+		if not u["alive"]:
+			continue
+		if u["type"] != "player" and u["type"] != "companion":
+			continue
+		var d: float = float(absi(u["grid_pos"].x - from_pos.x) + absi(u["grid_pos"].y - from_pos.y))
+		# Defender tactic: appear twice as close — enemies prefer targeting them
+		if u["type"] == "companion":
+			var cdata: Dictionary = GameData.get_companion(u.get("entity_key", ""))
+			if cdata.get("tactic", "") == "defender":
+				d *= 0.5
+		if d < best_dist:
+			best_dist = d
+			best_idx = i
+	return best_idx
+
+
+## Returns index of nearest alive enemy from the given grid position, or -1.
+func _get_nearest_enemy(from_pos: Vector2i) -> int:
+	var best_idx: int = -1
+	var best_dist: int = 9999
+	for i in _units.size():
+		var u: Dictionary = _units[i]
+		if not u["alive"] or u["type"] != "enemy":
+			continue
+		var d: int = absi(u["grid_pos"].x - from_pos.x) + absi(u["grid_pos"].y - from_pos.y)
+		if d < best_dist:
+			best_dist = d
+			best_idx = i
+	return best_idx
+
+
+## Returns index of alive enemy with the lowest current HP, or -1.
+func _get_weakest_enemy() -> int:
+	var best_idx: int = -1
+	var best_hp: int = 9999
+	for i in _units.size():
+		var u: Dictionary = _units[i]
+		if not u["alive"] or u["type"] != "enemy":
+			continue
+		if u["hp"] < best_hp:
+			best_hp = u["hp"]
+			best_idx = i
+	return best_idx
+
+
+## Returns index of the alive enemy closest to the player unit, or -1.
+func _get_enemy_nearest_player() -> int:
+	if _units.is_empty():
+		return -1
+	var player_pos: Vector2i = _units[0]["grid_pos"]
+	return _get_nearest_enemy(player_pos)
+
+
+## Read the tactic string from GameData for a companion unit.
+func _get_companion_tactic(unit: Dictionary) -> String:
+	var cdata: Dictionary = GameData.get_companion(unit.get("entity_key", ""))
+	return cdata.get("tactic", "balanced")
+
+
+## Shared move helper: move unit_idx toward target_pos. Returns true if moved.
+func _companion_move_toward(unit_idx: int, target_pos: Vector2i) -> bool:
+	var unit: Dictionary = _units[unit_idx]
+	var path: Array[Vector2i] = tactical_grid.find_path(unit["grid_pos"], target_pos)
+	if path.is_empty():
+		return false
+	var steps := mini(unit["move_range"], path.size() - 1)
+	if steps <= 0:
+		return false
+	var move_target: Vector2i = path[steps - 1]
+	var occupied := _get_occupied_positions(unit_idx)
+	while steps > 0 and move_target in occupied:
+		steps -= 1
+		if steps > 0:
+			move_target = path[steps - 1]
+	if steps <= 0:
+		return false
+	_move_unit(unit_idx, move_target)
+	return true
+
+
+## Shared: attack the nearest in-range enemy. Returns true if attacked.
+func _companion_attack_nearest(unit_idx: int) -> bool:
+	var unit: Dictionary = _units[unit_idx]
+	var enemy_idx: int = _get_nearest_enemy(unit["grid_pos"])
+	if enemy_idx < 0:
+		return false
+	var enemy_pos: Vector2i = _units[enemy_idx]["grid_pos"]
+	var dist: int = absi(unit["grid_pos"].x - enemy_pos.x) + absi(unit["grid_pos"].y - enemy_pos.y)
+	if dist <= unit["attack_range"]:
+		_do_companion_attack(unit_idx, enemy_idx)
+		return true
+	return false
+
+
+## Shared: use first backpack consumable on target. Returns true if used.
+## pass player_unit=true to use on player, false to use on self (unit_idx).
+func _companion_use_heal_item(unit_idx: int, on_player: bool) -> bool:
+	var unit: Dictionary = _units[unit_idx]
+	for bi in GameData.backpack.size():
+		var item: Dictionary = GameData.backpack[bi]
+		var t: int = item.get("type", -1)
+		if t != ItemDB.ItemType.FOOD and t != ItemDB.ItemType.POTION:
+			continue
+		var item_name: String = item.get("name", "item")
+		if on_player:
+			ItemDB.use_item(item)
+			ItemDB.remove_from_backpack(bi)
+			_units[0]["hp"] = GameData.hp
+			action_resolved.emit("[color=lime]%s uses your %s on you![/color]" % [unit["name"], item_name])
+		else:
+			var heal: int = item.get("heal_amount", item.get("heal", 10))
+			unit["hp"] = mini(unit["hp"] + heal, unit["hp_max"])
+			GameData.update_companion_hp(unit.get("entity_key", ""), unit["hp"])
+			ItemDB.remove_from_backpack(bi)
+			action_resolved.emit("[color=lime]%s uses a %s![/color]" % [unit["name"], item_name])
+		return true
+	return false
+
+
+## Companion AI turn: dispatches to the companion's assigned tactic.
+func _start_companion_turn(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	phase = Phase.ENEMY_THINKING
+
+	_flash_unit(unit)
+	await get_tree().create_timer(0.3).timeout
+
+	match _get_companion_tactic(unit):
+		"healer":   await _tactic_healer(unit_idx)
+		"berserker":await _tactic_berserker(unit_idx)
+		"defender": await _tactic_defender(unit_idx)
+		_:          await _tactic_balanced(unit_idx)
+
+	_advance_turn()
+
+
+## BALANCED — heal critical allies, pursue nearest enemy.
+func _tactic_balanced(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	var used_item: bool = false
+	var player_ratio: float = float(GameData.hp) / float(maxi(1, GameData.hp_max))
+	var self_ratio: float  = float(unit["hp"]) / float(maxi(1, unit["hp_max"]))
+
+	if player_ratio <= 0.25:
+		used_item = _companion_use_heal_item(unit_idx, true)
+	elif self_ratio <= 0.10:
+		used_item = _companion_use_heal_item(unit_idx, false)
+
+	var enemy_idx: int = _get_nearest_enemy(unit["grid_pos"])
+	if enemy_idx < 0:
+		if not used_item:
+			action_resolved.emit("%s stands guard." % unit["name"])
+		return
+
+	var moved: bool = _companion_move_toward(unit_idx, _units[enemy_idx]["grid_pos"])
+	if moved:
+		await get_tree().create_timer(0.2).timeout
+
+	if _companion_attack_nearest(unit_idx):
+		await get_tree().create_timer(0.4).timeout
+	elif not used_item:
+		action_resolved.emit("%s stands guard." % unit["name"])
+
+
+## HEALER — aggressive item use on any low-HP ally, retreats when engaged.
+func _tactic_healer(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	var used_item: bool = false
+	var player_ratio: float = float(GameData.hp) / float(maxi(1, GameData.hp_max))
+	var self_ratio: float  = float(unit["hp"]) / float(maxi(1, unit["hp_max"]))
+
+	# Proactive thresholds: 50% player, 30% self
+	if player_ratio <= 0.50:
+		used_item = _companion_use_heal_item(unit_idx, true)
+	if not used_item and self_ratio <= 0.30:
+		used_item = _companion_use_heal_item(unit_idx, false)
+
+	# Check for adjacent enemies — retreat toward player if threatened
+	var adjacent_enemy: bool = false
+	for u in _units:
+		if u["type"] == "enemy" and u["alive"]:
+			var d: int = absi(unit["grid_pos"].x - u["grid_pos"].x) + absi(unit["grid_pos"].y - u["grid_pos"].y)
+			if d <= 1:
+				adjacent_enemy = true
+				break
+
+	if adjacent_enemy:
+		var moved: bool = _companion_move_toward(unit_idx, _units[0]["grid_pos"])
+		if moved:
+			await get_tree().create_timer(0.2).timeout
+		# Still attack if something is in range after retreating
+		if _companion_attack_nearest(unit_idx):
+			await get_tree().create_timer(0.4).timeout
+		elif not used_item:
+			action_resolved.emit("[color=cyan]%s retreats to safety![/color]" % unit["name"])
+	else:
+		# No immediate threat — move toward nearest enemy and attack
+		var enemy_idx: int = _get_nearest_enemy(unit["grid_pos"])
+		if enemy_idx >= 0:
+			var moved: bool = _companion_move_toward(unit_idx, _units[enemy_idx]["grid_pos"])
+			if moved:
+				await get_tree().create_timer(0.2).timeout
+			if _companion_attack_nearest(unit_idx):
+				await get_tree().create_timer(0.4).timeout
+			elif not used_item:
+				action_resolved.emit("%s stands ready." % unit["name"])
+		elif not used_item:
+			action_resolved.emit("%s stands ready." % unit["name"])
+
+
+## BERSERKER — ignores items, always charges the lowest-HP enemy.
+func _tactic_berserker(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+
+	# Target weakest enemy (lowest HP) for the kill
+	var target_idx: int = _get_weakest_enemy()
+	if target_idx < 0:
+		action_resolved.emit("[color=red]%s rages, finding no prey![/color]" % unit["name"])
+		return
+
+	var target_pos: Vector2i = _units[target_idx]["grid_pos"]
+	var moved: bool = _companion_move_toward(unit_idx, target_pos)
+	if moved:
+		await get_tree().create_timer(0.15).timeout
+
+	# Attack the in-range enemy (prefer the weakest, but take nearest)
+	if _companion_attack_nearest(unit_idx):
+		await get_tree().create_timer(0.4).timeout
+	else:
+		action_resolved.emit("[color=red]%s charges forward![/color]" % unit["name"])
+
+
+## DEFENDER — interposes between the player and the nearest threat.
+## Enemies already prefer targeting Defenders (see _get_nearest_player_faction).
+func _tactic_defender(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	var used_item: bool = false
+
+	# Still rescues a critically wounded player
+	var player_ratio: float = float(GameData.hp) / float(maxi(1, GameData.hp_max))
+	if player_ratio <= 0.25:
+		used_item = _companion_use_heal_item(unit_idx, true)
+
+	var enemy_idx: int = _get_enemy_nearest_player()
+	if enemy_idx < 0:
+		if not used_item:
+			action_resolved.emit("[color=cyan]%s holds the line.[/color]" % unit["name"])
+		return
+
+	# Interpose: move toward midpoint between player and the threat
+	var player_pos: Vector2i = _units[0]["grid_pos"]
+	var enemy_pos: Vector2i  = _units[enemy_idx]["grid_pos"]
+	var mid := Vector2i(
+		(player_pos.x + enemy_pos.x) / 2,
+		(player_pos.y + enemy_pos.y) / 2
+	)
+
+	var moved: bool = _companion_move_toward(unit_idx, mid)
+	if moved:
+		await get_tree().create_timer(0.2).timeout
+
+	# Attack any enemy now in range
+	if _companion_attack_nearest(unit_idx):
+		await get_tree().create_timer(0.4).timeout
+	elif not used_item:
+		action_resolved.emit("[color=cyan]%s holds the line.[/color]" % unit["name"])
+
+
+## Companion melee/ranged attack.
+func _do_companion_attack(attacker_idx: int, target_idx: int):
+	var attacker: Dictionary = _units[attacker_idx]
+	var target: Dictionary = _units[target_idx]
+
+	var atk_roll: int = _clash_roll(attacker["attack"])
+	var def_roll: int = _clash_roll(target["defense"])
+
+	if atk_roll > def_roll:
+		var dmg: int = maxi(1, atk_roll - def_roll)
+		_apply_damage(target_idx, dmg)
+		action_resolved.emit("[color=lime]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
+			attacker["name"], target["name"], atk_roll, def_roll, dmg])
+	elif def_roll > atk_roll:
+		var dmg: int = maxi(1, def_roll - atk_roll)
+		action_resolved.emit("[color=gray]%s attacks but %s deflects![/color]" % [attacker["name"], target["name"]])
+		if tactical_grid:
+			_fx_float_text(tactical_grid.grid_to_world(attacker["grid_pos"]) + Vector3(0, 1.2, 0),
+				"Miss!", Color(0.7, 0.7, 0.7))
+		_fx_play_sfx(_SFX_MISS, randf_range(0.9, 1.1))
+	else:
+		action_resolved.emit("[color=gray]%s and %s clash to a stalemate![/color]" % [attacker["name"], target["name"]])
+
+
+## Player attempts to recruit target enemy.
+func _do_recruit(attacker_idx: int, target_idx: int):
+	if target_idx < 0 or target_idx >= _units.size():
+		action_resolved.emit("No valid recruit target.")
+		return
+
+	var target: Dictionary = _units[target_idx]
+	if not target["alive"] or target["type"] != "enemy":
+		action_resolved.emit("Can't recruit that target.")
+		return
+
+	var is_boss: bool = target.get("variant", "normal") == "boss"
+	var chance: float = GameData.get_recruit_chance(target["hp"], target["hp_max"], is_boss)
+	var pct: int = int(chance * 100.0)
+
+	if randf() < chance:
+		action_resolved.emit("[color=lime]%s seems interested! Attempting to recruit…[/color]" % target["name"])
+		_attempt_recruit(target_idx)
+	else:
+		action_resolved.emit("[color=orange]%s refuses! (%d%% chance)[/color]" % [target["name"], pct])
+
+
+## Internal: handle roster/slot checks before finalising recruit.
+func _attempt_recruit(target_idx: int):
+	var unit: Dictionary = _units[target_idx]
+	var ekey: String = unit.get("entity_key", "")
+
+	var already_in_roster: bool = GameData.has_companion_type(ekey)
+
+	# Count active companions currently in this combat
+	var active_count: int = 0
+	for u in _units:
+		if u["type"] == "companion" and u["alive"]:
+			active_count += 1
+
+	var max_slots: int = GameData.get_companion_slots()
+
+	if already_in_roster:
+		_waiting_for_recruit_decision = true
+		companion_replace_needed.emit(target_idx, ekey)
+	elif active_count >= max_slots:
+		_waiting_for_recruit_decision = true
+		companion_swap_needed.emit(target_idx)
+	else:
+		_finalize_recruit(target_idx)
+
+
+## Convert an enemy unit into a companion and register it.
+func _finalize_recruit(target_idx: int):
+	var unit: Dictionary = _units[target_idx]
+	var ekey: String = unit.get("entity_key", "")
+
+	unit["type"] = "companion"
+
+	# Build companion roster entry
+	var comp_dict: Dictionary = {
+		"key":             ekey,
+		"name":            unit["name"],
+		"hp":              unit["hp"],
+		"hp_max":          unit["hp_max"],
+		"attack":          unit["attack"],
+		"defense":         unit["defense"],
+		"speed":           unit.get("speed", 4),
+		"move_range":      unit.get("move_range", ENEMY_MOVE_RANGE),
+		"attack_range":    unit.get("attack_range", ENEMY_ATTACK_RANGE),
+		"equip_weapon":    {},
+		"equip_armor":     {},
+		"recruited_floor": GameData.current_floor,
+	}
+	GameData.add_companion(comp_dict)
+	GameData.active_companions.append(ekey)
+
+	if tactical_grid:
+		tactical_grid.highlight_companion(unit["grid_pos"])
+
+	turn_order_changed.emit(get_turn_order_units())
+	action_resolved.emit("[color=gold]★ %s joined your party![/color]" % unit["name"])
+
+	# Unblock player_act() if it was waiting for this decision
+	if _waiting_for_recruit_decision:
+		recruit_decision_made.emit()
+
+
+## Called by UI when the player declines a recruit (keeps old companion).
+## Unblocks player_act() without finalizing a new recruit.
+func recruit_decision_complete():
+	if _waiting_for_recruit_decision:
+		_waiting_for_recruit_decision = false
+		recruit_decision_made.emit()
+
+
+## Dismiss a companion from the current combat (send to camp roster but not active).
+func dismiss_companion_for(dismissed_unit_idx: int):
+	if dismissed_unit_idx < 0 or dismissed_unit_idx >= _units.size():
+		return
+	var unit: Dictionary = _units[dismissed_unit_idx]
+	var msg: String = _DISMISSAL_MSGS[randi() % _DISMISSAL_MSGS.size()] % unit["name"]
+	action_resolved.emit("[color=gray]%s[/color]" % msg)
+	unit["type"] = "dismissed"
+	unit["alive"] = false
+	tactical_grid.set_blocked(unit["grid_pos"], false)
+	if is_instance_valid(unit.get("entity", null)):
+		(unit["entity"] as Node3D).visible = false
+	var ckey: String = unit.get("entity_key", "")
+	var aidx: int = GameData.active_companions.find(ckey)
+	if aidx >= 0:
+		GameData.active_companions.remove_at(aidx)
+	# HP is preserved in roster — companion is benched, not dead
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -596,9 +1067,10 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 		)
 
 	var enemy_roll: int = _clash_roll(attacker["attack"])
-	var player_roll: int = _clash_roll(target["defense"] + GameData.ac_bonus_temp)
+	var ac_bonus: int = GameData.ac_bonus_temp if target["type"] == "player" else 0
+	var player_roll: int = _clash_roll(target["defense"] + ac_bonus)
 
-	if GameData.counter_active and player_roll >= enemy_roll:
+	if GameData.counter_active and target["type"] == "player" and player_roll >= enemy_roll:
 		# Counter-attack!
 		var counter_dmg := maxi(1, player_roll - enemy_roll)
 		_apply_damage(attacker_idx, counter_dmg)
@@ -607,13 +1079,13 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 	elif enemy_roll > player_roll:
 		var dmg := maxi(1, enemy_roll - player_roll)
 		_apply_damage(target_idx, dmg)
-		action_resolved.emit("[color=orange]%s[/color] strikes! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
-			attacker["name"], enemy_roll, player_roll, dmg])
+		action_resolved.emit("[color=orange]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
+			attacker["name"], target["name"], enemy_roll, player_roll, dmg])
 	else:
-		action_resolved.emit("[color=gray]%s attacks but misses! [color=white]%d vs %d[/color][/color]" % [
-			attacker["name"], enemy_roll, player_roll])
+		action_resolved.emit("[color=gray]%s attacks %s but misses! [color=white]%d vs %d[/color][/color]" % [
+			attacker["name"], target["name"], enemy_roll, player_roll])
 		if tactical_grid:
-			_fx_float_text(tactical_grid.grid_to_world(_units[0]["grid_pos"]) + Vector3(0, 1.2, 0),
+			_fx_float_text(tactical_grid.grid_to_world(target["grid_pos"]) + Vector3(0, 1.2, 0),
 				"Dodge!", Color(0.4, 1.0, 0.6))
 		_fx_play_sfx(_SFX_MISS, randf_range(1.0, 1.3))
 
@@ -685,7 +1157,7 @@ func _move_unit(unit_idx: int, target_pos: Vector2i):
 	unit["grid_pos"] = target_pos
 
 	# Move the entity in 3D space
-	if unit["type"] == "enemy" and is_instance_valid(unit["entity"]):
+	if unit["type"] in ["enemy", "companion"] and is_instance_valid(unit.get("entity", null)):
 		unit["entity"].global_position = tactical_grid.grid_to_world(target_pos)
 
 	unit_moved.emit(unit, old_pos, target_pos)
@@ -711,8 +1183,8 @@ func _apply_damage(unit_idx: int, damage: int, suppress_fx: bool = false):
 		GameData.take_raw_damage(damage)
 		unit["hp"] = GameData.hp
 	else:
-		# Update entity meta
-		if is_instance_valid(unit["entity"]):
+		# Update entity meta (works for both enemies and companions)
+		if is_instance_valid(unit.get("entity", null)):
 			unit["entity"].set_meta("hp", unit["hp"])
 			# Flash red
 			var sprite: Sprite3D = unit["entity"].get_meta("sprite", null)
@@ -764,6 +1236,12 @@ func _kill_unit(unit_idx: int):
 		unit_defeated.emit(unit)
 		action_resolved.emit("[color=green]%s defeated![/color] +%d gold%s" % [unit["name"], gold_drop, loot_msg])
 
+	elif unit["type"] == "companion":
+		if is_instance_valid(unit.get("entity", null)):
+			EntityManager.despawn_entity(unit["entity"])
+		unit_defeated.emit(unit)
+		action_resolved.emit("[color=orange]%s has fallen![/color] (Permadeath)" % unit["name"])
+
 	elif unit["type"] == "player":
 		unit_defeated.emit(unit)
 
@@ -778,6 +1256,8 @@ func _show_unit_positions():
 			continue
 		if unit["type"] == "player":
 			tactical_grid.highlight_player(unit["grid_pos"])
+		elif unit["type"] == "companion":
+			tactical_grid.highlight_companion(unit["grid_pos"])
 		else:
 			tactical_grid.highlight_enemy(unit["grid_pos"])
 
@@ -808,11 +1288,14 @@ func _compute_attack_targets(unit_idx: int):
 
 
 func _flash_unit(unit: Dictionary):
-	if unit["type"] != "enemy" or not is_instance_valid(unit["entity"]):
+	if unit["type"] not in ["enemy", "companion"]:
+		return
+	if not is_instance_valid(unit.get("entity", null)):
 		return
 	var sprite: Sprite3D = unit["entity"].get_meta("sprite", null)
 	if sprite:
-		sprite.modulate = Color(1.0, 1.0, 0.3)
+		var flash_color: Color = Color(1.0, 1.0, 0.3) if unit["type"] == "enemy" else Color(0.5, 1.0, 0.6)
+		sprite.modulate = flash_color
 		get_tree().create_timer(0.25).timeout.connect(func():
 			if is_instance_valid(sprite):
 				sprite.modulate = Color.WHITE
@@ -848,6 +1331,29 @@ func _check_end() -> bool:
 
 
 func _cleanup():
+	# Sync companion HP / permadeath
+	for unit in _units:
+		var ckey: String = unit.get("entity_key", "")
+		if ckey == "":
+			continue
+		if unit["type"] == "dismissed":
+			# Sent to bench — already removed from active_companions; keep roster entry
+			continue
+		if unit["type"] == "companion":
+			if not unit.get("alive", false):
+				# Permadeath: remove from roster entirely
+				GameData.remove_companion(ckey)
+			else:
+				GameData.update_companion_hp(ckey, unit["hp"])
+
+	# Despawn all companion/dismissed combat entities — the dungeon follower entities
+	# will be re-shown instead. Dead companions were already despawned in _kill_unit;
+	# despawn_entity() safely no-ops if the entity is no longer in the pool.
+	for unit in _units:
+		if unit["type"] in ["companion", "dismissed"]:
+			if is_instance_valid(unit.get("entity", null)):
+				EntityManager.despawn_entity(unit["entity"])
+
 	# Remove tactical grid
 	if tactical_grid and is_instance_valid(tactical_grid):
 		tactical_grid.clear_all()
@@ -867,6 +1373,15 @@ func _get_base_speed(unit: Dictionary) -> int:
 	if unit["type"] == "player":
 		return GameData.stat_spd
 	return unit.get("speed", 4)
+
+
+## Get all alive units in the current combat (for UI).
+func get_alive_companions() -> Array:
+	var result: Array = []
+	for u in _units:
+		if u["type"] == "companion" and u["alive"]:
+			result.append(u)
+	return result
 
 
 func _clash_roll(power: int) -> int:

@@ -13,6 +13,7 @@ const GameHudScript = preload("res://dungeon_break/ui/game_hud.gd")
 const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
 const ShopUIScript = preload("res://dungeon_break/ui/shop_ui.gd")
 const SageUIScript = preload("res://dungeon_break/ui/sage_ui.gd")
+const CompanionRosterUIScript = preload("res://dungeon_break/ui/companion_roster_ui.gd")
 
 signal enter_dungeon()
 
@@ -194,11 +195,16 @@ func _check_portal_interactions():
 				return
 		elif interaction == "azure_flame":
 			near_anything = true
+			var flame_prompt: String = "[E] Azure Flame"
+			if not GameData.companions.is_empty():
+				flame_prompt = "[E] Azure Flame  [R] Companions"
 			if _hud:
-				_hud.show_prompt("[E] Refuel Torch")
+				_hud.show_prompt(flame_prompt)
 			if Input.is_key_pressed(KEY_E):
 				GameData.torch_fuel = 100
 				print("Game: torch refuelled!")
+			elif Input.is_key_pressed(KEY_R) and not _npc_ui_open:
+				_open_companion_roster()
 
 		elif interaction == "npc":
 			var npc_key: String  = child.get_meta("npc_key", "")
@@ -233,6 +239,16 @@ func _open_npc_ui(npc_key: String, role: String) -> void:
 		add_child(shop_ui)
 		shop_ui.open(npc_key)
 		shop_ui.shop_closed.connect(_on_npc_ui_closed)
+
+
+func _open_companion_roster() -> void:
+	_npc_ui_open = true
+	if _hud:
+		_hud.hide_prompt()
+	var roster_ui := CompanionRosterUIScript.new()
+	roster_ui.name = "CompanionRosterUI"
+	add_child(roster_ui)
+	roster_ui.roster_closed.connect(_on_npc_ui_closed)
 
 
 func _on_npc_ui_closed() -> void:

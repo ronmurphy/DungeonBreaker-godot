@@ -45,6 +45,10 @@ var _visited_rooms: Dictionary = {}
 var _torch_burn_accum: float = 0.0
 const TORCH_BURN_RATE := 0.15  # fuel per second; full torch lasts ~11 min
 
+## Companion follower entities (visible outside combat, trail behind player)
+var _companion_followers: Array = []
+var _player_pos_history: Array = []
+
 
 func _ready():
 	_dungeon_objects = Node3D.new()
@@ -103,6 +107,7 @@ func _build_dungeon():
 	# Spawn player at start room
 	var start_pos: Vector3 = _dungeon_stamper.get_start_position()
 	_spawn_player(start_pos)
+	_spawn_companion_followers(start_pos)
 
 	# Spawn enemies in uncleared rooms
 	_spawn_enemies(data)
@@ -262,6 +267,10 @@ func _process(delta: float):
 		_player.global_position = start_pos
 		print("Dungeon: player fell into void — teleported to start")
 
+	# Update companion followers trailing behind player
+	if not _combat_active:
+		_update_companion_followers()
+
 	# Check player proximity to portal areas (since we use VoxelBoxMover, not CharacterBody)
 	_check_area_interactions()
 
@@ -339,17 +348,49 @@ func _trigger_room_combat(room: Dictionary):
 	if _player:
 		_player.combat_locked = true
 	_set_wall_combat_mode(true)
+	# Hide follower entities — combat spawns fresh entities placed on the grid
+	for f: Node3D in _companion_followers:
+		if is_instance_valid(f):
+			f.visible = false
 	print("Dungeon: combat started in room %d (%s) elev=%d" % [room["id"], room["room_type"], _combat_floor_height])
 
 	# Inject dungeon offsets into room dict for the tactical grid
 	room["_offset_x"] = _dungeon_stamper.dungeon_data.get("offset_x", 0)
 	room["_offset_z"] = _dungeon_stamper.dungeon_data.get("offset_z", 0)
 
+	# Spawn companion entities for active companions
+	var companion_entities: Array = []
+	for ckey: String in GameData.active_companions:
+		var cdata: Dictionary = GameData.get_companion(ckey)
+		var edata: Dictionary = EnemyDB.get_enemy(ckey)
+		if cdata.is_empty() or edata.is_empty():
+			continue
+		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
+		var ox2: int = room["_offset_x"]
+		var oz2: int = room["_offset_z"]
+		var ex: float = float(room["cx"] + ox2 - 1 - companion_entities.size()) + 0.5
+		var ey: float = float(room.get("floor_height", 0)) + 1.5
+		var ez: float = float(room["cy"] + oz2) + 0.5
+		var centity: Node3D = EntityManager.spawn_entity(Vector3(ex, ey, ez), tex_path, {
+			"entity_key": ckey,
+			"name":        cdata.get("name", edata.get("name", ckey)),
+			"hp":          cdata["hp"],
+			"hp_max":      cdata["hp_max"],
+			"attack":      cdata["attack"] + int(cdata.get("equip_weapon", {}).get("attack_bonus", 0)),
+			"defense":     cdata["defense"] + int(cdata.get("equip_armor", {}).get("ac_bonus", 0)),
+			"speed":       cdata["speed"],
+			"move_range":  cdata.get("move_range", 3),
+			"attack_range": cdata.get("attack_range", 1),
+			"is_companion": true,
+		})
+		if centity:
+			companion_entities.append(centity)
+
 	# Start tactical combat with grid
 	_combat_manager = CombatManagerScript.new()
 	_combat_manager.name = "CombatManager"
 	add_child(_combat_manager)
-	_combat_manager.start_combat(room["enemies"], room, _dungeon_objects)
+	_combat_manager.start_combat(room["enemies"], companion_entities, room, _dungeon_objects)
 	_combat_manager.combat_ended.connect(_on_combat_ended.bind(room))
 
 	# Move player to room centre, above the elevated floor if applicable
@@ -384,6 +425,25 @@ func _on_combat_ended(victory: bool, room: Dictionary):
 		_combat_manager.queue_free()
 		_combat_manager = null
 
+	# Re-show surviving companion followers; despawn any that died in combat.
+	# Snap to player position first so they don't reappear at the old room entrance.
+	_player_pos_history.clear()
+	var to_remove: Array = []
+	for f: Node3D in _companion_followers:
+		if not is_instance_valid(f):
+			to_remove.append(f)
+			continue
+		var fkey: String = f.get_meta("entity_key", "")
+		if fkey == "" or not (fkey in GameData.active_companions):
+			EntityManager.despawn_entity(f)
+			to_remove.append(f)
+		else:
+			if _player and is_instance_valid(_player):
+				f.global_position = _player.global_position
+			f.visible = true
+	for f in to_remove:
+		_companion_followers.erase(f)
+
 	if victory:
 		room["state"] = "cleared"
 		print("Dungeon: room %d cleared!" % room["id"])
@@ -416,6 +476,7 @@ func _enable_boss_portal():
 
 
 ## When a unit moves on the tactical grid, move the player entity too.
+## Companion and enemy entity positions are updated directly inside combat_manager._move_unit().
 func _on_unit_moved(unit: Dictionary, _from: Vector2i, to: Vector2i):
 	if unit["type"] == "player" and _player and _combat_manager:
 		var world_pos: Vector3 = _combat_manager.tactical_grid.grid_to_world(to)
@@ -436,7 +497,51 @@ func _do_advance_floor():
 
 func _do_bonfire_rest():
 	GameData.heal(GameData.hp_max)
-	print("Dungeon: rested at bonfire — HP restored")
+	GameData.heal_companions()
+	print("Dungeon: rested at bonfire — HP restored for player and companions")
+
+
+func _spawn_companion_followers(base_pos: Vector3):
+	## Spawn exploration follower entities for each active companion.
+	## These trail behind the player outside of combat.
+	for ckey: String in GameData.active_companions:
+		var cdata: Dictionary = GameData.get_companion(ckey)
+		var edata: Dictionary = EnemyDB.get_enemy(ckey)
+		if cdata.is_empty() or edata.is_empty():
+			continue
+		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
+		var offset := Vector3(1.2 * (_companion_followers.size() + 1), 0.0, 0.0)
+		var entity: Node3D = EntityManager.spawn_entity(base_pos + offset, tex_path, {
+			"entity_key": ckey,
+			"name": cdata.get("name", edata.get("name", ckey)),
+			"is_follower": true,
+		})
+		if entity:
+			# Subtle green tint to indicate allied status
+			var sprite: Sprite3D = entity.get_meta("sprite", null) as Sprite3D
+			if sprite:
+				sprite.modulate = Color(0.75, 1.0, 0.8)
+			_companion_followers.append(entity)
+
+
+func _update_companion_followers():
+	## Move companion followers to trail behind the player using a position history.
+	if _player == null or _companion_followers.is_empty():
+		return
+
+	_player_pos_history.append(_player.global_position)
+	if _player_pos_history.size() > 80:
+		_player_pos_history.pop_front()
+
+	for i in _companion_followers.size():
+		var f: Node3D = _companion_followers[i]
+		if not is_instance_valid(f):
+			continue
+		# Each companion lags 20 extra frames behind the previous one
+		var delay: int = (i + 1) * 20
+		var target_idx: int = maxi(0, _player_pos_history.size() - 1 - delay)
+		var target_pos: Vector3 = _player_pos_history[target_idx]
+		f.global_position = f.global_position.lerp(target_pos, 0.12)
 
 
 func _do_fountain_heal():

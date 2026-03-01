@@ -39,6 +39,7 @@ var _sub_panel: PanelContainer = null
 var _sub_list: VBoxContainer = null
 var _in_action_sub: bool = false
 var _in_items_sub: bool = false
+var _in_recruit_sub: bool = false
 
 # ── Per-unit color palette ────────────────────────────────────────────────────
 const UNIT_COLORS: Array = [
@@ -249,6 +250,8 @@ func _connect_signals():
 	_combat.unit_defeated.connect(_on_unit_defeated)
 	_combat.unit_moved.connect(_on_unit_moved)
 	_combat.combat_ended.connect(_on_combat_ended)
+	_combat.companion_swap_needed.connect(_show_companion_swap_modal)
+	_combat.companion_replace_needed.connect(_show_companion_replace_modal)
 
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
@@ -261,13 +264,23 @@ func _on_combat_started():
 	_log("")
 
 
-func _on_turn_order_changed(order: Array):
-	_update_turn_bar(order)
+func _on_turn_order_changed(_order: Array):
+	_build_enemy_cards()
 
 
 func _on_unit_turn_started(unit: Dictionary):
-	var color := "cyan" if unit["type"] == "player" else "orange"
-	var icon := "►" if unit["type"] == "player" else "◆"
+	var color: String
+	var icon: String
+	match unit["type"]:
+		"player":
+			color = "cyan"
+			icon = "►"
+		"companion":
+			color = "lime"
+			icon = "♦"
+		_:
+			color = "orange"
+			icon = "◆"
 	_log("[color=%s]%s %s's turn[/color]" % [color, icon, unit["name"]])
 
 	# Highlight active card in tracker by matching name+type
@@ -283,11 +296,22 @@ func _on_unit_turn_started(unit: Dictionary):
 		_phase_label.add_theme_color_override("font_color", Color(0.4, 0.9, 0.5))
 		if _enemy_info_panel:
 			_enemy_info_panel.visible = false
+	elif unit["type"] == "companion":
+		_phase_label.text = unit["name"] + " ♦"
+		_phase_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
+		_action_panel.visible = false
+		# Only close sub panel if NOT showing a recruit/swap modal
+		if not _in_recruit_sub:
+			_close_sub_panel()
+		if _enemy_info_panel:
+			_enemy_info_panel.visible = false
 	else:
 		_phase_label.text = unit["name"]
 		_phase_label.add_theme_color_override("font_color", Color(1.0, 0.5, 0.2))
 		_action_panel.visible = false
-		_close_sub_panel()
+		# Only close sub panel if NOT showing a recruit/swap modal
+		if not _in_recruit_sub:
+			_close_sub_panel()
 		_update_enemy_info_panel(unit)
 
 
@@ -432,6 +456,11 @@ func _show_action_sub():
 	_add_sub_button("Defend [4]", "+4 AC this round", Color(0.3, 0.6, 1.0),
 		func(): _do_act("defend"))
 
+	# Recruit button — only shown if enemies are alive
+	if _combat and _combat.get_alive_enemies().size() > 0:
+		_add_sub_button("Recruit [5]", "Attempt to recruit an enemy", Color(0.85, 0.65, 0.2),
+			func(): _show_recruit_sub())
+
 	_add_sub_button("Back [ESC]", "", Color(0.35, 0.35, 0.35),
 		func(): _close_sub_panel())
 
@@ -462,6 +491,207 @@ func _show_items_sub():
 		func(): _close_sub_panel())
 
 	_sub_panel.visible = true
+
+
+func _show_recruit_sub():
+	_in_action_sub = false
+	_in_items_sub = false
+	_in_recruit_sub = true
+	_action_panel.visible = false
+	for child in _sub_list.get_children():
+		child.queue_free()
+
+	var title := Label.new()
+	title.text = "— RECRUIT —"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(0.85, 0.65, 0.2))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sub_list.add_child(title)
+
+	if _combat:
+		var units: Array = _combat.get_units()
+		for i in units.size():
+			var u: Dictionary = units[i]
+			if u["type"] != "enemy" or not u["alive"]:
+				continue
+			var already_have: bool = GameData.has_companion_type(u.get("entity_key", ""))
+			var is_boss: bool = u.get("variant", "normal") == "boss"
+			var chance: float = GameData.get_recruit_chance(u["hp"], u["hp_max"], is_boss)
+			var pct: int = int(chance * 100.0)
+			_sub_list.add_child(_build_recruit_card(u, i, pct, already_have))
+
+	_add_sub_button("Back [ESC]", "", Color(0.35, 0.35, 0.35),
+		func(): _show_action_sub())
+
+	_sub_panel.visible = true
+
+
+func _build_recruit_card(u: Dictionary, unit_idx: int, chance_pct: int, already_have: bool) -> Control:
+	var card := PanelContainer.new()
+	var card_style := StyleBoxFlat.new()
+	card_style.bg_color = Color(0.08, 0.06, 0.02, 0.92) if not already_have else Color(0.04, 0.04, 0.04, 0.7)
+	card_style.border_color = Color(0.85, 0.65, 0.2) if not already_have else Color(0.4, 0.35, 0.2)
+	card_style.set_border_width_all(2)
+	card_style.set_corner_radius_all(4)
+	card_style.set_content_margin_all(5)
+	card.add_theme_stylebox_override("panel", card_style)
+	card.custom_minimum_size = Vector2(0, 58)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if not already_have:
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		card.gui_input.connect(func(event: InputEvent):
+			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+				_do_act("recruit", unit_idx)
+		)
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 6)
+	card.add_child(hbox)
+
+	var portrait_rect := TextureRect.new()
+	portrait_rect.custom_minimum_size = Vector2(44, 44)
+	portrait_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	var ppath: String = EnemyDB.get_portrait_path(u.get("entity_key", ""))
+	if ppath != "" and ResourceLoader.exists(ppath):
+		portrait_rect.texture = load(ppath)
+	hbox.add_child(portrait_rect)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 3)
+	hbox.add_child(vbox)
+
+	var name_lbl := Label.new()
+	name_lbl.text = u["name"] + (" (have one)" if already_have else "")
+	name_lbl.add_theme_color_override("font_color",
+		Color(0.85, 0.65, 0.2) if not already_have else Color(0.5, 0.45, 0.3))
+	name_lbl.add_theme_font_size_override("font_size", 12)
+	name_lbl.clip_text = true
+	vbox.add_child(name_lbl)
+
+	var hp_ratio: float = clampf(float(u["hp"]) / float(maxi(1, u["hp_max"])), 0.0, 1.0)
+	var bar_bg := Control.new()
+	bar_bg.custom_minimum_size = Vector2(0, 7)
+	bar_bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var bbg := ColorRect.new()
+	bbg.color = Color(0.1, 0.1, 0.1)
+	bbg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bar_bg.add_child(bbg)
+	var bfill := ColorRect.new()
+	bfill.color = _hp_bar_color(hp_ratio)
+	bfill.anchor_left = 0.0
+	bfill.anchor_top = 0.0
+	bfill.anchor_right = hp_ratio
+	bfill.anchor_bottom = 1.0
+	bar_bg.add_child(bfill)
+	vbox.add_child(bar_bg)
+
+	var chance_lbl := Label.new()
+	chance_lbl.text = "Chance: %d%%  HP %d/%d" % [chance_pct, u["hp"], u["hp_max"]]
+	chance_lbl.add_theme_font_size_override("font_size", 10)
+	chance_lbl.add_theme_color_override("font_color",
+		Color(0.9, 0.75, 0.4) if not already_have else Color(0.45, 0.4, 0.3))
+	vbox.add_child(chance_lbl)
+
+	return card
+
+
+func _show_companion_swap_modal(incoming_idx: int):
+	# Build an overlay asking which companion to send to camp
+	for child in _sub_list.get_children():
+		child.queue_free()
+	_in_recruit_sub = true
+	_action_panel.visible = false
+	_sub_panel.visible = true
+
+	var title := Label.new()
+	title.text = "Party Full! Who returns to camp?"
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_sub_list.add_child(title)
+
+	if _combat:
+		var units: Array = _combat.get_units()
+		for i in units.size():
+			var u: Dictionary = units[i]
+			if u["type"] != "companion" or not u["alive"]:
+				continue
+			var ci: int = i  # capture for lambda
+			var ii: int = incoming_idx
+			var btn := Button.new()
+			btn.text = "%s  HP %d/%d" % [u["name"], u["hp"], u["hp_max"]]
+			btn.custom_minimum_size = Vector2(140, 32)
+			btn.pressed.connect(func():
+				if _combat:
+					_combat.dismiss_companion_for(ci)
+					_combat.call_deferred("_finalize_recruit", ii)
+				_build_enemy_cards()
+				_close_sub_panel()
+			)
+			_sub_list.add_child(btn)
+
+
+func _show_companion_replace_modal(incoming_idx: int, entity_key: String):
+	# Build overlay asking which version of the companion to keep
+	for child in _sub_list.get_children():
+		child.queue_free()
+	_in_recruit_sub = true
+	_action_panel.visible = false
+	_sub_panel.visible = true
+
+	var cname: String = GameData.get_companion_name(entity_key)
+
+	var title := Label.new()
+	title.text = "You already have a %s!\nKeep which one?" % cname
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_sub_list.add_child(title)
+
+	# Find the existing companion unit index
+	var existing_idx: int = -1
+	if _combat:
+		var units: Array = _combat.get_units()
+		for i in units.size():
+			var u: Dictionary = units[i]
+			if u["type"] == "companion" and u.get("entity_key", "") == entity_key and u["alive"]:
+				existing_idx = i
+				break
+
+	var keep_old := Button.new()
+	keep_old.text = "Keep Roster %s" % cname
+	keep_old.custom_minimum_size = Vector2(140, 32)
+	var ei: int = existing_idx
+	var ii: int = incoming_idx
+	keep_old.pressed.connect(func():
+		# Dismiss incoming (revert to enemy so _cleanup handles it normally)
+		if _combat:
+			var units: Array = _combat.get_units()
+			if ii >= 0 and ii < units.size():
+				units[ii]["alive"] = false
+				units[ii]["type"] = "enemy"
+			_combat.recruit_decision_complete()  # unblock player_act()
+		_close_sub_panel()
+	)
+	_sub_list.add_child(keep_old)
+
+	var keep_new := Button.new()
+	keep_new.text = "Keep New %s" % cname
+	keep_new.custom_minimum_size = Vector2(140, 32)
+	keep_new.pressed.connect(func():
+		if _combat:
+			if ei >= 0:
+				_combat.dismiss_companion_for(ei)
+				GameData.remove_companion(entity_key)
+			_combat.call_deferred("_finalize_recruit", ii)
+		_build_enemy_cards()
+		_close_sub_panel()
+	)
+	_sub_list.add_child(keep_new)
 
 
 func _get_usable_items() -> Array:
@@ -546,6 +776,7 @@ func _use_combat_item(backpack_idx: int):
 func _close_sub_panel():
 	_in_action_sub = false
 	_in_items_sub = false
+	_in_recruit_sub = false
 	_sub_panel.visible = false
 	_action_panel.visible = true
 
@@ -782,9 +1013,9 @@ func _set_active_card(unit_idx: int):
 			style.border_color = cd["color"]
 			style.set_border_width_all(2)
 		else:
-			if cd["is_player"]:
-				style.border_color = Color(0.3, 0.75, 0.45)
-				style.bg_color = Color(0.02, 0.06, 0.04, 0.92)
+			if cd["is_player"] or cd.get("is_companion", false):
+				style.border_color = Color(0.25, 0.70, 0.40)
+				style.bg_color = Color(0.02, 0.07, 0.03, 0.92)
 			else:
 				style.border_color = Color(0.45, 0.35, 0.55)
 				style.bg_color = Color(0.04, 0.02, 0.08, 0.88)
@@ -811,6 +1042,14 @@ func _build_enemy_cards():
 			_enemy_cards[i] = _create_unit_card(u, false, color)
 			_portrait_panel.add_child(_enemy_cards[i]["card_root"])
 
+	# Companions second (green — treated as allies)
+	var companion_color := Color(0.4, 0.95, 0.5)
+	for i in units.size():
+		var u: Dictionary = units[i]
+		if u["type"] == "companion":
+			_enemy_cards[i] = _create_unit_card(u, false, companion_color)
+			_portrait_panel.add_child(_enemy_cards[i]["card_root"])
+
 	# Player last (bottom of tracker)
 	for i in units.size():
 		var u: Dictionary = units[i]
@@ -820,6 +1059,8 @@ func _build_enemy_cards():
 
 
 func _create_unit_card(u: Dictionary, is_player: bool, unit_color: Color) -> Dictionary:
+	var is_companion: bool = u.get("type", "") == "companion"
+
 	# ── Wrapper HBox — spacer gives indent when active ──
 	var wrapper := HBoxContainer.new()
 	wrapper.add_theme_constant_override("separation", 0)
@@ -832,9 +1073,9 @@ func _create_unit_card(u: Dictionary, is_player: bool, unit_color: Color) -> Dic
 	# ── Card panel ──
 	var card := PanelContainer.new()
 	var card_style := StyleBoxFlat.new()
-	if is_player:
-		card_style.bg_color = Color(0.02, 0.06, 0.04, 0.92)
-		card_style.border_color = Color(0.3, 0.75, 0.45)
+	if is_player or is_companion:
+		card_style.bg_color = Color(0.02, 0.07, 0.03, 0.92)
+		card_style.border_color = Color(0.25, 0.70, 0.40)
 	else:
 		card_style.bg_color = Color(0.04, 0.02, 0.08, 0.88)
 		card_style.border_color = Color(0.45, 0.35, 0.55)
@@ -888,6 +1129,9 @@ func _create_unit_card(u: Dictionary, is_player: bool, unit_color: Color) -> Dic
 	if is_player:
 		name_label.text = u["name"]
 		name_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.65))
+	elif is_companion:
+		name_label.text = u["name"] + " ♦"
+		name_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.65))
 	else:
 		var variant_str: String = u.get("variant", "normal")
 		var name_color := Color(0.9, 0.85, 0.9)
@@ -916,7 +1160,7 @@ func _create_unit_card(u: Dictionary, is_player: bool, unit_color: Color) -> Dic
 	bar_bg.add_child(bar_bg_rect)
 
 	var hp_fill := ColorRect.new()
-	hp_fill.color = _hp_bar_color(hp_ratio) if not is_player else Color(0.2, 0.8, 0.4)
+	hp_fill.color = Color(0.2, 0.8, 0.4) if (is_player or is_companion) else _hp_bar_color(hp_ratio)
 	hp_fill.anchor_left = 0.0
 	hp_fill.anchor_top = 0.0
 	hp_fill.anchor_right = hp_ratio
@@ -928,7 +1172,7 @@ func _create_unit_card(u: Dictionary, is_player: bool, unit_color: Color) -> Dic
 	hp_label.text = "%d / %d" % [hp, hp_max]
 	hp_label.add_theme_font_size_override("font_size", 10)
 	hp_label.add_theme_color_override("font_color",
-		Color(0.5, 0.9, 0.65) if is_player else Color(0.7, 0.8, 0.7))
+		Color(0.5, 0.9, 0.65) if (is_player or is_companion) else Color(0.7, 0.8, 0.7))
 	vbox.add_child(hp_label)
 
 	return {
@@ -939,6 +1183,7 @@ func _create_unit_card(u: Dictionary, is_player: bool, unit_color: Color) -> Dic
 		"hp_label": hp_label,
 		"card_style": card_style,
 		"is_player": is_player,
+		"is_companion": is_companion,
 		"color": unit_color,
 		"dot": dot,
 	}
@@ -961,9 +1206,10 @@ func _refresh_enemy_cards():
 		var hp_max: int = GameData.hp_max if is_player else u["hp_max"]
 		var ratio := clampf(float(hp) / float(max(hp_max, 1)), 0.0, 1.0)
 
+		var is_companion: bool = card_data.get("is_companion", false)
 		var fill: ColorRect = card_data["hp_fill"]
 		fill.anchor_right = ratio
-		if not is_player:
+		if not is_player and not is_companion:
 			fill.color = _hp_bar_color(ratio)
 
 		var lbl: Label = card_data["hp_label"]
@@ -1019,7 +1265,7 @@ func _unhandled_input(event: InputEvent):
 
 	if _combat.phase == 1:  # MOVE
 		# Consume all number keys + combat keys so they don't leak to inventory/hotbar
-		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_S, KEY_ESCAPE]:
+		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_R, KEY_S, KEY_ESCAPE]:
 			get_viewport().set_input_as_handled()
 		if kc == KEY_S and _combat:
 			_combat.player_skip_move()
@@ -1027,7 +1273,7 @@ func _unhandled_input(event: InputEvent):
 	elif _combat.phase == 2:  # ACT
 		# Always consume combat-relevant keys, regardless of sub-state.
 		# This prevents 1-6 from leaking to inventory quick-use / hotbar.
-		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_S, KEY_ESCAPE]:
+		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_R, KEY_S, KEY_ESCAPE]:
 			get_viewport().set_input_as_handled()
 
 		if _selecting_target:
@@ -1038,7 +1284,7 @@ func _unhandled_input(event: InputEvent):
 				_show_action_sub()
 
 		elif _in_action_sub:
-			# Action sub: Attack [1] Guts [2] Counter [3] Defend [4] Back [ESC]
+			# Action sub: Attack [1] Guts [2] Counter [3] Defend [4] Recruit [5] Back [ESC]
 			var cu: Dictionary = _combat.get_current_unit()
 			var attackable: Array = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
 			match kc:
@@ -1051,8 +1297,17 @@ func _unhandled_input(event: InputEvent):
 					_do_act("counter")
 				KEY_4:
 					_do_act("defend")
+				KEY_5:
+					if _combat and _combat.get_alive_enemies().size() > 0:
+						_show_recruit_sub()
 				KEY_ESCAPE:
 					_close_sub_panel()
+
+		elif _in_recruit_sub:
+			# Recruit sub: click only — ESC goes back to action sub
+			if kc == KEY_ESCAPE:
+				_in_recruit_sub = false
+				_show_action_sub()
 
 		elif _in_items_sub:
 			# Items sub: click only — ESC goes back

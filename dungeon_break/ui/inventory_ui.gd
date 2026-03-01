@@ -594,6 +594,21 @@ func _refresh_detail():
 				_refresh()
 			)
 
+			# Equip to companion — only shown when active companions exist
+			var active_keys: Array = GameData.active_companions
+			if not active_keys.is_empty() and item_type in [
+					ItemDB_Script.ItemType.WEAPON, ItemDB_Script.ItemType.HELM,
+					ItemDB_Script.ItemType.CHEST, ItemDB_Script.ItemType.LEGS,
+					ItemDB_Script.ItemType.BOOTS]:
+				if active_keys.size() == 1:
+					var ckey: String = active_keys[0]
+					var cname: String = GameData.get_companion_name(ckey)
+					_add_action_btn("→ %s" % cname, Color(0.85, 0.65, 0.2),
+						func(): _do_equip_to_companion(ckey))
+				else:
+					_add_action_btn("→ Companion…", Color(0.85, 0.65, 0.2),
+						func(): _show_companion_equip_picker(active_keys))
+
 		if item_type == ItemDB_Script.ItemType.FOOD or item_type == ItemDB_Script.ItemType.POTION:
 			_add_action_btn("Use", Color(0.3, 0.85, 0.35), func():
 				var removed: Dictionary = ItemDB.remove_from_backpack(_selected_index)
@@ -679,6 +694,40 @@ func _add_action_btn(text: String, color: Color, callback: Callable):
 	btn.add_theme_stylebox_override("hover", h)
 	btn.pressed.connect(callback)
 	_action_row.add_child(btn)
+
+
+## Equip the selected backpack item to a companion (weapon or armor slot).
+func _do_equip_to_companion(key: String):
+	if _selected_index < 0 or _selected_index >= GameData.backpack.size():
+		return
+	var item: Dictionary = ItemDB.remove_from_backpack(_selected_index)
+	if item.is_empty():
+		return
+	var companion: Dictionary = GameData.get_companion(key)
+	if companion.is_empty():
+		return
+	var is_weapon: bool = item.get("type", -1) == ItemDB_Script.ItemType.WEAPON
+	var slot_key: String = "equip_weapon" if is_weapon else "equip_armor"
+	var old: Dictionary = companion.get(slot_key, {})
+	companion[slot_key] = item
+	if not old.is_empty():
+		ItemDB.add_to_backpack(old)
+	_show_toast("Equipped %s to %s" % [item.get("name", "item"), GameData.get_companion_name(key)])
+	_selected_index = -1
+	_refresh()
+
+
+## Show a picker panel so player can choose which companion to equip to.
+func _show_companion_equip_picker(keys: Array):
+	# Build a simple floating panel overlay (reuses action_row area)
+	for c in _action_row.get_children():
+		c.queue_free()
+	for ckey: String in keys:
+		var cname: String = GameData.get_companion_name(ckey)
+		var k: String = ckey  # capture
+		_add_action_btn(cname, Color(0.85, 0.65, 0.2),
+			func(): _do_equip_to_companion(k))
+	_add_action_btn("Cancel", Color(0.4, 0.4, 0.4), func(): _refresh())
 
 
 func _show_toast(text: String):

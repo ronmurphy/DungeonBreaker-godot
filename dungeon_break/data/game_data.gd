@@ -62,6 +62,12 @@ var player_sprite_prefix: String = ""  # set by character select; e.g. "res://as
 ## Daniels and Conner are always present from game start.
 var rescued_npcs: Array[String] = ["daniels", "conner"]
 
+# ── Companion Roster ──────────────────────────────────────────────────────────
+## Full companion roster (persisted to save). Each entry is a companion dict.
+var companions: Array[Dictionary] = []
+## Entity keys of companions currently in the dungeon party.
+var active_companions: Array[String] = []
+
 ## Ordered pool — matches NpcDB.NPC_DEFS keys.
 const NPC_RESCUE_POOL: Array = ["daniels", "conner", "zara", "michelle", "mahan", "claude"]
 
@@ -189,6 +195,8 @@ func _init_class(cls: PlayerClass):
 	equip_boots = {}
 	status_effects.clear()
 	rescued_npcs = ["daniels", "conner"]
+	companions.clear()
+	active_companions.clear()
 	scene_state  = "camp"
 	dungeon_seed = 0
 
@@ -270,6 +278,87 @@ func clash_roll(power: int) -> int:
 	return roll_die(4)
 
 
+## Max companions allowed in active dungeon party based on current floor.
+## Floor 1–3: 1, Floor 4–6: 2, Floor 7–9: 3, etc.
+func get_companion_slots() -> int:
+	return 1 + (current_floor - 1) / 3
+
+
+## Chance to recruit an enemy, adjusted by player LCK.
+## Returns a value in [0.05, 0.85]. Boss cap at 0.25.
+func get_recruit_chance(hp: int, hp_max: int, is_boss: bool) -> float:
+	var hp_ratio: float = float(hp) / float(maxi(1, hp_max))
+	var chance: float = clampf((1.0 - hp_ratio) * 0.90 + 0.05, 0.05, 0.85)
+	chance += stat_lck * 0.01
+	if is_boss:
+		chance = minf(chance, 0.25)
+	return clampf(chance, 0.05, 0.85)
+
+
+## Returns true if a companion with this entity_key is already in the roster.
+func has_companion_type(key: String) -> bool:
+	for c in companions:
+		if c.get("key", "") == key:
+			return true
+	return false
+
+
+## Returns the companion dict for the given entity_key, or {} if not found.
+func get_companion(key: String) -> Dictionary:
+	for c in companions:
+		if c.get("key", "") == key:
+			return c
+	return {}
+
+
+## Append a companion dict to the roster. Defaults tactic to "balanced".
+func add_companion(dict: Dictionary):
+	if not dict.has("tactic"):
+		dict["tactic"] = "balanced"
+	companions.append(dict)
+
+
+## Set the combat tactic for a companion by entity_key.
+func set_companion_tactic(key: String, tactic: String):
+	for c in companions:
+		if c.get("key", "") == key:
+			c["tactic"] = tactic
+			return
+
+
+## Remove companion from roster and active list by entity_key.
+func remove_companion(key: String):
+	for i in companions.size():
+		if companions[i].get("key", "") == key:
+			companions.remove_at(i)
+			break
+	var aidx: int = active_companions.find(key)
+	if aidx >= 0:
+		active_companions.remove_at(aidx)
+
+
+## Update a companion's current HP in the roster.
+func update_companion_hp(key: String, new_hp: int):
+	for c in companions:
+		if c.get("key", "") == key:
+			c["hp"] = new_hp
+			return
+
+
+## Restore all roster companions to full HP (bonfire rest).
+func heal_companions():
+	for c in companions:
+		c["hp"] = c.get("hp_max", c.get("hp", 1))
+
+
+## Returns the display name of a companion by entity_key.
+func get_companion_name(key: String) -> String:
+	var c: Dictionary = get_companion(key)
+	if not c.is_empty():
+		return c.get("name", key)
+	return key
+
+
 ## Get deck multiplier for current floor (controls encounter density).
 ## Floor 1–3: 1x, Floor 4–6: 2x, Floor 7+: 3x.
 func get_deck_multiplier() -> int:
@@ -309,10 +398,12 @@ func to_save_dict() -> Dictionary:
 		"equip_legs": equip_legs.duplicate(true),
 		"equip_boots": equip_boots.duplicate(true),
 		"guts": guts,
-		"scene_state":  scene_state,
-		"dungeon_seed": dungeon_seed,
-		"save_slot":    save_slot,
-		"rescued_npcs": rescued_npcs.duplicate(),
+		"scene_state":       scene_state,
+		"dungeon_seed":      dungeon_seed,
+		"save_slot":         save_slot,
+		"rescued_npcs":      rescued_npcs.duplicate(),
+		"companions":        companions.duplicate(true),
+		"active_companions": active_companions.duplicate(),
 	}
 
 
@@ -354,3 +445,11 @@ func from_save_dict(data: Dictionary):
 	rescued_npcs = []
 	for n in saved_npcs:
 		rescued_npcs.append(n as String)
+	var saved_companions = data.get("companions", [])
+	companions = []
+	for c in saved_companions:
+		companions.append(c as Dictionary)
+	var saved_active = data.get("active_companions", [])
+	active_companions = []
+	for k in saved_active:
+		active_companions.append(k as String)
