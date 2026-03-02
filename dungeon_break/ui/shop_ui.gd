@@ -2,7 +2,7 @@ extends CanvasLayer
 ## ShopUI — modal item shop for camp NPCs.
 ##
 ## Handles armor_shop (Daniels), weapon_shop (Mahan), potion_shop (Conner),
-## and magic_shop (Zara) roles. Michelle's structure_shop shows a placeholder.
+## and magic_shop (Zara) roles. Michelle's structure_shop uses structure_shop_ui.gd.
 ## Instantiated by game.gd on NPC interaction.
 
 signal shop_closed
@@ -165,27 +165,18 @@ func _build_ui() -> void:
 	# ── separator ──
 	root.add_child(HSeparator.new())
 
-	# ── item list or placeholder ──
-	if role == "structure_shop":
-		var soon := Label.new()
-		soon.text = "\"Come back when I've set up my tools. Still unpacking.\""
-		soon.add_theme_font_size_override("font_size", 13)
-		soon.add_theme_color_override("font_color", Color(0.65, 0.6, 0.55))
-		soon.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		soon.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		root.add_child(soon)
-	else:
-		var scroll := ScrollContainer.new()
-		scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		root.add_child(scroll)
+	# ── item list ──
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	root.add_child(scroll)
 
-		_list_box = VBoxContainer.new()
-		_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		_list_box.add_theme_constant_override("separation", 4)
-		scroll.add_child(_list_box)
+	_list_box = VBoxContainer.new()
+	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list_box.add_theme_constant_override("separation", 4)
+	scroll.add_child(_list_box)
 
-		_populate_items(role)
+	_populate_items(role)
 
 	# ── feedback label ──
 	_feedback_label = Label.new()

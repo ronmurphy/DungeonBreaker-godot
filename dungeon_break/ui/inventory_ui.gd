@@ -663,14 +663,24 @@ func _refresh_detail():
 					_add_action_btn("→ Companion…", Color(0.85, 0.65, 0.2),
 						func(): _show_companion_equip_picker(active_keys))
 
-		if item_type == ItemDB_Script.ItemType.FOOD or item_type == ItemDB_Script.ItemType.POTION:
+		var _is_usable_misc: bool = item_type == ItemDB_Script.ItemType.MISC and (
+			item.get("torch_fuel", 0) as int > 0 or item.get("special_effect", "") as String != "")
+		if item_type == ItemDB_Script.ItemType.FOOD or item_type == ItemDB_Script.ItemType.POTION or _is_usable_misc:
 			_add_action_btn("Use", Color(0.3, 0.85, 0.35), func():
 				if _selected_index < 0 or _selected_index >= GameData.backpack.size():
 					return
 				var item_to_use: Dictionary = GameData.backpack[_selected_index]
 				var msg: String = ItemDB.use_item(item_to_use)
 				if msg == "":
-					_show_toast("Consumables only grant buffs during combat.")
+					var t2: int = item_to_use.get("type", -1)
+					if t2 == ItemDB_Script.ItemType.MISC and item_to_use.get("torch_fuel", 0) as int > 0:
+						_show_toast("Torch already at full fuel.")
+					else:
+						_show_toast("Consumables only grant buffs during combat.")
+					return
+				# special: prefix means combat_manager needs to act; we keep the item until then
+				if msg.begins_with("special:"):
+					_show_toast("Ready to use in combat.")
 					return
 				var removed: Dictionary = ItemDB.remove_from_backpack(_selected_index)
 				if not removed.is_empty():

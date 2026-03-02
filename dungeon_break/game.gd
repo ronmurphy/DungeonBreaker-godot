@@ -12,6 +12,7 @@ const DayNightCycleScript = preload("res://dungeon_break/world/day_night_cycle.g
 const GameHudScript = preload("res://dungeon_break/ui/game_hud.gd")
 const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
 const ShopUIScript = preload("res://dungeon_break/ui/shop_ui.gd")
+const StructureShopUIScript = preload("res://dungeon_break/ui/structure_shop_ui.gd")
 const SageUIScript = preload("res://dungeon_break/ui/sage_ui.gd")
 const CompanionRosterUIScript = preload("res://dungeon_break/ui/companion_roster_ui.gd")
 const JobChangeUIScript = preload("res://dungeon_break/ui/job_change_ui.gd")
@@ -230,6 +231,9 @@ func _check_portal_interactions():
 					GameData.heal(GameData.hp_max)
 					GameData.heal_companions()
 					GameData.world_time = fmod(GameData.world_time + 8.0 / 24.0, 1.0)
+					if GameData.has_upgrade("supply_depot"):
+						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
+						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 					print("Game: Bonfire — rested, healed, time advanced 8 hrs")
 			else:
 				_bonfire_rest_pending = false
@@ -242,9 +246,12 @@ func _check_portal_interactions():
 			if _hud:
 				_hud.show_prompt(flame_prompt)
 			if e_just_pressed:
-				GameData.torch_fuel = 100
+				GameData.torch_fuel = GameData.get_torch_fuel_max()
 				GameData.heal(GameData.hp_max)
 				GameData.heal_companions()
+				if GameData.has_upgrade("supply_depot"):
+					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
+					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 				print("Game: Azure Flame — rested, healed, torch refuelled!")
 			elif r_just_pressed and not _npc_ui_open:
 				_open_companion_roster()
@@ -290,6 +297,12 @@ func _open_npc_ui(npc_key: String, role: String) -> void:
 		add_child(sage_ui)
 		sage_ui.open()
 		sage_ui.sage_closed.connect(_on_npc_ui_closed)
+	elif role == "structure_shop":
+		var struct_ui := StructureShopUIScript.new()
+		struct_ui.name = "StructureShopUI"
+		add_child(struct_ui)
+		struct_ui.open()
+		struct_ui.shop_closed.connect(_on_npc_ui_closed)
 	else:
 		var shop_ui := ShopUIScript.new()
 		shop_ui.name = "ShopUI"

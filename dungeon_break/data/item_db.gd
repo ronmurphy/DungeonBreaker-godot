@@ -314,6 +314,38 @@ const ITEMS := {
 		"description": "Opens a locked room.",
 		"value": 0,
 	},
+
+	# ── TOOLS (Michelle's structure shop) ────────────────────────────────────
+	"torch": {
+		"id": "torch", "name": "Torch", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/torch.png",
+		"description": "Refills 25 torch fuel. Use outside of combat.",
+		"value": 4, "torch_fuel": 25,
+	},
+	"crystal_light_orb": {
+		"id": "crystal_light_orb", "name": "Light Orb", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/crystal_light_orb.png",
+		"description": "A glowing crystal. Restores torch to full. Use outside combat.",
+		"value": 18, "torch_fuel": 999,
+	},
+	"grapple": {
+		"id": "grapple", "name": "Grappling Hook", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/grapple.png",
+		"description": "Escape any combat. Take 5 damage and flee to the room entrance.",
+		"value": 15, "special_effect": "flee",
+	},
+	"net_trap": {
+		"id": "net_trap", "name": "Net Trap", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/net.png",
+		"description": "Hurl a weighted net at an enemy, causing them to skip their next turn.",
+		"value": 10, "special_effect": "snare",
+	},
+	"blast_charge": {
+		"id": "blast_charge", "name": "Blast Charge", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/demolition_charge.png",
+		"description": "Detonates on impact dealing 10 damage to all enemies in the room.",
+		"value": 25, "special_effect": "aoe_blast",
+	},
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -430,9 +462,29 @@ func get_item_def(item_id: String) -> Dictionary:
 	return ITEMS.get(item_id, {})
 
 
-## Use a consumable item (food/potion). Returns description of effect, or "" if unusable.
+## Use a consumable item (food/potion/misc). Returns description of effect, or "" if unusable.
 func use_item(item: Dictionary) -> String:
 	var item_type: int = item.get("type", -1)
+
+	# ── MISC: torch fuel items usable outside combat ──
+	if item_type == ItemType.MISC:
+		var fuel: int = item.get("torch_fuel", 0)
+		if fuel > 0:
+			if GameData.in_combat:
+				return ""
+			var max_fuel: int = GameData.get_torch_fuel_max()
+			var gained: int = mini(fuel, max_fuel - GameData.torch_fuel)
+			if gained <= 0:
+				return ""  # already full
+			GameData.torch_fuel = mini(GameData.torch_fuel + fuel, max_fuel)
+			return "+%d torch fuel" % gained
+		# Combat special effects are handled by combat_manager via "special:key" string
+		var special: String = item.get("special_effect", "")
+		if special != "":
+			if not GameData.in_combat:
+				return ""
+			return "special:" + special
+		return ""
 
 	if item_type == ItemType.FOOD or item_type == ItemType.POTION:
 		if not GameData.in_combat:
@@ -530,7 +582,7 @@ func unequip_slot(slot_type: int) -> Dictionary:
 
 ## Add item to backpack. Returns true if added, false if full.
 func add_to_backpack(item: Dictionary) -> bool:
-	if GameData.backpack.size() >= GameData.BACKPACK_SIZE:
+	if GameData.backpack.size() >= GameData.BACKPACK_SIZE + GameData.backpack_bonus_slots:
 		return false
 	GameData.backpack.append(item.duplicate(true))
 	GameData.inventory_changed.emit()

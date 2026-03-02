@@ -146,7 +146,13 @@ var job_rank: Dictionary = {}        # int job_id -> int rank
 # Dungeon state
 var in_dungeon: bool = false
 var in_combat: bool = false
-var torch_fuel: int = 100  # 0–100, burns while in dungeon
+var torch_fuel: int = 100  # 0–100+bonus, burns while in dungeon
+
+# ── Camp upgrades (Michelle's shop — one-time purchases) ─────────────────────
+## Keys match CAMP_UPGRADES ids in structure_shop_ui.gd.
+var camp_upgrades: Dictionary = {}
+var torch_fuel_bonus: int = 0   # +max torch fuel from Reinforced Gate
+var backpack_bonus_slots: int = 0  # extra backpack capacity from Storage Expansion
 
 # Save state
 var save_slot: int = 0                # which slot this run is using
@@ -251,6 +257,9 @@ func _init_class(cls: PlayerClass):
 	active_companions.clear()
 	cleared_rooms.clear()
 	floor_room_counts.clear()
+	camp_upgrades.clear()
+	torch_fuel_bonus = 0
+	backpack_bonus_slots = 0
 	scene_state  = "camp"
 	dungeon_seed = 0
 	in_combat = false
@@ -544,6 +553,32 @@ func heal_companions():
 		c["hp"] = c.get("hp_max", c.get("hp", 1))
 
 
+## Max torch fuel (base 100 + Reinforced Gate bonus).
+func get_torch_fuel_max() -> int:
+	return 100 + torch_fuel_bonus
+
+
+## Returns true if the camp upgrade with the given key has been purchased.
+func has_upgrade(key: String) -> bool:
+	return camp_upgrades.get(key, false) as bool
+
+
+## Purchase a camp upgrade. Deducts gold, applies bonus, returns true on success.
+func purchase_upgrade(key: String, cost: int) -> bool:
+	if has_upgrade(key):
+		return false
+	if gold < cost:
+		return false
+	add_gold(-cost)
+	camp_upgrades[key] = true
+	match key:
+		"reinforced_gate":
+			torch_fuel_bonus += 25
+		"storage_expansion":
+			backpack_bonus_slots += 8
+	return true
+
+
 ## Returns the display name of a companion by entity_key.
 func get_companion_name(key: String) -> String:
 	var c: Dictionary = get_companion(key)
@@ -629,6 +664,7 @@ func to_save_dict() -> Dictionary:
 		"dungeon_seed":      dungeon_seed,
 		"save_slot":         save_slot,
 		"rescued_npcs":      rescued_npcs.duplicate(),
+		"camp_upgrades":     camp_upgrades.duplicate(),
 		"companions":        companions.duplicate(true),
 		"active_companions": active_companions.duplicate(),
 		"cleared_rooms":     cleared_rooms.duplicate(true),
@@ -676,6 +712,17 @@ func from_save_dict(data: Dictionary):
 	rescued_npcs = []
 	for n in saved_npcs:
 		rescued_npcs.append(n as String)
+	# Restore camp upgrades and reapply bonuses
+	var saved_upgrades: Dictionary = data.get("camp_upgrades", {})
+	camp_upgrades = {}
+	torch_fuel_bonus = 0
+	backpack_bonus_slots = 0
+	for k in saved_upgrades:
+		camp_upgrades[k as String] = bool(saved_upgrades[k])
+	if has_upgrade("reinforced_gate"):
+		torch_fuel_bonus = 25
+	if has_upgrade("storage_expansion"):
+		backpack_bonus_slots = 8
 	var saved_companions = data.get("companions", [])
 	companions = []
 	for c in saved_companions:

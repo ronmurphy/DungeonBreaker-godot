@@ -663,11 +663,11 @@ func _enable_room_lights(room_id: int) -> void:
 			(node as OmniLight3D).visible = true
 
 
-## Sync torch OmniLight range and energy to current torch_fuel (0–100).
+## Sync torch OmniLight range and energy to current torch_fuel.
 func _update_torch_light() -> void:
 	if _torch_light == null or not is_instance_valid(_torch_light):
 		return
-	var t: float = float(GameData.torch_fuel) / 100.0
+	var t: float = float(GameData.torch_fuel) / float(GameData.get_torch_fuel_max())
 	_torch_light.omni_range = lerpf(1.5, 10.0, t)
 	_torch_light.light_energy = lerpf(0.15, 1.8, t)
 
