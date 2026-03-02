@@ -10,6 +10,9 @@ const CampBuilderScript = preload("res://dungeon_break/generator/camp_builder.gd
 const WandererScript = preload("res://dungeon_break/entities/wanderer_controller.gd")
 const DayNightCycleScript = preload("res://dungeon_break/world/day_night_cycle.gd")
 const CloudShadowCasterShader = preload("res://dungeon_break/world/cloud_shadow_caster.gdshader")
+const LowlandGrassShader = preload("res://dungeon_break/world/lowland_billboard_grass.gdshader")
+const TallGrassMesh = preload("res://blocky_game/blocks/tall_grass/tall_grass.obj")
+const TallGrassAtlas = preload("res://blocky_game/blocks/tall_grass/tall_grass_sprite.png")
 const GameHudScript = preload("res://dungeon_break/ui/game_hud.gd")
 const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
 const ShopUIScript = preload("res://dungeon_break/ui/shop_ui.gd")
@@ -31,6 +34,17 @@ var _wanderer_ctrl = null
 var _day_night: Node = null
 var _hud: CanvasLayer = null
 var _cloud_shadow_caster: MeshInstance3D = null
+var _lowland_grass: MultiMeshInstance3D = null
+var _lowland_grass_mat: ShaderMaterial = null
+
+const GRAPHICS_PRESET_LOW := 0
+const GRAPHICS_PRESET_MEDIUM := 1
+const GRAPHICS_PRESET_HIGH := 2
+const AIR := 0
+const GRASS := 2
+const LOWLAND_MIN_Y := -22
+const LOWLAND_RING_MIN_RADIUS := 50.0
+const LOWLAND_RING_MAX_RADIUS := 76.0
 
 # Rescued NPC billboard sprites — updated for camera-facing each frame
 var _npc_sprites: Array = []
@@ -46,6 +60,7 @@ var _bonfire_rest_pending: bool = false
 var _e_was_pressed: bool = false
 var _r_was_pressed: bool = false
 var _c_was_pressed: bool = false
+var _lowland_grass_debug_printed: bool = false
 
 
 func _ready():
@@ -97,6 +112,10 @@ func _build_camp():
 	_npc_sprites = _camp_builder.spawn_rescued_npcs()
 	_wanderer_ctrl.spawn_camp_wanderers()
 	_build_cloud_shadow_caster()
+	_build_lowland_billboard_grass()
+	if GraphicsManager and not GraphicsManager.preset_changed.is_connected(_on_graphics_preset_changed):
+		GraphicsManager.preset_changed.connect(_on_graphics_preset_changed)
+	_apply_lowland_grass_quality()
 
 	# Start day/night cycle
 	_day_night = DayNightCycleScript.new()
@@ -130,6 +149,15 @@ func _build_camp():
 	GameData.scene_state = "camp"
 	MusicManager.play_camp()
 	print("Game: camp fully initialised")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_EXIT_TREE and GraphicsManager and GraphicsManager.preset_changed.is_connected(_on_graphics_preset_changed):
+		GraphicsManager.preset_changed.disconnect(_on_graphics_preset_changed)
+
+
+func _on_graphics_preset_changed(_preset: int) -> void:
+	_apply_lowland_grass_quality()
 
 
 func _build_cloud_shadow_caster() -> void:
@@ -174,6 +202,149 @@ func _make_cloud_noise_texture() -> Texture2D:
 	tex.normalize = true
 	tex.noise = noise
 	return tex
+
+
+func _build_lowland_billboard_grass() -> void:
+	# iGPU-safe approach:
+	# - one MultiMesh draw call
+	# - alpha scissor (no alpha blending overdraw chain)
+	# - no shadow casting on grass
+	var positions := _collect_lowland_grass_positions(720)
+	if positions.is_empty():
+		print("LowlandGrass: no spawn positions found for middle ring filter.")
+		return
+
+	_lowland_grass_mat = ShaderMaterial.new()
+	_lowland_grass_mat.shader = LowlandGrassShader
+	_lowland_grass_mat.set_shader_parameter("albedo_texture", TallGrassAtlas)
+	_lowland_grass_mat.set_shader_parameter("sway_strength", 0.22)
+	_lowland_grass_mat.set_shader_parameter("sway_speed", 1.2)
+	_lowland_grass_mat.set_shader_parameter("alpha_cutoff", 0.30)
+	_lowland_grass_mat.set_shader_parameter("tint", Color(0.86, 1.0, 0.86))
+
+	var mm := MultiMesh.new()
+	mm.mesh = TallGrassMesh
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = false
+	mm.use_custom_data = false
+	mm.instance_count = positions.size()
+	mm.visible_instance_count = positions.size()
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 5201
+	for i in positions.size():
+		var p: Vector3 = positions[i]
+		var yaw := rng.randf() * TAU
+		var sx := rng.randf_range(1.15, 1.65)
+		var sy := rng.randf_range(1.30, 1.95)
+		var basis := Basis(Vector3.UP, yaw).scaled(Vector3(sx, sy, sx))
+		mm.set_instance_transform(i, Transform3D(basis, p))
+
+	_lowland_grass = MultiMeshInstance3D.new()
+	_lowland_grass.name = "LowlandBillboardGrass"
+	_lowland_grass.multimesh = mm
+	_lowland_grass.material_override = _lowland_grass_mat
+	_lowland_grass.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_lowland_grass.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	_lowland_grass.extra_cull_margin = 64.0
+	_camp_objects.add_child(_lowland_grass)
+
+	if not _lowland_grass_debug_printed:
+		var min_y := INF
+		var max_y := -INF
+		var min_r := INF
+		var max_r := -INF
+		var sample: Array[String] = []
+		for p in positions:
+			min_y = minf(min_y, p.y)
+			max_y = maxf(max_y, p.y)
+			var r := Vector2(p.x, p.z).length()
+			min_r = minf(min_r, r)
+			max_r = maxf(max_r, r)
+			if sample.size() < 6:
+				sample.append("(%.1f, %.1f, %.1f)" % [p.x, p.y, p.z])
+		print("LowlandGrass: spawned=%d y=[%.1f..%.1f] r=[%.1f..%.1f] preset=%d visible=%d" % [
+			positions.size(), min_y, max_y, min_r, max_r,
+			int(GraphicsManager.current_preset) if GraphicsManager else -1,
+			_lowland_grass.multimesh.visible_instance_count
+		])
+		print("LowlandGrass: sample ", str(sample))
+		_lowland_grass_debug_printed = true
+
+
+func _collect_lowland_grass_positions(target_count: int) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	if _terrain == null:
+		return out
+	var vt := _terrain.get_voxel_tool()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4103
+
+	var attempts := 0
+	var max_attempts := target_count * 50
+	while out.size() < target_count and attempts < max_attempts:
+		attempts += 1
+		var angle := rng.randf() * TAU
+		var dist := rng.randf_range(LOWLAND_RING_MIN_RADIUS, LOWLAND_RING_MAX_RADIUS)
+		var x: int = roundi(cos(angle) * dist)
+		var z: int = roundi(sin(angle) * dist)
+		var y := _surface_y(vt, x, z)
+		if y < LOWLAND_MIN_Y:
+			continue
+		if vt.get_voxel(Vector3i(x, y, z)) != GRASS:
+			continue
+		if vt.get_voxel(Vector3i(x, y + 1, z)) != AIR:
+			continue
+		# Keep a clear ring around the bottom arch.
+		if Vector2(float(x), float(z)).distance_to(Vector2(0.0, 48.0)) < 8.0:
+			continue
+		out.append(Vector3(x + 0.5, y + 0.08, z + 0.5))
+	return out
+
+
+func _surface_y(vt: VoxelTool, x: int, z: int) -> int:
+	for y in range(20, -25, -1):
+		if vt.get_voxel(Vector3i(x, y, z)) != AIR:
+			return y
+	return 0
+
+
+func _apply_lowland_grass_quality() -> void:
+	if _lowland_grass == null or not is_instance_valid(_lowland_grass):
+		return
+	if _lowland_grass.multimesh == null:
+		return
+
+	var preset := GRAPHICS_PRESET_MEDIUM
+	if GraphicsManager:
+		preset = int(GraphicsManager.current_preset)
+
+	var max_visible: int = _lowland_grass.multimesh.instance_count
+	var sway: float = 0.22
+	var vis_end: float = 95.0
+	match preset:
+		GRAPHICS_PRESET_LOW:
+			max_visible = mini(max_visible, 180)
+			sway = 0.16
+			vis_end = 70.0
+		GRAPHICS_PRESET_MEDIUM:
+			max_visible = mini(max_visible, 340)
+			sway = 0.22
+			vis_end = 95.0
+		GRAPHICS_PRESET_HIGH:
+			max_visible = mini(max_visible, 560)
+			sway = 0.30
+			vis_end = 120.0
+
+	_lowland_grass.multimesh.visible_instance_count = max_visible
+	_lowland_grass.visibility_range_end = vis_end
+	if _lowland_grass_mat:
+		_lowland_grass_mat.set_shader_parameter("sway_strength", sway)
+	if _lowland_grass_debug_printed:
+		print("LowlandGrass: quality preset=%d visible=%d/%d vis_end=%.1f sway=%.2f" % [
+			preset, _lowland_grass.multimesh.visible_instance_count,
+			_lowland_grass.multimesh.instance_count, vis_end, sway
+		])
 
 
 func _wait_for_terrain_editable():

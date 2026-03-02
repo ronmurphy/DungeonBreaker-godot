@@ -482,45 +482,86 @@ func _build_lowland_foliage():
 		avoid_cz.append(tp.y)
 		avoid_r.append(4)
 
-	var foliage_blocks: Array[int] = [TALL_GRASS, DEAD_SHRUB]
-	var foliage_counts: Array[int] = [        40,         20]
+	# Dense multi-block patches for tall grass.
+	var patch_count := 34
+	var patches_built := 0
+	var patch_attempts := 0
+	while patches_built < patch_count and patch_attempts < patch_count * 24:
+		patch_attempts += 1
+		var angle := rng.randf() * TAU
+		var dist := rng.randf_range(48.0, 85.0)
+		var cx: int = roundi(cos(angle) * dist)
+		var cz: int = roundi(sin(angle) * dist)
+		if not _can_place_lowland_foliage_at(cx, cz, avoid_cx, avoid_cz, avoid_r):
+			continue
 
-	for fi in range(foliage_blocks.size()):
-		var block: int = foliage_blocks[fi]
-		var count: int = foliage_counts[fi]
-
-		var placed   := 0
-		var attempts := 0
-		while placed < count and attempts < count * 30:
-			attempts += 1
-			# Random position in the lowland zone (radius 48–85 from centre)
-			var angle := rng.randf() * TAU
-			var dist := rng.randf_range(48.0, 85.0)
-			var fx: int = roundi(cos(angle) * dist)
-			var fz: int = roundi(sin(angle) * dist)
-
-			# Skip structure zones
-			var too_close := false
-			for ai in range(avoid_cx.size()):
-				var dx: int = fx - avoid_cx[ai]
-				var dz: int = fz - avoid_cz[ai]
-				if sqrt(float(dx * dx + dz * dz)) < float(avoid_r[ai]):
-					too_close = true
-					break
-			if too_close:
+		var patch_radius := rng.randi_range(1, 3)
+		var patch_target := rng.randi_range(7, 14)
+		var patch_placed := 0
+		var local_attempts := 0
+		while patch_placed < patch_target and local_attempts < patch_target * 10:
+			local_attempts += 1
+			var ox := rng.randi_range(-patch_radius, patch_radius)
+			var oz := rng.randi_range(-patch_radius, patch_radius)
+			if ox * ox + oz * oz > patch_radius * patch_radius:
 				continue
+			var fx := cx + ox
+			var fz := cz + oz
+			if _try_place_lowland_foliage_block(fx, fz, TALL_GRASS, avoid_cx, avoid_cz, avoid_r):
+				patch_placed += 1
+		if patch_placed > 0:
+			patches_built += 1
 
-			# Only place on plain GRASS
-			var sy := _surface_y(fx, fz)
-			if sy < -22:
-				continue
-			if _voxel_tool.get_voxel(Vector3i(fx, sy, fz)) != GRASS:
-				continue
-			if _voxel_tool.get_voxel(Vector3i(fx, sy + 1, fz)) != AIR:
-				continue
+	# Keep some dead shrub singles for variation.
+	var shrub_target := 28
+	var shrubs_placed := 0
+	var shrub_attempts := 0
+	while shrubs_placed < shrub_target and shrub_attempts < shrub_target * 35:
+		shrub_attempts += 1
+		var angle := rng.randf() * TAU
+		var dist := rng.randf_range(48.0, 85.0)
+		var fx: int = roundi(cos(angle) * dist)
+		var fz: int = roundi(sin(angle) * dist)
+		if _try_place_lowland_foliage_block(fx, fz, DEAD_SHRUB, avoid_cx, avoid_cz, avoid_r):
+			shrubs_placed += 1
 
-			_voxel_tool.set_voxel(Vector3i(fx, sy + 1, fz), block)
-			placed += 1
+
+func _can_place_lowland_foliage_at(
+	x: int,
+	z: int,
+	avoid_cx: Array[int],
+	avoid_cz: Array[int],
+	avoid_r: Array[int]
+) -> bool:
+	for ai in range(avoid_cx.size()):
+		var dx: int = x - avoid_cx[ai]
+		var dz: int = z - avoid_cz[ai]
+		if sqrt(float(dx * dx + dz * dz)) < float(avoid_r[ai]):
+			return false
+	return true
+
+
+func _try_place_lowland_foliage_block(
+	x: int,
+	z: int,
+	block: int,
+	avoid_cx: Array[int],
+	avoid_cz: Array[int],
+	avoid_r: Array[int]
+) -> bool:
+	if not _can_place_lowland_foliage_at(x, z, avoid_cx, avoid_cz, avoid_r):
+		return false
+
+	var sy := _surface_y(x, z)
+	if sy < -22:
+		return false
+	if _voxel_tool.get_voxel(Vector3i(x, sy, z)) != GRASS:
+		return false
+	if _voxel_tool.get_voxel(Vector3i(x, sy + 1, z)) != AIR:
+		return false
+
+	_voxel_tool.set_voxel(Vector3i(x, sy + 1, z), block)
+	return true
 
 
 # ══════════════════════════════════════════════════════════════════════════════

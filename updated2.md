@@ -326,3 +326,62 @@ Redesigned screenshot toast to better match game UI styling while preserving cli
 
 Slope/wedge terrain work was prototyped, then rolled back.  
 Current build state: **no slope terrain changes active**.
+
+---
+
+## Session 8 Summary — Camp Cloud Shadows, Consumable Fixes, Item Normalization, and Shop Selling
+
+### 1. Lightweight Camp/Lowlands Cloud Shadow Caster
+
+Added an iGPU-friendly cloud shadow system for camp/lowlands using one large high-altitude shadow-only mesh:
+- Uses a simple spatial shader + scrolling noise texture
+- Casts moving cloud-shaped shadows onto terrain/trees
+- Applies in camp/lowlands only (not dungeon)
+
+This avoids heavy full-screen or procedural sky shader cost.
+
+**Files touched:**
+- `dungeon_break/world/cloud_shadow_caster.gdshader` (new)
+- `dungeon_break/game.gd` (cloud caster build + runtime noise texture setup)
+
+### 2. Combat Consumables: Healing Restored + Companion Self-Use Fix
+
+Combat consumables now correctly apply healing again:
+- `heal_amount` on food/potions is applied in combat
+- Buff effects still apply as before
+
+Also fixed companion AI self-use behavior:
+- When a companion uses a consumable on self, healing is redirected to that companion instead of the player
+
+**Files touched:**
+- `dungeon_break/data/item_db.gd`
+- `dungeon_break/combat/combat_manager.gd`
+- `dungeon_break/ui/inventory_ui.gd` (updated empty-effect messaging in combat)
+
+### 3. Item Type Reliability Pass (Legacy/Backup Save Compatibility)
+
+Added canonical item type resolution and normalization so old/backup item entries still behave correctly:
+- New helpers in `ItemDB`: `resolve_item_type`, `is_consumable`, `is_weapon`, `is_armor`
+- New normalizers: `normalize_item`, `normalize_item_array`
+- Save-load path now normalizes backpack/hotbar/equipment item dictionaries
+- Combat and inventory checks were switched to resolver/helpers instead of brittle raw `item["type"]` checks
+
+This fixes cases where consumables existed in inventory but failed to appear/use in combat due to missing/inconsistent `type` fields.
+
+**Files touched:**
+- `dungeon_break/data/item_db.gd`
+- `dungeon_break/data/game_data.gd`
+- `dungeon_break/combat/combat_ui.gd`
+- `dungeon_break/combat/combat_manager.gd`
+- `dungeon_break/ui/inventory_ui.gd`
+
+### 4. Daniels/Conner Shop Selling Added
+
+Daniels (`armor_shop`) and Conner (`potion_shop`) now buy items from the player backpack:
+- New `Sell From Backpack` section in shop UI
+- Items are grouped by stack for display
+- Sell price formula: **half buy value, rounded up** (`ceil(value / 2)`)
+- Selling updates gold and backpack immediately and refreshes shop list
+
+**Files touched:**
+- `dungeon_break/ui/shop_ui.gd`

@@ -45,6 +45,7 @@ var _feedback_label: Label = null
 var _feedback_timer: float = 0.0
 var _voicebox: ACVoiceBox = null
 var _greet_lbl: Label = null
+var _role: String = ""
 
 
 func _ready() -> void:
@@ -89,6 +90,7 @@ func _build_ui() -> void:
 	var npc_def: Dictionary  = NpcDB.get_def(_npc_key)
 	var npc_name: String     = npc_def.get("name", _npc_key) as String
 	var role: String         = npc_def.get("role", "") as String
+	_role = role
 	var greeting: String     = npc_def.get("greeting", "...") as String
 	var sprite_prefix: String = npc_def.get("sprite_prefix", "") as String
 
@@ -230,6 +232,8 @@ func _build_ui() -> void:
 func _populate_items(role: String) -> void:
 	if _list_box == null:
 		return
+	for child in _list_box.get_children():
+		child.queue_free()
 
 	var items := _get_shop_items(role)
 	if items.is_empty():
@@ -237,10 +241,9 @@ func _populate_items(role: String) -> void:
 		empty_lbl.text = "Nothing in stock right now."
 		empty_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		_list_box.add_child(empty_lbl)
-		return
-
-	for item_def: Dictionary in items:
-		_add_item_row(item_def)
+	else:
+		for item_def: Dictionary in items:
+			_add_item_row(item_def)
 
 	# Hint when stock will expand
 	var tier := _get_shop_tier()
@@ -252,6 +255,9 @@ func _populate_items(role: String) -> void:
 		hint.add_theme_color_override("font_color", Color(0.45, 0.45, 0.52))
 		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_list_box.add_child(hint)
+
+	if _can_sell_here(role):
+		_add_sell_section()
 
 
 func _add_item_row(item_def: Dictionary) -> void:
@@ -406,6 +412,139 @@ func _on_buy_pressed(item_def: Dictionary) -> void:
 
 	GameData.add_gold(-price)
 	_show_feedback("Bought %s!" % iname, Color(0.4, 1.0, 0.5))
+	_populate_items(_role)
+
+
+func _can_sell_here(role: String) -> bool:
+	return role == "armor_shop" or role == "potion_shop"
+
+
+func _add_sell_section() -> void:
+	var sep := HSeparator.new()
+	_list_box.add_child(sep)
+
+	var title := Label.new()
+	title.text = "Sell From Backpack"
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", Color(0.95, 0.82, 0.55))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_list_box.add_child(title)
+
+	var groups := _group_backpack_for_sell()
+	if groups.is_empty():
+		var empty_lbl := Label.new()
+		empty_lbl.text = "No sellable items."
+		empty_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.6))
+		empty_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_list_box.add_child(empty_lbl)
+		return
+
+	for g in groups:
+		_add_sell_row(g)
+
+
+func _group_backpack_for_sell() -> Array:
+	var groups: Array = []
+	var id_map: Dictionary = {}
+	for i in GameData.backpack.size():
+		var item: Dictionary = GameData.backpack[i]
+		var t: int = ItemDB.resolve_item_type(item)
+		if t == ItemDB.ItemType.KEY:
+			continue
+		var item_id: String = item.get("id", "_%d" % i)
+		if item_id in id_map:
+			var gi: int = id_map[item_id]
+			groups[gi]["indices"].append(i)
+			groups[gi]["count"] += 1
+		else:
+			id_map[item_id] = groups.size()
+			groups.append({"item": item, "indices": [i], "count": 1})
+	return groups
+
+
+func _get_sell_price(item: Dictionary) -> int:
+	var value: int = int(item.get("value", 0))
+	if value <= 0:
+		var item_id: String = item.get("id", "")
+		if item_id != "":
+			var def: Dictionary = ItemDB.get_item_def(item_id)
+			value = int(def.get("value", 0))
+	if value <= 0:
+		return 0
+	return ceili(float(value) * 0.5)
+
+
+func _add_sell_row(group: Dictionary) -> void:
+	var item: Dictionary = group["item"]
+	var count: int = int(group["count"])
+	var first_idx: int = int(group["indices"][0])
+	var sell_price: int = _get_sell_price(item)
+
+	var row_panel := PanelContainer.new()
+	var row_style := StyleBoxFlat.new()
+	row_style.bg_color = Color(0.08, 0.07, 0.1, 0.9)
+	row_style.border_color = Color(0.28, 0.24, 0.2)
+	row_style.set_border_width_all(1)
+	row_style.set_corner_radius_all(4)
+	row_style.set_content_margin(SIDE_LEFT, 6)
+	row_style.set_content_margin(SIDE_RIGHT, 6)
+	row_style.set_content_margin(SIDE_TOP, 4)
+	row_style.set_content_margin(SIDE_BOTTOM, 4)
+	row_panel.add_theme_stylebox_override("panel", row_style)
+	_list_box.add_child(row_panel)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row_panel.add_child(row)
+
+	var name_lbl := Label.new()
+	var iname: String = item.get("name", "Item")
+	name_lbl.text = "%s  x%d" % [iname, count]
+	name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_lbl.add_theme_color_override("font_color", Color(0.86, 0.84, 0.8))
+	row.add_child(name_lbl)
+
+	var price_lbl := Label.new()
+	price_lbl.text = "%dg" % sell_price
+	price_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+	row.add_child(price_lbl)
+
+	var sell_btn := Button.new()
+	sell_btn.text = "Sell"
+	sell_btn.custom_minimum_size = Vector2(56, 26)
+	var sell_style := StyleBoxFlat.new()
+	sell_style.bg_color = Color(0.2, 0.14, 0.1, 0.95)
+	sell_style.border_color = Color(0.65, 0.45, 0.25)
+	sell_style.set_border_width_all(1)
+	sell_style.set_corner_radius_all(4)
+	sell_style.set_content_margin_all(4)
+	sell_btn.add_theme_stylebox_override("normal", sell_style)
+	var sell_hover := sell_style.duplicate() as StyleBoxFlat
+	sell_hover.bg_color = Color(0.3, 0.2, 0.14, 0.95)
+	sell_btn.add_theme_stylebox_override("hover", sell_hover)
+	sell_btn.add_theme_color_override("font_color", Color(1.0, 0.9, 0.7))
+	sell_btn.disabled = sell_price <= 0
+	sell_btn.pressed.connect(_on_sell_pressed.bind(first_idx))
+	row.add_child(sell_btn)
+
+
+func _on_sell_pressed(backpack_idx: int) -> void:
+	if backpack_idx < 0 or backpack_idx >= GameData.backpack.size():
+		return
+	var item: Dictionary = GameData.backpack[backpack_idx]
+	var sell_price: int = _get_sell_price(item)
+	if sell_price <= 0:
+		_show_feedback("That item can't be sold.", Color(1.0, 0.6, 0.2))
+		return
+
+	var removed: Dictionary = ItemDB.remove_from_backpack(backpack_idx)
+	if removed.is_empty():
+		return
+
+	var iname: String = removed.get("name", "item")
+	GameData.add_gold(sell_price)
+	_show_feedback("Sold %s for %dg." % [iname, sell_price], Color(0.5, 1.0, 0.6))
+	_populate_items(_role)
 
 
 func _show_feedback(msg: String, color: Color = Color(0.4, 1.0, 0.5)) -> void:
