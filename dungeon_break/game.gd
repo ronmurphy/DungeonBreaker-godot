@@ -9,6 +9,7 @@ const IsometricCamera = preload("res://dungeon_break/player/isometric_camera.gd"
 const CampBuilderScript = preload("res://dungeon_break/generator/camp_builder.gd")
 const WandererScript = preload("res://dungeon_break/entities/wanderer_controller.gd")
 const DayNightCycleScript = preload("res://dungeon_break/world/day_night_cycle.gd")
+const CloudShadowCasterShader = preload("res://dungeon_break/world/cloud_shadow_caster.gdshader")
 const GameHudScript = preload("res://dungeon_break/ui/game_hud.gd")
 const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
 const ShopUIScript = preload("res://dungeon_break/ui/shop_ui.gd")
@@ -29,6 +30,7 @@ var _camp_builder = null
 var _wanderer_ctrl = null
 var _day_night: Node = null
 var _hud: CanvasLayer = null
+var _cloud_shadow_caster: MeshInstance3D = null
 
 # Rescued NPC billboard sprites — updated for camera-facing each frame
 var _npc_sprites: Array = []
@@ -94,6 +96,7 @@ func _build_camp():
 	_camp_builder.build_camp()
 	_npc_sprites = _camp_builder.spawn_rescued_npcs()
 	_wanderer_ctrl.spawn_camp_wanderers()
+	_build_cloud_shadow_caster()
 
 	# Start day/night cycle
 	_day_night = DayNightCycleScript.new()
@@ -127,6 +130,50 @@ func _build_camp():
 	GameData.scene_state = "camp"
 	MusicManager.play_camp()
 	print("Game: camp fully initialised")
+
+
+func _build_cloud_shadow_caster() -> void:
+	# One large, shadow-only plane above camp/lowlands gives cheap moving cloud shadows.
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(420.0, 420.0)
+	plane.subdivide_width = 1
+	plane.subdivide_depth = 1
+
+	var mat := ShaderMaterial.new()
+	mat.shader = CloudShadowCasterShader
+	mat.set_shader_parameter("uv_scale", Vector2(4.6, 3.2))
+	mat.set_shader_parameter("wind_dir", Vector2(0.012, 0.007))
+	mat.set_shader_parameter("cutoff", 0.58)
+	mat.set_shader_parameter("softness", 0.09)
+	mat.set_shader_parameter("cloud_noise", _make_cloud_noise_texture())
+
+	_cloud_shadow_caster = MeshInstance3D.new()
+	_cloud_shadow_caster.name = "CloudShadowCaster"
+	_cloud_shadow_caster.mesh = plane
+	_cloud_shadow_caster.material_override = mat
+	_cloud_shadow_caster.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+	_cloud_shadow_caster.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	_cloud_shadow_caster.position = Vector3(0.0, 95.0, 36.0)
+	_cloud_shadow_caster.rotation_degrees = Vector3(0.0, 0.0, 0.0)
+	_cloud_shadow_caster.extra_cull_margin = 512.0
+	_camp_objects.add_child(_cloud_shadow_caster)
+
+
+func _make_cloud_noise_texture() -> Texture2D:
+	var noise := FastNoiseLite.new()
+	noise.seed = 7331
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 3
+	noise.frequency = 0.02
+
+	var tex := NoiseTexture2D.new()
+	tex.width = 256
+	tex.height = 256
+	tex.seamless = true
+	tex.normalize = true
+	tex.noise = noise
+	return tex
 
 
 func _wait_for_terrain_editable():
