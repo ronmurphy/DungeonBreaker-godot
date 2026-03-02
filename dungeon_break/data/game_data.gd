@@ -95,6 +95,10 @@ var cleared_rooms: Dictionary = {}
 ## Set during dungeon generation; used to check if a floor is fully cleared.
 var floor_room_counts: Dictionary = {}
 
+## Searched camp objects (trees/bushes) — key = "tree_X_Z" or "bush_X_Z", value = true.
+## Resets when resting at bonfire or azure flame.
+var searched_camp_objects: Dictionary = {}
+
 ## One NPC unlocked per floor cleared, in this exact order.
 ## Daniels + Conner are always present from game start (not in this list).
 const NPC_UNLOCK_SEQUENCE: Array[String] = ["michelle", "mahan", "claude", "zara"]
@@ -605,6 +609,21 @@ func is_room_cleared(floor: int, room_id: int) -> bool:
 	return room_id in (cleared_rooms[fkey] as Array)
 
 
+## Mark a camp tree/bush as searched.
+func mark_camp_searched(key: String) -> void:
+	searched_camp_objects[key] = true
+
+
+## Check if a camp tree/bush has been searched since the last rest.
+func is_camp_searched(key: String) -> bool:
+	return searched_camp_objects.get(key, false)
+
+
+## Reset all camp search markers (called on bonfire/azure flame rest).
+func reset_camp_searches() -> void:
+	searched_camp_objects.clear()
+
+
 ## Store the total number of clearable rooms for a floor.
 func set_floor_room_count(floor: int, count: int):
 	floor_room_counts[str(floor)] = count
@@ -671,6 +690,7 @@ func to_save_dict() -> Dictionary:
 		"floor_room_counts": floor_room_counts.duplicate(true),
 		"unlocked_jobs":     unlocked_jobs.duplicate(true),
 		"job_rank":          job_rank.duplicate(true),
+		"searched_camp_objects": searched_camp_objects.duplicate(true),
 	}
 
 
@@ -745,6 +765,7 @@ func from_save_dict(data: Dictionary):
 	floor_room_counts = {}
 	for fkey2: String in saved_frc:
 		floor_room_counts[fkey2] = int(saved_frc[fkey2])
+	searched_camp_objects = data.get("searched_camp_objects", {})
 	var saved_unlocked: Dictionary = data.get("unlocked_jobs", {})
 	unlocked_jobs = {}
 	if saved_unlocked.is_empty():

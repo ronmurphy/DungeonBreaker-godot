@@ -234,6 +234,7 @@ func _check_portal_interactions():
 					if GameData.has_upgrade("supply_depot"):
 						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
+					GameData.reset_camp_searches()
 					print("Game: Bonfire — rested, healed, time advanced 8 hrs")
 			else:
 				_bonfire_rest_pending = false
@@ -252,6 +253,7 @@ func _check_portal_interactions():
 				if GameData.has_upgrade("supply_depot"):
 					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
+				GameData.reset_camp_searches()
 				print("Game: Azure Flame — rested, healed, torch refuelled!")
 			elif r_just_pressed and not _npc_ui_open:
 				_open_companion_roster()
@@ -276,6 +278,14 @@ func _check_portal_interactions():
 				_hud.show_prompt("[E] %s — %s" % [npc_name, NpcDB.get_role_label(role)])
 			if e_just_pressed and not _npc_ui_open:
 				_open_npc_ui(npc_key, role)
+
+		elif interaction == "searchable":
+			# Auto-forage: triggers by proximity, no button press needed
+			if dist <= 1.5:
+				var search_key: String = child.get_meta("search_key", "")
+				if not GameData.is_camp_searched(search_key):
+					var search_type: String = child.get_meta("search_type", "tree")
+					_do_search(search_key, search_type)
 
 	if not near_anything and _hud:
 		_hud.hide_prompt()
@@ -333,3 +343,60 @@ func _open_job_change_ui() -> void:
 
 func _on_npc_ui_closed() -> void:
 	_npc_ui_open = false
+
+
+## Search a tree or bush for random loot.
+func _do_search(key: String, search_type: String) -> void:
+	GameData.mark_camp_searched(key)
+
+	# Loot tables: [weight, item_id or "gold_N" or "nothing"]
+	var tree_loot := [
+		[25, "nothing"],
+		[18, "mushroom"], [15, "berry"], [12, "apple"],
+		[8, "honey"], [5, "bread"],
+		[4, "club"], [3, "stone_spear"],
+		[3, "chest_leather"], [2, "boots_leather"],
+		[3, "gold_5"], [2, "gold_10"],
+	]
+	var bush_loot := [
+		[35, "nothing"],
+		[25, "berry"], [20, "mushroom"],
+		[10, "apple"], [5, "honey"],
+		[3, "gold_3"], [2, "gold_5"],
+	]
+
+	var table: Array = tree_loot if search_type == "tree" else bush_loot
+	var total_weight := 0
+	for entry in table:
+		total_weight += entry[0]
+
+	var roll := randi_range(1, total_weight)
+	var cumulative := 0
+	var result: String = "nothing"
+	for entry in table:
+		cumulative += entry[0]
+		if roll <= cumulative:
+			result = entry[1]
+			break
+
+	if result == "nothing":
+		if _hud:
+			_hud.show_toast("Nothing useful here.", 2.0)
+		return
+
+	if result.begins_with("gold_"):
+		var amount := int(result.split("_")[1])
+		GameData.add_gold(amount)
+		if _hud:
+			_hud.show_toast("You found %d gold!" % amount, 2.5)
+		return
+
+	var item: Dictionary = ItemDB.create_item(result)
+	if item.is_empty():
+		return
+	if ItemDB.add_to_backpack(item):
+		if _hud:
+			_hud.show_toast("You found %s!\nIt was added to your inventory" % item.get("name", "something"), 3.0)
+	else:
+		if _hud:
+			_hud.show_toast("You found %s!\nBut your backpack is full!" % item.get("name", "something"), 3.0)

@@ -69,6 +69,7 @@ func build_camp():
 	_build_bonfire(BONFIRE_POS)
 	_build_spire(SPIRE_POS)
 	_build_azure_flame(AZURE_FLAME_POS)
+	_add_searchable_areas()  # before trees — _surface_y must find ground, not canopy
 	_build_trees()
 	_build_paths()         # before foliage so paths block foliage placement
 	_build_central_plaza() # includes well
@@ -703,3 +704,65 @@ func get_dungeon_entrance_pos() -> Vector3:
 func get_bonfire_pos() -> Vector3:
 	var sy := _surface_y(BONFIRE_POS.x, BONFIRE_POS.z)
 	return Vector3(BONFIRE_POS.x + 0.5, sy + 1.0, BONFIRE_POS.z + 0.5)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SEARCHABLE AREAS — Interaction zones around trees and scattered bushes
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Fixed bush positions picked by RNG seed — scattered across both zones.
+const BUSH_POSITIONS := [
+	Vector2i(-12, -15),   # camp NW
+	Vector2i( 14, -20),   # camp NE
+	Vector2i(-18,  15),   # camp SW
+	Vector2i( 20,   5),   # camp E
+	Vector2i(-10,  55),   # lowland S
+	Vector2i( 20,  58),   # lowland SE
+	Vector2i(-35,  60),   # lowland SW
+	Vector2i( 45, -10),   # lowland E
+]
+
+
+func _add_searchable_areas():
+	if _scene_root == null:
+		return
+
+	# Trees on the camp plateau
+	for tp in TREE_POSITIONS:
+		var tx: int = tp.x
+		var tz: int = tp.y
+		var sy := _surface_y(tx, tz)
+		_add_search_area(tx, sy, tz, "tree_%d_%d" % [tx, tz], "tree")
+
+	# Trees in the lowland
+	for tp in LOWLAND_TREE_POSITIONS:
+		var tx: int = tp.x
+		var tz: int = tp.y
+		var sy := _surface_y(tx, tz)
+		if sy < -22:
+			continue
+		_add_search_area(tx, sy, tz, "tree_%d_%d" % [tx, tz], "tree")
+
+	# Bushes (scattered foliage clusters)
+	for bp in BUSH_POSITIONS:
+		var bx: int = bp.x
+		var bz: int = bp.y
+		var sy := _surface_y(bx, bz)
+		if sy < -22:
+			continue
+		_add_search_area(bx, sy, bz, "bush_%d_%d" % [bx, bz], "bush")
+
+
+func _add_search_area(x: int, sy: int, z: int, search_key: String, search_type: String):
+	var area := Area3D.new()
+	area.name = "Search_%s" % search_key
+	var coll := CollisionShape3D.new()
+	var shape := SphereShape3D.new()
+	shape.radius = 2.5
+	coll.shape = shape
+	area.add_child(coll)
+	area.set_meta("interaction", "searchable")
+	area.set_meta("search_key", search_key)
+	area.set_meta("search_type", search_type)
+	_scene_root.add_child(area)
+	area.global_position = Vector3(x + 0.5, sy + 1.0, z + 0.5)
