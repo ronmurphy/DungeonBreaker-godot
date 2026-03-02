@@ -513,9 +513,16 @@ func _on_combat_ended(victory: bool, room: Dictionary):
 		# If boss room cleared, enable the floor portal and advance floor
 		if room["room_type"] == "boss":
 			_enable_boss_portal()
+			var cleared_floor: int = _floor_num
 			GameData.dungeon_seed = 0
 			GameData.advance_floor()
 			print("Dungeon: boss defeated — advanced to floor %d" % GameData.current_floor)
+			# Rescue the NPC tied to this floor
+			var new_npc: String = GameData.rescue_npc_for_floor(cleared_floor)
+			if new_npc != "" and _hud and _hud.has_method("show_toast"):
+				var npc_def: Dictionary = NpcDB.get_def(new_npc)
+				var npc_name: String = npc_def.get("name", new_npc) as String
+				_hud.show_toast("%s has joined the camp!" % npc_name, 5.0)
 	else:
 		# Player died — return to camp with penalty
 		GameData.hp = GameData.hp_max / 2

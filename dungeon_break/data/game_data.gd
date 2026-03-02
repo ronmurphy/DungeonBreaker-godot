@@ -95,20 +95,32 @@ var cleared_rooms: Dictionary = {}
 ## Set during dungeon generation; used to check if a floor is fully cleared.
 var floor_room_counts: Dictionary = {}
 
-## Ordered pool — matches NpcDB.NPC_DEFS keys.
-const NPC_RESCUE_POOL: Array = ["daniels", "conner", "zara", "michelle", "mahan", "claude"]
+## One NPC unlocked per floor cleared, in this exact order.
+## Daniels + Conner are always present from game start (not in this list).
+const NPC_UNLOCK_SEQUENCE: Array[String] = ["michelle", "mahan", "claude", "zara"]
 
-## Rescue a random unrecruited NPC. Returns the key, or "" if all recruited.
-func rescue_random_npc() -> String:
-	var available: Array[String] = []
-	for key: String in NPC_RESCUE_POOL:
-		if key not in rescued_npcs:
-			available.append(key)
-	if available.is_empty():
+## Rescue the NPC tied to the given floor number (1-based).
+## Returns the NPC key on success, "" if already rescued or out of range.
+func rescue_npc_for_floor(floor_num: int) -> String:
+	var idx: int = floor_num - 1
+	if idx < 0 or idx >= NPC_UNLOCK_SEQUENCE.size():
 		return ""
-	var chosen: String = available[randi() % available.size()]
-	rescued_npcs.append(chosen)
-	return chosen
+	var key: String = NPC_UNLOCK_SEQUENCE[idx]
+	if key in rescued_npcs:
+		return ""
+	rescued_npcs.append(key)
+	return key
+
+## Catch-up: ensure every NPC that should have been unlocked by now is present.
+## Called on save load to handle old saves missing the new NPC data.
+func _apply_npc_catchup() -> void:
+	# Old saves may have floors_cleared=0 even if current_floor>1; use whichever is higher.
+	var effective_cleared: int = maxi(floors_cleared, current_floor - 1)
+	for i in NPC_UNLOCK_SEQUENCE.size():
+		if effective_cleared > i:
+			var key: String = NPC_UNLOCK_SEQUENCE[i]
+			if key not in rescued_npcs:
+				rescued_npcs.append(key)
 
 # Core stats (single-digit)
 var stat_str: int = 2
@@ -704,5 +716,8 @@ func from_save_dict(data: Dictionary):
 			job_rank[j2] = 0
 	unlocked_jobs[int(player_class)] = true
 	_recompute_job_unlocks()
+	# Backfill any NPCs that should be in camp based on floors_cleared
+	# (handles old saves that pre-date the NPC unlock system)
+	_apply_npc_catchup()
 	in_combat = false
 	clear_combat_buffs()
