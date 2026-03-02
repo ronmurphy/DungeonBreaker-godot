@@ -50,6 +50,25 @@ const CLASS_BASE_STATS := {
 	PlayerClass.TINKERER:    { "STR": 2, "DEX": 4, "INT": 3, "LCK": 1 },
 }
 
+const STARTING_JOBS: Array[int] = [
+	PlayerClass.VANGUARD,
+	PlayerClass.SCOUNDREL,
+	PlayerClass.ARCANIST,
+	PlayerClass.CONFESSOR,
+]
+
+const JOB_SLUGS := {
+	PlayerClass.VANGUARD: "vanguard",
+	PlayerClass.SCOUNDREL: "scoundrel",
+	PlayerClass.ARCANIST: "arcanist",
+	PlayerClass.CONFESSOR: "confessor",
+	PlayerClass.STRIDER: "strider",
+	PlayerClass.MINSTREL: "minstrel",
+	PlayerClass.TEMPLAR: "templar",
+	PlayerClass.REANIMATOR: "reanimator",
+	PlayerClass.TINKERER: "tinkerer",
+}
+
 # ── Player State ─────────────────────────────────────────────────────────────
 var player_class: PlayerClass = PlayerClass.SCOUNDREL
 var player_name: String = "Hero"
@@ -108,8 +127,13 @@ var current_floor: int = 1
 var floors_cleared: int = 0
 var total_kills: int = 0
 
+# Job progression (FFT-style simplified)
+var unlocked_jobs: Dictionary = {}   # int job_id -> bool
+var job_rank: Dictionary = {}        # int job_id -> int rank
+
 # Dungeon state
 var in_dungeon: bool = false
+var in_combat: bool = false
 var torch_fuel: int = 100  # 0–100, burns while in dungeon
 
 # Save state
@@ -169,6 +193,14 @@ func get_world_time_name() -> String:
 var stat_spd: int = 3         # Speed stat (for initiative rolls)
 var ac_bonus_temp: int = 0    # Temporary AC bonus from Defend/Counter (resets each turn)
 var counter_active: bool = false  # Counter stance active this turn
+# Temporary buffs from consumables; cleared at end of combat.
+var combat_buff_str: int = 0
+var combat_buff_dex: int = 0
+var combat_buff_int: int = 0
+var combat_buff_lck: int = 0
+var combat_buff_spd: int = 0
+var combat_buff_atk: int = 0
+var combat_buff_ac: int = 0
 
 # ── Status Effects ───────────────────────────────────────────────────────────
 var status_effects: Array = []  # Array of { id: String, turns_left: int }
@@ -209,11 +241,134 @@ func _init_class(cls: PlayerClass):
 	floor_room_counts.clear()
 	scene_state  = "camp"
 	dungeon_seed = 0
+	in_combat = false
+	_reset_job_progress()
+	clear_combat_buffs()
 
 
 ## Change class and reset stats.
 func set_class(cls: PlayerClass):
 	_init_class(cls)
+
+
+## Change class mid-run without resetting progression/inventory.
+## Returns true if the class changed.
+func change_job(cls: PlayerClass) -> bool:
+	var safe_cls: int = clampi(int(cls), PlayerClass.VANGUARD, PlayerClass.TINKERER)
+	if not is_job_unlocked(safe_cls):
+		return false
+	if safe_cls == player_class:
+		return false
+
+	var hp_ratio: float = clampf(float(hp) / float(maxi(1, hp_max)), 0.0, 1.0)
+	player_class = safe_cls
+	unlocked_jobs[player_class] = true
+	var base = CLASS_BASE_STATS[safe_cls]
+	stat_str = base["STR"]
+	stat_dex = base["DEX"]
+	stat_int = base["INT"]
+	stat_lck = base["LCK"]
+
+	# Recompute max HP from class STR while preserving current HP percentage.
+	hp_max = 25 + stat_str * 4
+	hp = clampi(int(round(hp_ratio * float(hp_max))), 1, hp_max)
+	hp_changed.emit(hp, hp_max)
+	clear_combat_buffs()
+	return true
+
+
+func _reset_job_progress() -> void:
+	unlocked_jobs.clear()
+	job_rank.clear()
+	for jid in CLASS_NAMES.keys():
+		var job_id: int = int(jid)
+		unlocked_jobs[job_id] = false
+		job_rank[job_id] = 0
+	for starter in STARTING_JOBS:
+		unlocked_jobs[int(starter)] = true
+	unlocked_jobs[int(player_class)] = true
+	_recompute_job_unlocks()
+
+
+func get_job_rank(job_id: int = -1) -> int:
+	var jid: int = int(player_class) if job_id < 0 else job_id
+	return int(job_rank.get(jid, 0))
+
+
+func is_job_unlocked(job_id: int) -> bool:
+	return bool(unlocked_jobs.get(job_id, false))
+
+
+func record_job_victory() -> Array:
+	var jid: int = int(player_class)
+	job_rank[jid] = int(job_rank.get(jid, 0)) + 1
+	return _recompute_job_unlocks()
+
+
+func _rank_at_least(job_id: int, req_rank: int) -> bool:
+	return int(job_rank.get(job_id, 0)) >= req_rank
+
+
+func _try_unlock(job_id: int, cond: bool, newly_unlocked: Array) -> void:
+	if cond and not is_job_unlocked(job_id):
+		unlocked_jobs[job_id] = true
+		newly_unlocked.append(job_id)
+
+
+func _recompute_job_unlocks() -> Array:
+	var newly_unlocked: Array = []
+	for starter in STARTING_JOBS:
+		unlocked_jobs[int(starter)] = true
+	# Simple FFT-like dependencies using per-job ranks.
+	_try_unlock(PlayerClass.STRIDER,
+		_rank_at_least(PlayerClass.VANGUARD, 2) or _rank_at_least(PlayerClass.SCOUNDREL, 2),
+		newly_unlocked)
+	_try_unlock(PlayerClass.MINSTREL,
+		_rank_at_least(PlayerClass.CONFESSOR, 2) or _rank_at_least(PlayerClass.ARCANIST, 2),
+		newly_unlocked)
+	_try_unlock(PlayerClass.TEMPLAR,
+		_rank_at_least(PlayerClass.VANGUARD, 3) and _rank_at_least(PlayerClass.CONFESSOR, 2),
+		newly_unlocked)
+	_try_unlock(PlayerClass.REANIMATOR,
+		_rank_at_least(PlayerClass.ARCANIST, 3) and _rank_at_least(PlayerClass.SCOUNDREL, 2),
+		newly_unlocked)
+	_try_unlock(PlayerClass.TINKERER,
+		_rank_at_least(PlayerClass.SCOUNDREL, 2) and _rank_at_least(PlayerClass.ARCANIST, 2),
+		newly_unlocked)
+	unlocked_jobs[int(player_class)] = true
+	return newly_unlocked
+
+
+func get_job_unlock_req_text(job_id: int) -> String:
+	match job_id:
+		PlayerClass.STRIDER:
+			return "Unlock: Vanguard R2 or Scoundrel R2"
+		PlayerClass.MINSTREL:
+			return "Unlock: Confessor R2 or Arcanist R2"
+		PlayerClass.TEMPLAR:
+			return "Unlock: Vanguard R3 + Confessor R2"
+		PlayerClass.REANIMATOR:
+			return "Unlock: Arcanist R3 + Scoundrel R2"
+		PlayerClass.TINKERER:
+			return "Unlock: Scoundrel R2 + Arcanist R2"
+		_:
+			return "Starting Job"
+
+
+func get_job_symbol_path(job_id: int = -1) -> String:
+	var jid: int = int(player_class) if job_id < 0 else job_id
+	var slug: String = str(JOB_SLUGS.get(jid, ""))
+	if slug == "":
+		return ""
+	return "res://assets/art/jobs/symbol_%s.png" % slug
+
+
+func get_job_dummy_path(job_id: int = -1) -> String:
+	var jid: int = int(player_class) if job_id < 0 else job_id
+	var slug: String = str(JOB_SLUGS.get(jid, ""))
+	if slug == "":
+		return ""
+	return "res://assets/art/jobs/job_%s.png" % slug
 
 
 ## Deal damage to the player after AC reduction.
@@ -252,7 +407,9 @@ func add_gold(amount: int):
 ## DEX-based classes (Scoundrel, Ranger) benefit from their primary stat.
 func get_attack_power() -> int:
 	var weapon_bonus: int = equip_weapon.get("attack_bonus", 0) if equip_weapon else 0
-	return maxi(stat_str, stat_dex) + weapon_bonus
+	var eff_str: int = stat_str + combat_buff_str
+	var eff_dex: int = stat_dex + combat_buff_dex
+	return maxi(eff_str, eff_dex) + weapon_bonus + combat_buff_atk
 
 
 ## Get total AC (base + all armor + temp bonus from combat stance).
@@ -261,7 +418,21 @@ func get_total_ac() -> int:
 	for piece in [equip_helm, equip_chest, equip_legs, equip_boots]:
 		if piece:
 			total += piece.get("ac_bonus", 0)
-	return total + ac_bonus_temp
+	return total + ac_bonus_temp + combat_buff_ac
+
+
+func get_combat_speed() -> int:
+	return stat_spd + combat_buff_spd
+
+
+func clear_combat_buffs() -> void:
+	combat_buff_str = 0
+	combat_buff_dex = 0
+	combat_buff_int = 0
+	combat_buff_lck = 0
+	combat_buff_spd = 0
+	combat_buff_atk = 0
+	combat_buff_ac = 0
 
 
 ## Advance to next floor.
@@ -450,6 +621,8 @@ func to_save_dict() -> Dictionary:
 		"active_companions": active_companions.duplicate(),
 		"cleared_rooms":     cleared_rooms.duplicate(true),
 		"floor_room_counts": floor_room_counts.duplicate(true),
+		"unlocked_jobs":     unlocked_jobs.duplicate(true),
+		"job_rank":          job_rank.duplicate(true),
 	}
 
 
@@ -513,3 +686,23 @@ func from_save_dict(data: Dictionary):
 	floor_room_counts = {}
 	for fkey2: String in saved_frc:
 		floor_room_counts[fkey2] = int(saved_frc[fkey2])
+	var saved_unlocked: Dictionary = data.get("unlocked_jobs", {})
+	unlocked_jobs = {}
+	if saved_unlocked.is_empty():
+		for starter in STARTING_JOBS:
+			unlocked_jobs[int(starter)] = true
+	else:
+		for k2 in saved_unlocked:
+			unlocked_jobs[int(k2)] = bool(saved_unlocked[k2])
+	var saved_ranks: Dictionary = data.get("job_rank", {})
+	job_rank = {}
+	for k3 in saved_ranks:
+		job_rank[int(k3)] = int(saved_ranks[k3])
+	for jid in CLASS_NAMES.keys():
+		var j2: int = int(jid)
+		if not job_rank.has(j2):
+			job_rank[j2] = 0
+	unlocked_jobs[int(player_class)] = true
+	_recompute_job_unlocks()
+	in_combat = false
+	clear_combat_buffs()

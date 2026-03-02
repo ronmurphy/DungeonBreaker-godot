@@ -82,6 +82,7 @@ var tactical_grid: TacticalGridScript = null   # TacticalGrid instance
 var _units: Array = []
 var _turn_order: Array = []   # indices into _units, sorted by initiative
 var _current_unit_idx: int = -1  # index in _turn_order
+var _next_unit_uid: int = 1
 
 var _room: Dictionary = {}
 var _round: int = 0
@@ -107,8 +108,11 @@ func start_combat(enemies: Array, companions: Array, room: Dictionary, scene_roo
 	_scene_root = scene_root
 	_units.clear()
 	_turn_order.clear()
+	_next_unit_uid = 1
 	_round = 0
 	phase = Phase.IDLE
+	GameData.in_combat = true
+	GameData.clear_combat_buffs()
 	_init_fx()
 
 	# Create tactical grid
@@ -140,10 +144,12 @@ func start_combat(enemies: Array, companions: Array, room: Dictionary, scene_roo
 		"speed": GameData.stat_spd + randi_range(1, 6),
 		"move_range": PLAYER_MOVE_RANGE + (GameData.stat_spd / 4),
 		"attack_range": PLAYER_ATTACK_RANGE + GameData.equip_weapon.get("range_bonus", 0),
+		"uid": _next_unit_uid,
 		"alive": true,
 		"has_moved": false,
 		"has_acted": false,
 	})
+	_next_unit_uid += 1
 
 	# ── Place companion units (after player, before enemies) ──
 	for ci in companions.size():
@@ -167,10 +173,12 @@ func start_combat(enemies: Array, companions: Array, room: Dictionary, scene_roo
 			"speed": cspd,
 			"move_range": centity.get_meta("move_range", 3),
 			"attack_range": centity.get_meta("attack_range", 1),
+			"uid": _next_unit_uid,
 			"alive": true,
 			"has_moved": false,
 			"has_acted": false,
 		})
+		_next_unit_uid += 1
 		tactical_grid.set_blocked(cpos, true)
 
 	# ── Place enemy units ──
@@ -200,10 +208,12 @@ func start_combat(enemies: Array, companions: Array, room: Dictionary, scene_roo
 			"speed": espd,
 			"move_range": ENEMY_MOVE_RANGE,
 			"attack_range": ENEMY_ATTACK_RANGE,
+			"uid": _next_unit_uid,
 			"alive": true,
 			"has_moved": false,
 			"has_acted": false,
 		})
+		_next_unit_uid += 1
 
 		# Block the tile
 		tactical_grid.set_blocked(epos, true)
@@ -611,17 +621,14 @@ func _companion_use_heal_item(unit_idx: int, on_player: bool) -> bool:
 		if t != ItemDB.ItemType.FOOD and t != ItemDB.ItemType.POTION:
 			continue
 		var item_name: String = item.get("name", "item")
+		var msg: String = ItemDB.use_item(item)
+		if msg == "":
+			continue
+		ItemDB.remove_from_backpack(bi)
 		if on_player:
-			ItemDB.use_item(item)
-			ItemDB.remove_from_backpack(bi)
-			_units[0]["hp"] = GameData.hp
-			action_resolved.emit("[color=lime]%s uses your %s on you![/color]" % [unit["name"], item_name])
+			action_resolved.emit("[color=lime]%s uses your %s on you![/color]  %s" % [unit["name"], item_name, msg])
 		else:
-			var heal: int = item.get("heal_amount", item.get("heal", 10))
-			unit["hp"] = mini(unit["hp"] + heal, unit["hp_max"])
-			GameData.update_companion_hp(unit.get("entity_key", ""), unit["hp"])
-			ItemDB.remove_from_backpack(bi)
-			action_resolved.emit("[color=lime]%s uses a %s![/color]" % [unit["name"], item_name])
+			action_resolved.emit("[color=lime]%s uses a %s![/color]  %s" % [unit["name"], item_name, msg])
 		return true
 	return false
 
@@ -1136,7 +1143,7 @@ func _do_guts(unit_idx: int):
 
 
 func _do_flee():
-	var flee_chance := 0.50 + GameData.stat_lck * 0.05
+	var flee_chance := clampf(0.50 + GameData.stat_lck * 0.05, 0.05, 0.95)
 	if randf() < flee_chance:
 		action_resolved.emit("[color=yellow]Escaped![/color]")
 		phase = Phase.ENDED
@@ -1371,6 +1378,8 @@ func _cleanup():
 	# Reset temp bonuses
 	GameData.ac_bonus_temp = 0
 	GameData.counter_active = false
+	GameData.clear_combat_buffs()
+	GameData.in_combat = false
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1379,7 +1388,7 @@ func _cleanup():
 
 func _get_base_speed(unit: Dictionary) -> int:
 	if unit["type"] == "player":
-		return GameData.stat_spd
+		return GameData.get_combat_speed()
 	return unit.get("speed", 4)
 
 

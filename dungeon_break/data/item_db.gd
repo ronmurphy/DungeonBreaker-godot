@@ -435,60 +435,52 @@ func use_item(item: Dictionary) -> String:
 	var item_type: int = item.get("type", -1)
 
 	if item_type == ItemType.FOOD or item_type == ItemType.POTION:
+		if not GameData.in_combat:
+			return ""
+
 		var msg := ""
 
-		# Heal
-		var heal_amt: int = item.get("heal_amount", 0)
-		if heal_amt > 0:
-			GameData.heal(heal_amt)
-			msg += "+%d HP  " % heal_amt
-
-		# Guts
 		var guts_bonus: int = item.get("guts_bonus", 0)
 		if guts_bonus > 0:
 			GameData.guts = mini(GameData.guts + guts_bonus, GameData.guts_max)
 			msg += "+%d Guts  " % guts_bonus
 
-		# Temporary SPD buff (stored as status effect)
 		var spd_bonus: int = item.get("spd_bonus", 0)
 		if spd_bonus > 0:
-			GameData.stat_spd += spd_bonus
+			GameData.combat_buff_spd += spd_bonus
 			msg += "+%d SPD  " % spd_bonus
 
-		# Temporary ATK buff
 		var atk_bonus: int = item.get("atk_bonus", 0)
 		if atk_bonus > 0:
-			GameData.stat_str += atk_bonus
+			GameData.combat_buff_atk += atk_bonus
 			msg += "+%d ATK  " % atk_bonus
 
-		# Temporary AC buff (potion_purple or pumpkin_pie)
 		var ac_temp: int = item.get("ac_bonus_temp", 0)
 		if ac_temp > 0:
-			GameData.ac_bonus_temp += ac_temp
+			GameData.combat_buff_ac += ac_temp
 			msg += "+%d AC  " % ac_temp
 
-		# Stat-buff foods (baked_potato, pepper, fish_rice, cooked_egg, etc.)
 		var buff_stat: String = item.get("buff_stat", "")
 		var buff_amt: int = item.get("buff_amount", 0)
 		if buff_stat != "" and buff_amt > 0:
 			match buff_stat:
 				"str":
-					GameData.stat_str += buff_amt
+					GameData.combat_buff_str += buff_amt
 					msg += "+%d STR  " % buff_amt
 				"dex":
-					GameData.stat_dex += buff_amt
+					GameData.combat_buff_dex += buff_amt
 					msg += "+%d DEX  " % buff_amt
 				"int":
-					GameData.stat_int += buff_amt
+					GameData.combat_buff_int += buff_amt
 					msg += "+%d INT  " % buff_amt
 				"spd":
-					GameData.stat_spd += buff_amt
+					GameData.combat_buff_spd += buff_amt
 					msg += "+%d SPD  " % buff_amt
 				"lck":
-					GameData.stat_lck += buff_amt
+					GameData.combat_buff_lck += buff_amt
 					msg += "+%d LCK  " % buff_amt
 
-		return msg.strip_edges() if msg != "" else "Used %s" % item.get("name", "item")
+		return msg.strip_edges()
 
 	return ""
 

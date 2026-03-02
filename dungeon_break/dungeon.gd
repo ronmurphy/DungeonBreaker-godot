@@ -31,13 +31,24 @@ var _hud: CanvasLayer = null
 var _combat_floor_height: int = 0  # elevation of the active combat room
 var _terrain_mat: StandardMaterial3D = null
 var _wall_tween: Tween = null
+var _e_was_pressed: bool = false
 
 ## Ambient light levels for the dungeon environment
 const DUNGEON_AMBIENT := 0.05   # dark exploration
 const COMBAT_AMBIENT  := 0.35   # readable tactical grid
+const DUNGEON_GI_ENERGY := 0.18 # subtle bounce so walls are still readable
+const LOW_MED_DUNGEON_AMBIENT := 0.10 # slight fallback lift when SDFGI is disabled
+const LOW_MED_FILL_ENERGY := 0.20
+const LOW_MED_FILL_RANGE := 14.0
+const GRAPHICS_PRESET_HIGH := 2
 
 ## Torch light node (OmniLight3D parented to player, only in dungeon)
 var _torch_light: OmniLight3D = null
+var _fallback_fill_light: OmniLight3D = null
+
+## Dynamic ambient targets (quality-preset aware)
+var _explore_ambient: float = DUNGEON_AMBIENT
+var _combat_ambient: float = COMBAT_AMBIENT
 
 ## Rooms the player has visited this run — keyed by room id (int → true)
 var _visited_rooms: Dictionary = {}
@@ -154,8 +165,10 @@ func _build_dungeon():
 	# on entry are the only illumination.
 	if _dir_light:
 		_dir_light.light_energy = 0.0
-	if _world_env and _world_env.environment:
-		_world_env.environment.ambient_light_energy = DUNGEON_AMBIENT
+
+	if GraphicsManager and not GraphicsManager.preset_changed.is_connected(_on_graphics_preset_changed):
+		GraphicsManager.preset_changed.connect(_on_graphics_preset_changed)
+	_apply_quality_fallback_lighting()
 
 	# Start room (id 0) is always pre-revealed — player spawns there
 	_visited_rooms[0] = true
@@ -195,6 +208,18 @@ func _spawn_player(pos: Vector3):
 	_player.add_child(_torch_light)
 	_torch_light.position = Vector3(0.0, 1.5, 0.0)
 	_update_torch_light()
+
+	# Low/Medium quality fallback fill light (kept subtle; disabled on High).
+	_fallback_fill_light = OmniLight3D.new()
+	_fallback_fill_light.name = "QualityFallbackFillLight"
+	_fallback_fill_light.light_color = Color(0.82, 0.88, 0.95)
+	_fallback_fill_light.light_energy = LOW_MED_FILL_ENERGY
+	_fallback_fill_light.omni_range = LOW_MED_FILL_RANGE
+	_fallback_fill_light.omni_attenuation = 1.0
+	_fallback_fill_light.shadow_enabled = false
+	_fallback_fill_light.visible = false
+	_player.add_child(_fallback_fill_light)
+	_fallback_fill_light.position = Vector3(0.0, 2.0, 0.0)
 
 
 func _spawn_enemies(data: Dictionary):
@@ -300,6 +325,8 @@ func _process(delta: float):
 func _check_area_interactions():
 	var player_pos := _player.global_position
 	var near_anything := false
+	var e_pressed: bool = Input.is_key_pressed(KEY_E)
+	var e_just_pressed: bool = e_pressed and not _e_was_pressed
 
 	for child in _dungeon_objects.get_children():
 		if not (child is Area3D):
@@ -316,37 +343,39 @@ func _check_area_interactions():
 			"return_portal":
 				if _hud:
 					_hud.show_prompt("[E] Return to Camp")
-				if Input.is_key_pressed(KEY_E):
+				if e_just_pressed:
 					_do_return_to_camp()
 			"bonfire":
 				if _hud:
 					_hud.show_prompt("[E] Rest at Bonfire")
-				if Input.is_key_pressed(KEY_E):
+				if e_just_pressed:
 					_do_bonfire_rest()
 			"fountain":
 				if _hud:
 					_hud.show_prompt("[E] Drink from Fountain")
-				if Input.is_key_pressed(KEY_E):
+				if e_just_pressed:
 					_do_fountain_heal()
 			"merchant":
 				if _hud:
 					_hud.show_prompt("[E] Buy Health Potion (15g)")
-				if Input.is_key_pressed(KEY_E):
+				if e_just_pressed:
 					_do_merchant_buy()
 			"alchemy":
 				if _hud:
 					_hud.show_prompt("[E] Brew Random Potion (10g)")
-				if Input.is_key_pressed(KEY_E):
+				if e_just_pressed:
 					_do_alchemy_brew()
 			"boss_portal":
 				if child.get_meta("enabled", false):
 					if _hud:
 						_hud.show_prompt("[E] Descend to Next Floor")
-					if Input.is_key_pressed(KEY_E):
+					if e_just_pressed:
 						_do_advance_floor()
 
 	if not near_anything and _hud:
 		_hud.hide_prompt()
+
+	_e_was_pressed = e_pressed
 
 	# Check room entry: reveal lights on first visit, trigger combat if uncleared
 	if not _combat_active:
@@ -467,6 +496,16 @@ func _on_combat_ended(victory: bool, room: Dictionary):
 		_companion_followers.erase(f)
 
 	if victory:
+		var unlocked_jobs: Array = GameData.record_job_victory()
+		if not unlocked_jobs.is_empty():
+			var names: Array[String] = []
+			for jid in unlocked_jobs:
+				var nm: String = str(GameData.CLASS_NAMES.get(int(jid), "Unknown"))
+				names.append(nm)
+				print("Jobs: unlocked %s" % nm)
+			if _hud and _hud.has_method("show_toast"):
+				var msg := "New job unlocked: %s" % ", ".join(names)
+				_hud.show_toast(msg, 4.0)
 		room["state"] = "cleared"
 		GameData.mark_room_cleared(_floor_num, room["id"])
 		print("Dungeon: room %d cleared!" % room["id"])
@@ -642,14 +681,14 @@ func _set_wall_combat_mode(enabled: bool) -> void:
 		# Boost ambient so tactical grid tiles are clearly readable during combat
 		if _world_env and _world_env.environment:
 			_wall_tween.parallel().tween_property(
-				_world_env.environment, "ambient_light_energy", COMBAT_AMBIENT, 0.35)
+				_world_env.environment, "ambient_light_energy", _combat_ambient, 0.35)
 	else:
 		_wall_tween.tween_property(_terrain_mat, "albedo_color",
 			Color(1.0, 1.0, 1.0, 1.0), 0.35)
 		# Restore dungeon darkness alongside the wall fade
 		if _world_env and _world_env.environment:
 			_wall_tween.parallel().tween_property(
-				_world_env.environment, "ambient_light_energy", DUNGEON_AMBIENT, 0.35)
+				_world_env.environment, "ambient_light_energy", _explore_ambient, 0.35)
 		_wall_tween.tween_callback(func() -> void:
 			_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 			_terrain_mat.vertex_color_use_as_albedo = true
@@ -665,6 +704,35 @@ func _notification(what: int):
 		_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
 		_terrain_mat.albedo_color = Color(1.0, 1.0, 1.0, 1.0)
 		_terrain_mat.vertex_color_use_as_albedo = true
+	if what == NOTIFICATION_EXIT_TREE and GraphicsManager and GraphicsManager.preset_changed.is_connected(_on_graphics_preset_changed):
+		GraphicsManager.preset_changed.disconnect(_on_graphics_preset_changed)
+
+
+func _on_graphics_preset_changed(_preset: int) -> void:
+	_apply_quality_fallback_lighting()
+
+
+func _apply_quality_fallback_lighting() -> void:
+	var preset: int = 1
+	if GraphicsManager:
+		preset = int(GraphicsManager.current_preset)
+	var low_or_medium := preset != GRAPHICS_PRESET_HIGH
+
+	_explore_ambient = DUNGEON_AMBIENT
+	_combat_ambient = COMBAT_AMBIENT
+	if low_or_medium:
+		_explore_ambient = LOW_MED_DUNGEON_AMBIENT
+
+	if _fallback_fill_light and is_instance_valid(_fallback_fill_light):
+		_fallback_fill_light.visible = low_or_medium
+
+	if _world_env and _world_env.environment:
+		var env: Environment = _world_env.environment
+		env.sdfgi_energy = DUNGEON_GI_ENERGY
+		if _combat_active:
+			env.ambient_light_energy = _combat_ambient
+		else:
+			env.ambient_light_energy = _explore_ambient
 
 
 ## Track the last hovered grid tile for cursor highlight.

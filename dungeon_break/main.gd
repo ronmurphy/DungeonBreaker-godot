@@ -21,7 +21,10 @@ var _load_floor_label: Label = null       # "Floor X" text shown during loading
 
 # ── Screenshot overlay ────────────────────────────────────────────────────────
 var _screenshot_layer: CanvasLayer = null
-var _screenshot_toast: Label = null
+var _screenshot_toast_panel: PanelContainer = null
+var _screenshot_toast_title: Label = null
+var _screenshot_toast_sub: Label = null
+var _screenshot_toast_tween: Tween = null
 var _screenshot_dir_path: String = ""
 
 
@@ -125,24 +128,46 @@ func _build_screenshot_overlay():
 	_screenshot_layer.layer = 128  # above everything
 	add_child(_screenshot_layer)
 
-	_screenshot_toast = Label.new()
-	_screenshot_toast.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_screenshot_toast.offset_left = 12
-	_screenshot_toast.offset_top  = 12
-	_screenshot_toast.add_theme_font_size_override("font_size", 14)
-	_screenshot_toast.add_theme_color_override("font_color", Color(0.2, 1.0, 0.4))
-	_screenshot_toast.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.8))
-	_screenshot_toast.add_theme_constant_override("shadow_offset_x", 1)
-	_screenshot_toast.add_theme_constant_override("shadow_offset_y", 1)
-	_screenshot_toast.mouse_filter = Control.MOUSE_FILTER_STOP
-	_screenshot_toast.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	_screenshot_toast.visible = false
-	_screenshot_toast.gui_input.connect(func(event: InputEvent):
+	_screenshot_toast_panel = PanelContainer.new()
+	_screenshot_toast_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_screenshot_toast_panel.offset_left = 12
+	_screenshot_toast_panel.offset_top = 12
+	_screenshot_toast_panel.offset_right = 440
+	_screenshot_toast_panel.offset_bottom = 86
+	var ts := StyleBoxFlat.new()
+	ts.bg_color = Color(0.04, 0.05, 0.09, 0.96)
+	ts.border_color = Color(0.35, 0.55, 0.9, 0.96)
+	ts.set_border_width_all(2)
+	ts.set_corner_radius_all(7)
+	ts.set_content_margin(SIDE_LEFT, 10)
+	ts.set_content_margin(SIDE_RIGHT, 10)
+	ts.set_content_margin(SIDE_TOP, 8)
+	ts.set_content_margin(SIDE_BOTTOM, 8)
+	_screenshot_toast_panel.add_theme_stylebox_override("panel", ts)
+	_screenshot_toast_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_screenshot_toast_panel.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	_screenshot_toast_panel.visible = false
+	_screenshot_toast_panel.gui_input.connect(func(event: InputEvent):
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			if _screenshot_dir_path != "":
 				_open_folder(_screenshot_dir_path)
 	)
-	_screenshot_layer.add_child(_screenshot_toast)
+	_screenshot_layer.add_child(_screenshot_toast_panel)
+
+	var vv := VBoxContainer.new()
+	vv.add_theme_constant_override("separation", 2)
+	_screenshot_toast_panel.add_child(vv)
+
+	_screenshot_toast_title = Label.new()
+	_screenshot_toast_title.add_theme_font_size_override("font_size", 14)
+	_screenshot_toast_title.add_theme_color_override("font_color", Color(0.78, 0.92, 1.0))
+	vv.add_child(_screenshot_toast_title)
+
+	_screenshot_toast_sub = Label.new()
+	_screenshot_toast_sub.add_theme_font_size_override("font_size", 12)
+	_screenshot_toast_sub.add_theme_color_override("font_color", Color(0.66, 0.74, 0.86))
+	_screenshot_toast_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vv.add_child(_screenshot_toast_sub)
 
 
 func _input(event: InputEvent):
@@ -173,10 +198,10 @@ func _take_screenshot():
 
 	if err == OK:
 		print("Screenshot saved: %s" % full_path)
-		_show_screenshot_toast("Screenshot saved: " + filename + "\n  (click to open folder)")
+		_show_screenshot_toast("Screenshot Saved", "%s  (click to open folder)" % filename)
 	else:
 		print("Screenshot failed (error %d)" % err)
-		_show_screenshot_toast("Screenshot failed!")
+		_show_screenshot_toast("Screenshot Failed", "Could not write PNG file.")
 
 
 func _open_folder(path: String) -> void:
@@ -197,15 +222,26 @@ func _open_folder(path: String) -> void:
 		OS.shell_open(path)  # Windows / macOS work fine with shell_open
 
 
-func _show_screenshot_toast(msg: String):
-	_screenshot_toast.text = msg
-	_screenshot_toast.modulate.a = 1.0
-	_screenshot_toast.visible = true
+func _show_screenshot_toast(title: String, subtitle: String):
+	if _screenshot_toast_panel == null:
+		return
+	if _screenshot_toast_tween and _screenshot_toast_tween.is_valid():
+		_screenshot_toast_tween.kill()
 
-	var tw := create_tween()
-	tw.tween_interval(1.8)
-	tw.tween_property(_screenshot_toast, "modulate:a", 0.0, 0.6)
-	tw.tween_callback(func(): _screenshot_toast.visible = false)
+	if _screenshot_toast_title:
+		_screenshot_toast_title.text = title
+	if _screenshot_toast_sub:
+		_screenshot_toast_sub.text = subtitle
+	_screenshot_toast_panel.modulate.a = 1.0
+	_screenshot_toast_panel.visible = true
+
+	_screenshot_toast_tween = create_tween()
+	_screenshot_toast_tween.tween_interval(2.2)
+	_screenshot_toast_tween.tween_property(_screenshot_toast_panel, "modulate:a", 0.0, 0.45)
+	_screenshot_toast_tween.tween_callback(func():
+		if _screenshot_toast_panel:
+			_screenshot_toast_panel.visible = false
+	)
 
 
 ## Show the save slot selection screen.

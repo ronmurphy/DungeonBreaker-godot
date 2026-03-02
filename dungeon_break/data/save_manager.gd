@@ -45,7 +45,13 @@ func load_game(slot: int) -> Dictionary:
 		push_error("SaveManager: slot %d is corrupt — removing" % slot)
 		DirAccess.remove_absolute(path)
 		return {}
-	return parsed as Dictionary
+	var data: Dictionary = parsed as Dictionary
+	var version: int = int(data.get("version", 0))
+	if version > SAVE_VERSION:
+		push_error("SaveManager: slot %d version %d is newer than supported version %d" % [
+			slot, version, SAVE_VERSION])
+		return {}
+	return data
 
 
 ## Returns a lightweight summary dict for the slot UI, or {} if the slot is empty.

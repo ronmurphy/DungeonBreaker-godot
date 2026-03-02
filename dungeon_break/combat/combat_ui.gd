@@ -274,10 +274,17 @@ func _on_unit_turn_started(unit: Dictionary):
 	# Highlight active card in tracker by matching name+type
 	if _combat:
 		var units: Array = _combat.get_units()
-		for i in units.size():
-			if units[i]["type"] == unit["type"] and units[i]["name"] == unit["name"]:
-				_set_active_card(i)
-				break
+		var active_uid: int = unit.get("uid", -1)
+		if active_uid >= 0:
+			for i in units.size():
+				if units[i].get("uid", -2) == active_uid:
+					_set_active_card(i)
+					break
+		else:
+			for i in units.size():
+				if units[i]["type"] == unit["type"] and units[i]["name"] == unit["name"]:
+					_set_active_card(i)
+					break
 
 	if unit["type"] == "player":
 		if _enemy_info_panel:
@@ -774,8 +781,11 @@ func _use_combat_item(backpack_idx: int):
 	var item: Dictionary = GameData.backpack[backpack_idx]
 	var item_name: String = item.get("name", "Item")
 	var msg: String = ItemDB.use_item(item)
+	if msg == "":
+		_log("[color=orange]%s has no combat buff effect.[/color]" % item_name)
+		return
 	ItemDB.remove_from_backpack(backpack_idx)
-	_log("[color=lightgreen]Used %s — %s[/color]" % [item_name, msg.strip_edges() if msg != "" else "done"])
+	_log("[color=lightgreen]Used %s — %s[/color]" % [item_name, msg.strip_edges()])
 	_do_act("wait")
 
 

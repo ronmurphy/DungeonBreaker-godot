@@ -25,6 +25,10 @@ var _hero_hp_label: Label = null
 var _hero_stats_label: Label = null
 var _hero_weapon_label: Label = null
 var _hero_panel_style: StyleBoxFlat = null
+var _toast_panel: PanelContainer = null
+var _toast_label: Label = null
+var _toast_timer: float = 0.0
+var _toast_tween: Tween = null
 
 
 func _ready():
@@ -95,6 +99,7 @@ func _build_ui():
 
 	# ── Hero panel (bottom-right, hidden until set_dungeon_mode(true)) ──
 	_build_hero_panel()
+	_build_toast_panel()
 
 	# ── Settings modal ──
 	_build_settings_modal()
@@ -323,6 +328,10 @@ func _refresh_preset_buttons():
 
 func _process(_delta: float):
 	_update_hero_panel()
+	if _toast_panel and _toast_panel.visible and _toast_timer > 0.0:
+		_toast_timer -= _delta
+		if _toast_timer <= 0.0:
+			_hide_toast()
 
 
 func _unhandled_input(event: InputEvent):
@@ -358,6 +367,60 @@ func _update_hero_panel():
 		GameData.get_total_ac(),
 		GameData.get_attack_power()]
 	_hero_weapon_label.text = weapon_name
+
+
+func _build_toast_panel() -> void:
+	_toast_panel = PanelContainer.new()
+	_toast_panel.name = "ToastPanel"
+	_toast_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	_toast_panel.offset_left = -190
+	_toast_panel.offset_right = 190
+	_toast_panel.offset_top = -118
+	_toast_panel.offset_bottom = -72
+	var ts := StyleBoxFlat.new()
+	ts.bg_color = Color(0.05, 0.05, 0.09, 0.94)
+	ts.border_color = Color(0.45, 0.55, 0.9, 0.95)
+	ts.set_border_width_all(2)
+	ts.set_corner_radius_all(6)
+	ts.set_content_margin(SIDE_LEFT, 10)
+	ts.set_content_margin(SIDE_RIGHT, 10)
+	ts.set_content_margin(SIDE_TOP, 6)
+	ts.set_content_margin(SIDE_BOTTOM, 6)
+	_toast_panel.add_theme_stylebox_override("panel", ts)
+	_toast_panel.visible = false
+	add_child(_toast_panel)
+
+	_toast_label = Label.new()
+	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_toast_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_toast_label.add_theme_font_size_override("font_size", 14)
+	_toast_label.add_theme_color_override("font_color", Color(0.78, 0.92, 1.0))
+	_toast_panel.add_child(_toast_label)
+
+
+func show_toast(text: String, duration: float = 3.0) -> void:
+	if _toast_panel == null or _toast_label == null:
+		return
+	if _toast_tween and _toast_tween.is_valid():
+		_toast_tween.kill()
+	_toast_label.text = text
+	_toast_timer = maxf(0.2, duration)
+	_toast_panel.modulate.a = 1.0
+	_toast_panel.visible = true
+
+
+func _hide_toast() -> void:
+	if _toast_panel == null:
+		return
+	if _toast_tween and _toast_tween.is_valid():
+		_toast_tween.kill()
+	_toast_tween = create_tween()
+	_toast_tween.tween_property(_toast_panel, "modulate:a", 0.0, 0.28)
+	_toast_tween.tween_callback(func():
+		if _toast_panel:
+			_toast_panel.visible = false
+	)
 
 
 ## Update the time-of-day display (called by game.gd / dungeon.gd _process).

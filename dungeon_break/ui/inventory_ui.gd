@@ -23,6 +23,7 @@ var _stat_hp_fill: ColorRect = null
 var _stat_hp_label: Label = null
 var _stat_name_label: Label = null
 var _stat_class_label: Label = null
+var _stat_class_icon: TextureRect = null
 var _stat_floor_label: Label = null
 var _stat_str_label: Label = null
 var _stat_dex_label: Label = null
@@ -36,6 +37,7 @@ var _equip_slots: Dictionary = {}
 var _selected_index: int = -1
 var _is_open: bool = false
 var _backpack_groups: Array = []  # cached result of _group_backpack_items()
+var _job_symbol_cache: Dictionary = {}
 
 
 func _ready():
@@ -356,11 +358,22 @@ func _build_stats_col(parent: HBoxContainer):
 	_stat_name_label.clip_text = true
 	col.add_child(_stat_name_label)
 
+	var class_row := HBoxContainer.new()
+	class_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	class_row.add_theme_constant_override("separation", 6)
+	col.add_child(class_row)
+
+	_stat_class_icon = TextureRect.new()
+	_stat_class_icon.custom_minimum_size = Vector2(18, 18)
+	_stat_class_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_stat_class_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	class_row.add_child(_stat_class_icon)
+
 	_stat_class_label = Label.new()
 	_stat_class_label.add_theme_font_size_override("font_size", 12)
 	_stat_class_label.add_theme_color_override("font_color", Color(0.5, 0.85, 0.65))
 	_stat_class_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	col.add_child(_stat_class_label)
+	class_row.add_child(_stat_class_label)
 
 	_stat_floor_label = Label.new()
 	_stat_floor_label.add_theme_font_size_override("font_size", 11)
@@ -652,10 +665,16 @@ func _refresh_detail():
 
 		if item_type == ItemDB_Script.ItemType.FOOD or item_type == ItemDB_Script.ItemType.POTION:
 			_add_action_btn("Use", Color(0.3, 0.85, 0.35), func():
+				if _selected_index < 0 or _selected_index >= GameData.backpack.size():
+					return
+				var item_to_use: Dictionary = GameData.backpack[_selected_index]
+				var msg: String = ItemDB.use_item(item_to_use)
+				if msg == "":
+					_show_toast("Consumables only grant buffs during combat.")
+					return
 				var removed: Dictionary = ItemDB.remove_from_backpack(_selected_index)
 				if not removed.is_empty():
-					var msg: String = ItemDB.use_item(removed)
-					_show_toast(msg if msg != "" else "Used  %s" % removed.get("name", ""))
+					_show_toast(msg)
 				_selected_index = -1
 				_refresh()
 			)
@@ -685,6 +704,14 @@ func _refresh_stats():
 	var class_str: String = GameData.CLASS_NAMES.get(GameData.player_class, "Hero")
 	_stat_name_label.text = GameData.player_name
 	_stat_class_label.text = class_str
+	var sym_path: String = GameData.get_job_symbol_path(GameData.player_class)
+	if _stat_class_icon:
+		if sym_path != "" and ResourceLoader.exists(sym_path):
+			_stat_class_icon.texture = _get_scaled_symbol(sym_path, 40)
+			_stat_class_icon.visible = true
+		else:
+			_stat_class_icon.texture = null
+			_stat_class_icon.visible = false
 	_stat_floor_label.text = "Floor %d   ◆ %d gold" % [GameData.current_floor, GameData.gold]
 
 	_stat_str_label.text = "STR  %d" % GameData.stat_str
@@ -830,6 +857,9 @@ func _quick_use_at_index(idx: int):
 	var t: int = item.get("type", -1)
 	if t == ItemDB.ItemType.FOOD or t == ItemDB.ItemType.POTION:
 		var msg: String = ItemDB.use_item(item)
+		if msg == "":
+			_show_toast("Consumables only grant buffs during combat.")
+			return
 		ItemDB.remove_from_backpack(idx)
 		_show_toast("%s: %s" % [item.get("name", "Item"), msg])
 		if _is_open:
@@ -858,6 +888,34 @@ func _get_selected_stack_count() -> int:
 		if _selected_index in g["indices"]:
 			return g["count"]
 	return 1
+
+
+func _get_scaled_symbol(path: String, max_px: int) -> Texture2D:
+	var safe_max: int = maxi(8, max_px)
+	var key: String = "%s#%d" % [path, safe_max]
+	if _job_symbol_cache.has(key):
+		return _job_symbol_cache[key] as Texture2D
+
+	var img := Image.load_from_file(path)
+	if img == null or img.is_empty():
+		var raw: Texture2D = load(path)
+		_job_symbol_cache[key] = raw
+		return raw
+
+	var w: int = img.get_width()
+	var h: int = img.get_height()
+	var max_dim: int = maxi(w, h)
+	if max_dim > safe_max:
+		var scale: float = float(safe_max) / float(max_dim)
+		img.resize(
+			maxi(1, int(round(float(w) * scale))),
+			maxi(1, int(round(float(h) * scale))),
+			Image.INTERPOLATE_LANCZOS
+		)
+
+	var tex: Texture2D = ImageTexture.create_from_image(img)
+	_job_symbol_cache[key] = tex
+	return tex
 
 
 ## Group backpack items by id for visual stacking.

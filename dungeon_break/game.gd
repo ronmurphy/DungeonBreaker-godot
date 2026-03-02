@@ -14,6 +14,7 @@ const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
 const ShopUIScript = preload("res://dungeon_break/ui/shop_ui.gd")
 const SageUIScript = preload("res://dungeon_break/ui/sage_ui.gd")
 const CompanionRosterUIScript = preload("res://dungeon_break/ui/companion_roster_ui.gd")
+const JobChangeUIScript = preload("res://dungeon_break/ui/job_change_ui.gd")
 
 signal enter_dungeon()
 
@@ -39,6 +40,9 @@ var _npc_ui_open: bool = false
 
 # Prevents bonfire rest from firing every frame while E is held
 var _bonfire_rest_pending: bool = false
+var _e_was_pressed: bool = false
+var _r_was_pressed: bool = false
+var _c_was_pressed: bool = false
 
 
 func _ready():
@@ -177,6 +181,12 @@ func _check_portal_interactions():
 
 	var player_pos := _player.global_position
 	var near_anything := false
+	var e_pressed: bool = Input.is_key_pressed(KEY_E)
+	var r_pressed: bool = Input.is_key_pressed(KEY_R)
+	var c_pressed: bool = Input.is_key_pressed(KEY_C)
+	var e_just_pressed: bool = e_pressed and not _e_was_pressed
+	var r_just_pressed: bool = r_pressed and not _r_was_pressed
+	var c_just_pressed: bool = c_pressed and not _c_was_pressed
 
 	for child in _camp_objects.get_children():
 		if not (child is Area3D):
@@ -192,7 +202,7 @@ func _check_portal_interactions():
 			near_anything = true
 			if _hud:
 				_hud.show_prompt("[E] Enter Dungeon")
-			if Input.is_key_pressed(KEY_E):
+			if e_just_pressed:
 				print("Game: entering dungeon portal!")
 				enter_dungeon.emit()
 				return
@@ -200,7 +210,7 @@ func _check_portal_interactions():
 			near_anything = true
 			if _hud:
 				_hud.show_prompt("[E] Rest  (restores HP, advances 8 hrs)")
-			if Input.is_key_pressed(KEY_E):
+			if e_just_pressed:
 				if not _bonfire_rest_pending:
 					_bonfire_rest_pending = true
 					GameData.heal(GameData.hp_max)
@@ -212,18 +222,20 @@ func _check_portal_interactions():
 
 		elif interaction == "azure_flame":
 			near_anything = true
-			var flame_prompt: String = "[E] Rest & Refuel"
+			var flame_prompt: String = "[E] Rest & Refuel  [C] Jobs"
 			if not GameData.companions.is_empty():
-				flame_prompt = "[E] Rest & Refuel  [R] Companions"
+				flame_prompt = "[E] Rest & Refuel  [R] Companions  [C] Jobs"
 			if _hud:
 				_hud.show_prompt(flame_prompt)
-			if Input.is_key_pressed(KEY_E):
+			if e_just_pressed:
 				GameData.torch_fuel = 100
 				GameData.heal(GameData.hp_max)
 				GameData.heal_companions()
 				print("Game: Azure Flame — rested, healed, torch refuelled!")
-			elif Input.is_key_pressed(KEY_R) and not _npc_ui_open:
+			elif r_just_pressed and not _npc_ui_open:
 				_open_companion_roster()
+			elif c_just_pressed and not _npc_ui_open:
+				_open_job_change_ui()
 
 		elif interaction == "npc":
 			var npc_key: String  = child.get_meta("npc_key", "")
@@ -233,11 +245,15 @@ func _check_portal_interactions():
 			near_anything = true
 			if _hud:
 				_hud.show_prompt("[E] %s — %s" % [npc_name, NpcDB.get_role_label(role)])
-			if Input.is_key_pressed(KEY_E) and not _npc_ui_open:
+			if e_just_pressed and not _npc_ui_open:
 				_open_npc_ui(npc_key, role)
 
 	if not near_anything and _hud:
 		_hud.hide_prompt()
+
+	_e_was_pressed = e_pressed
+	_r_was_pressed = r_pressed
+	_c_was_pressed = c_pressed
 
 
 ## Open the appropriate shop or sage UI for the given NPC.
@@ -268,6 +284,16 @@ func _open_companion_roster() -> void:
 	roster_ui.name = "CompanionRosterUI"
 	add_child(roster_ui)
 	roster_ui.roster_closed.connect(_on_npc_ui_closed)
+
+
+func _open_job_change_ui() -> void:
+	_npc_ui_open = true
+	if _hud:
+		_hud.hide_prompt()
+	var jobs_ui := JobChangeUIScript.new()
+	jobs_ui.name = "JobChangeUI"
+	add_child(jobs_ui)
+	jobs_ui.jobs_closed.connect(_on_npc_ui_closed)
 
 
 func _on_npc_ui_closed() -> void:
