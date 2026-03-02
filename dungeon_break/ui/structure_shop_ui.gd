@@ -6,6 +6,8 @@ extends CanvasLayer
 
 signal shop_closed
 
+const ACVoiceBoxScript = preload("res://dungeon_break/ui/ac_voicebox.gd")
+
 # ── Camp upgrades ────────────────────────────────────────────────────────────
 const CAMP_UPGRADES: Array = [
 	{
@@ -41,6 +43,9 @@ const SUPPLY_ITEM_IDS: Array[String] = [
 var _gold_label: Label = null
 var _feedback_label: Label = null
 var _feedback_timer: float = 0.0
+var _voicebox: ACVoiceBox = null
+var _greet_lbl: Label = null
+var _greeting_played: bool = false
 
 
 func _ready() -> void:
@@ -53,6 +58,8 @@ func open() -> void:
 
 
 func close_shop() -> void:
+	if _voicebox:
+		_voicebox.stop_speaking()
 	shop_closed.emit()
 	queue_free()
 
@@ -77,6 +84,9 @@ func _process(delta: float) -> void:
 # ── Build ─────────────────────────────────────────────────────────────────────
 
 func _build_ui() -> void:
+	var npc_def: Dictionary = NpcDB.get_def("michelle")
+	var greeting: String = npc_def.get("greeting", "You want it built, I'll price it out.") as String
+
 	# ── dim overlay ──
 	var overlay := ColorRect.new()
 	overlay.color = Color(0, 0, 0, 0.72)
@@ -130,10 +140,12 @@ func _build_ui() -> void:
 	title_col.add_child(title_lbl)
 
 	var greet_lbl := Label.new()
-	greet_lbl.text = "\"You want it built, I'll price it out.\""
+	greet_lbl.text = "\"" + greeting + "\""
+	greet_lbl.visible_characters = 1  # show opening quote
 	greet_lbl.add_theme_font_size_override("font_size", 12)
 	greet_lbl.add_theme_color_override("font_color", Color(0.7, 0.65, 0.6))
 	title_col.add_child(greet_lbl)
+	_greet_lbl = greet_lbl
 
 	# ── gold row ──
 	var gold_row := HBoxContainer.new()
@@ -204,6 +216,22 @@ func _build_ui() -> void:
 	root.add_child(close_btn)
 
 	GameData.gold_changed.connect(_on_gold_changed)
+
+	# Start animalese speech for greeting (skip on UI rebuild)
+	if _greeting_played:
+		_greet_lbl.visible_characters = -1
+	else:
+		_greeting_played = true
+		if _voicebox:
+			_voicebox.stop_speaking()
+			_voicebox.queue_free()
+		_voicebox = ACVoiceBoxScript.new()
+		_voicebox.base_pitch = npc_def.get("voice_pitch", 2.5) as float
+		_voicebox.play_speed = npc_def.get("voice_speed", 0.90) as float
+		add_child(_voicebox)
+		_voicebox.characters_sounded.connect(_on_voice_chars)
+		_voicebox.finished_phrase.connect(_on_voice_finished)
+		_voicebox.play_string(greeting)
 
 
 func _add_section_header(parent: VBoxContainer, text: String) -> void:
@@ -436,3 +464,13 @@ func _show_feedback(msg: String, color: Color = Color(0.4, 1.0, 0.5)) -> void:
 func _on_gold_changed(amount: int) -> void:
 	if _gold_label:
 		_gold_label.text = str(amount)
+
+
+func _on_voice_chars(chars: String) -> void:
+	if _greet_lbl:
+		_greet_lbl.visible_characters += chars.length()
+
+
+func _on_voice_finished() -> void:
+	if _greet_lbl:
+		_greet_lbl.visible_characters = -1

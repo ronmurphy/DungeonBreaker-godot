@@ -230,11 +230,13 @@ func _check_portal_interactions():
 					_bonfire_rest_pending = true
 					GameData.heal(GameData.hp_max)
 					GameData.heal_companions()
+					var _old_time := GameData.world_time
 					GameData.world_time = fmod(GameData.world_time + 8.0 / 24.0, 1.0)
+					if GameData.world_time < _old_time:
+						GameData.game_day += 1
 					if GameData.has_upgrade("supply_depot"):
 						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-					GameData.reset_camp_searches()
 					print("Game: Bonfire — rested, healed, time advanced 8 hrs")
 			else:
 				_bonfire_rest_pending = false
@@ -253,7 +255,6 @@ func _check_portal_interactions():
 				if GameData.has_upgrade("supply_depot"):
 					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-				GameData.reset_camp_searches()
 				print("Game: Azure Flame — rested, healed, torch refuelled!")
 			elif r_just_pressed and not _npc_ui_open:
 				_open_companion_roster()

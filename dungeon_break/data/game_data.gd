@@ -96,8 +96,10 @@ var cleared_rooms: Dictionary = {}
 var floor_room_counts: Dictionary = {}
 
 ## Searched camp objects (trees/bushes) — key = "tree_X_Z" or "bush_X_Z", value = true.
-## Resets when resting at bonfire or azure flame.
+## Auto-resets at the start of each new game day.
 var searched_camp_objects: Dictionary = {}
+var game_day: int = 0           # increments each time world_time wraps past midnight
+var _searched_day: int = -1     # the game_day the current search set belongs to
 
 ## One NPC unlocked per floor cleared, in this exact order.
 ## Daniels + Conner are always present from game start (not in this list).
@@ -189,6 +191,7 @@ func _process(delta: float):
 	world_time += delta * _WORLD_TIME_SPEED
 	if world_time >= 1.0:
 		world_time -= 1.0
+		game_day += 1
 
 ## Return the portrait PNG path for the current race/gender selection.
 ## e.g. human male → "res://assets/art/player_avatars/mh_port.png"
@@ -611,17 +614,23 @@ func is_room_cleared(floor: int, room_id: int) -> bool:
 
 ## Mark a camp tree/bush as searched.
 func mark_camp_searched(key: String) -> void:
+	if game_day != _searched_day:
+		searched_camp_objects.clear()
+		_searched_day = game_day
 	searched_camp_objects[key] = true
 
 
-## Check if a camp tree/bush has been searched since the last rest.
+## Check if a camp tree/bush has been searched today.
 func is_camp_searched(key: String) -> bool:
+	if game_day != _searched_day:
+		return false
 	return searched_camp_objects.get(key, false)
 
 
-## Reset all camp search markers (called on bonfire/azure flame rest).
+## Reset all camp search markers (called on new game day automatically).
 func reset_camp_searches() -> void:
 	searched_camp_objects.clear()
+	_searched_day = -1
 
 
 ## Store the total number of clearable rooms for a floor.
@@ -691,6 +700,8 @@ func to_save_dict() -> Dictionary:
 		"unlocked_jobs":     unlocked_jobs.duplicate(true),
 		"job_rank":          job_rank.duplicate(true),
 		"searched_camp_objects": searched_camp_objects.duplicate(true),
+		"game_day": game_day,
+		"searched_day": _searched_day,
 	}
 
 
@@ -766,6 +777,8 @@ func from_save_dict(data: Dictionary):
 	for fkey2: String in saved_frc:
 		floor_room_counts[fkey2] = int(saved_frc[fkey2])
 	searched_camp_objects = data.get("searched_camp_objects", {})
+	game_day = int(data.get("game_day", 0))
+	_searched_day = int(data.get("searched_day", -1))
 	var saved_unlocked: Dictionary = data.get("unlocked_jobs", {})
 	unlocked_jobs = {}
 	if saved_unlocked.is_empty():

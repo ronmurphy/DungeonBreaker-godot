@@ -6,6 +6,8 @@ extends CanvasLayer
 
 signal sage_closed
 
+const ACVoiceBoxScript = preload("res://dungeon_break/ui/ac_voicebox.gd")
+
 const HINTS: Array = [
 	"\"Combat is turn-based and tactical. Your initiative order matters — faster heroes act first.\"",
 	"\"Your torch fuel drains slowly in the dungeon. Return to the Azure Flame in camp to refuel.\"",
@@ -23,6 +25,7 @@ const HINTS: Array = [
 
 var _hint_index: int = 0
 var _text_label: Label = null
+var _voicebox: ACVoiceBox = null
 
 
 func _ready() -> void:
@@ -38,6 +41,8 @@ func open() -> void:
 
 ## Close and free.
 func close_sage() -> void:
+	if _voicebox:
+		_voicebox.stop_speaking()
 	sage_closed.emit()
 	queue_free()
 
@@ -118,6 +123,7 @@ func _build_ui() -> void:
 	# ── hint text ──
 	_text_label = Label.new()
 	_text_label.text = HINTS[_hint_index]
+	_text_label.visible_characters = 1  # show opening quote
 	_text_label.add_theme_font_size_override("font_size", 14)
 	_text_label.add_theme_color_override("font_color", Color(0.85, 0.82, 0.78))
 	_text_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -165,8 +171,40 @@ func _build_ui() -> void:
 	close_btn.pressed.connect(close_sage)
 	btn_row.add_child(close_btn)
 
+	# Start animalese speech for hint
+	var npc_def: Dictionary = NpcDB.get_def("claude")
+	_voicebox = ACVoiceBoxScript.new()
+	_voicebox.base_pitch = npc_def.get("voice_pitch", 2.2) as float
+	_voicebox.play_speed = npc_def.get("voice_speed", 0.75) as float
+	add_child(_voicebox)
+	_voicebox.characters_sounded.connect(_on_voice_chars)
+	_voicebox.finished_phrase.connect(_on_voice_finished)
+	_play_hint_voice()
+
 
 func _on_next_hint() -> void:
 	_hint_index = (_hint_index + 1) % HINTS.size()
 	if _text_label:
 		_text_label.text = HINTS[_hint_index]
+		_text_label.visible_characters = 1  # show opening quote
+	_play_hint_voice()
+
+
+func _play_hint_voice() -> void:
+	if _voicebox == null:
+		return
+	_voicebox.stop_speaking()
+	# Strip surrounding quotes for voice playback
+	var hint: String = HINTS[_hint_index]
+	var voice_text: String = hint.trim_prefix("\"").trim_suffix("\"")
+	_voicebox.play_string(voice_text)
+
+
+func _on_voice_chars(chars: String) -> void:
+	if _text_label:
+		_text_label.visible_characters += chars.length()
+
+
+func _on_voice_finished() -> void:
+	if _text_label:
+		_text_label.visible_characters = -1
