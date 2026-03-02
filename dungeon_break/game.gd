@@ -132,7 +132,7 @@ func _wait_for_terrain_editable():
 	## Poll until the VoxelTool says the camp area is editable.
 	## Checks a small AABB around origin (covers bonfire/spire area).
 	var vt := _terrain.get_voxel_tool()
-	var check_aabb := AABB(Vector3(-40, -5, -40), Vector3(80, 30, 80))
+	var check_aabb := AABB(Vector3(-40, -5, -40), Vector3(80, 30, 95))
 
 	for attempt in 200:  # up to ~3+ seconds
 		if vt.is_area_editable(check_aabb):
@@ -152,6 +152,7 @@ func _unhandled_input(event: InputEvent):
 func _process(_delta: float):
 	_update_npc_facing()
 	_check_portal_interactions()
+	_check_void_fall()
 
 	# Update time display in HUD
 	if _hud and _day_night:
@@ -172,6 +173,19 @@ func _update_npc_facing() -> void:
 	for sprite in _npc_sprites:
 		if is_instance_valid(sprite):
 			sprite.update_facing(cam_pos)
+
+
+## Teleport the player to the cave catch shelf if they fall into the void.
+func _check_void_fall() -> void:
+	if _player == null:
+		return
+	if _player.global_position.y < -30.0:
+		var shelf_pos := Vector3(0.5, -1.0, 46.5)
+		if _camp_builder and _camp_builder.has_method("get_bottom_arch_pos"):
+			shelf_pos = _camp_builder.get_bottom_arch_pos()
+		_player.global_position = shelf_pos
+		if _hud and _hud.has_method("show_toast"):
+			_hud.show_toast("You fell... but found a way back up!", 3.0)
 
 
 ## Check if the player is near a camp interaction area and pressing E.
@@ -236,6 +250,14 @@ func _check_portal_interactions():
 				_open_companion_roster()
 			elif c_just_pressed and not _npc_ui_open:
 				_open_job_change_ui()
+
+		elif interaction == "magic_arch":
+			near_anything = true
+			if _hud:
+				_hud.show_prompt("[E] Teleport")
+			if e_just_pressed:
+				var dest: Vector3 = child.get_meta("teleport_to", Vector3.ZERO)
+				_player.global_position = dest
 
 		elif interaction == "npc":
 			var npc_key: String  = child.get_meta("npc_key", "")

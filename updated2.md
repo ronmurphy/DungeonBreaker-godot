@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document (continued)
-*Continued from `updated.md`. Last updated: 2026-03-01 (session 6)*
+*Continued from `updated.md`. Last updated: 2026-03-01 (session 7)*
 
 > This file picks up where `updated.md` left off. See that file for the base project overview, tech stack, combat system, class table, and room type reference.
 
@@ -232,3 +232,97 @@ dungeon_break/
   dungeon.gd                    ← signal dungeon_ready() added
   main.gd                       ← two-shader loading overlay system
 ```
+
+---
+
+## Session 7 Summary — Jobs, Buff Rules, Lighting, and UI Polish
+
+### 1. Consumables Changed to Combat-Only Temporary Buffs
+
+Food and potion usage now follows a strict combat-only buff rule:
+- Outside combat: consumables cannot be used (UI toast explains why)
+- In combat: consumables apply temporary combat buffs (STR/DEX/INT/LCK/SPD/ATK/AC), then are consumed
+- Buffs are cleared when combat ends via `GameData.clear_combat_buffs()`
+
+This replaces the previous recovery-first behavior and keeps long-term progression reserved for the future leveling system.
+
+**Files touched:**
+- `dungeon_break/data/item_db.gd`
+- `dungeon_break/data/game_data.gd`
+- `dungeon_break/ui/inventory_ui.gd`
+- `dungeon_break/combat/combat_manager.gd`
+
+### 2. Interaction Input Standardized to Single-Press
+
+Camp and dungeon station interactions now use edge-triggered key handling (`just pressed`) instead of hold-to-repeat behavior.
+
+**Examples:**
+- Bonfire rest
+- Azure Flame rest/refuel
+- Dungeon stations (brew/chest/door style interactions)
+
+**Files touched:**
+- `dungeon_break/game.gd`
+- `dungeon_break/dungeon.gd`
+
+### 3. Graphics Presets + Low/Medium Lighting Fallback
+
+Graphics presets were aligned to the intended SDFGI behavior:
+- **Low:** SDFGI OFF, SSAO OFF, Glow OFF
+- **Medium:** SDFGI OFF, SSAO ON, Glow ON
+- **High:** SDFGI ON, SSAO ON, Glow ON
+
+To keep dungeon readability when SDFGI is disabled, low/medium now use subtle fallback lighting:
+- Slight ambient boost
+- Small non-SDFGI fill light to lift wall visibility without flattening the scene
+
+**Files touched:**
+- `dungeon_break/data/graphics_manager.gd`
+- `dungeon_break/dungeon.gd`
+- `dungeon_break/ui/game_hud.gd` (preset descriptions)
+
+### 4. Azure Flame Job System (FFT-Style, Simplified)
+
+Implemented a class-job progression and switching loop centered on the Azure Flame:
+- Press **C** near Azure Flame to open the **Job Change** modal
+- Jobs have rank progression (rank increases on combat wins with current job)
+- FFT-style dependency unlocks for advanced jobs
+- Job change updates base stats and max HP for the run
+- Job progression persists in save data (`unlocked_jobs`, `job_rank`)
+
+**Files touched:**
+- `dungeon_break/data/game_data.gd`
+- `dungeon_break/game.gd`
+- `dungeon_break/dungeon.gd`
+- `dungeon_break/ui/job_change_ui.gd` (new)
+
+### 5. Job Art Integration + UI Scaling Fixes
+
+Integrated `assets/art/jobs/` into gameplay UI:
+- Job symbols shown in inventory stat panel near class label
+- Job symbol shown on job change buttons
+- Job dummy artwork shown in job preview panel
+
+Large source assets are now proportionally downscaled at runtime for consistent UI fit.
+
+**Files touched:**
+- `dungeon_break/ui/job_change_ui.gd`
+- `dungeon_break/ui/inventory_ui.gd`
+- `dungeon_break/data/game_data.gd` (job symbol/dummy path helpers)
+
+### 6. In-Game Job Unlock Toast + Themed Screenshot Toast
+
+Added themed in-game feedback for job progression:
+- On post-combat unlock, HUD shows toast for newly unlocked jobs
+
+Redesigned screenshot toast to better match game UI styling while preserving click-to-open-folder behavior.
+
+**Files touched:**
+- `dungeon_break/dungeon.gd`
+- `dungeon_break/ui/game_hud.gd`
+- `dungeon_break/main.gd`
+
+### 7. Slopes Status
+
+Slope/wedge terrain work was prototyped, then rolled back.  
+Current build state: **no slope terrain changes active**.

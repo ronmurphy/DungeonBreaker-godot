@@ -73,6 +73,7 @@ func build_camp():
 	_build_paths()         # before foliage so paths block foliage placement
 	_build_central_plaza() # includes well
 	_build_dock()
+	_build_magic_arches()  # teleporter pair: camp surface ↔ below plateau
 	_scatter_foliage()
 
 	print("CampBuilder: camp structures placed")
@@ -364,9 +365,9 @@ func _scatter_foliage():
 	rng.seed = 42  # fixed seed — same scatter every build
 
 	# Zones to avoid (cx, cz, radius)
-	var avoid_cx: Array[int] = [BONFIRE_POS.x, SPIRE_POS.x, AZURE_FLAME_POS.x, 0, 35]
-	var avoid_cz: Array[int] = [BONFIRE_POS.z, SPIRE_POS.z, AZURE_FLAME_POS.z, 0,  0]
-	var avoid_r:  Array[int] = [             8,           8,                 8, 5, 10]
+	var avoid_cx: Array[int] = [BONFIRE_POS.x, SPIRE_POS.x, AZURE_FLAME_POS.x, 0, 35, ARCH_TOP_X]
+	var avoid_cz: Array[int] = [BONFIRE_POS.z, SPIRE_POS.z, AZURE_FLAME_POS.z, 0,  0, ARCH_TOP_Z]
+	var avoid_r:  Array[int] = [             8,           8,                 8, 5, 10,          6]
 
 	var foliage_blocks: Array[int] = [TALL_GRASS, DEAD_SHRUB]
 	var foliage_counts: Array[int] = [        30,         15]
@@ -416,6 +417,99 @@ func _scatter_foliage():
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS — Lights, particles, etc.
 # ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAGIC ARCHES — Teleporter pair: one on camp plateau, one below
+# ══════════════════════════════════════════════════════════════════════════════
+
+const ARCH_TOP_X := 0
+const ARCH_TOP_Z := 32      # south edge of camp plateau
+const ARCH_BOTTOM_X := 0
+const ARCH_BOTTOM_Z := 48   # south, past island edge
+
+var _bottom_arch_pos := Vector3.ZERO  # cached for void teleport
+
+
+func _build_magic_arches():
+	var bonfire_sy := _surface_y(BONFIRE_POS.x, BONFIRE_POS.z)
+
+	# ── Top arch: on camp plateau, lowered 1 block ──
+	var top_sy := _surface_y(ARCH_TOP_X, ARCH_TOP_Z) - 1
+	var top_stand := Vector3(ARCH_TOP_X + 0.5, top_sy + 1.0, ARCH_TOP_Z + 0.5)
+	_build_arch_structure(ARCH_TOP_X, top_sy, ARCH_TOP_Z)
+
+	# ── Bottom arch: off the plateau, 17 blocks below bonfire level ──
+	var bottom_sy := bonfire_sy - 17
+	var bottom_stand := Vector3(ARCH_BOTTOM_X + 0.5, bottom_sy + 1.0, ARCH_BOTTOM_Z + 0.5)
+	_bottom_arch_pos = bottom_stand
+
+	# Build a 7×7 stone platform for the bottom arch (no natural ground there)
+	for x in range(ARCH_BOTTOM_X - 3, ARCH_BOTTOM_X + 4):
+		for z in range(ARCH_BOTTOM_Z - 3, ARCH_BOTTOM_Z + 4):
+			_voxel_tool.set_voxel(Vector3i(x, bottom_sy, z), STONE_BRICKS)
+			_voxel_tool.set_voxel(Vector3i(x, bottom_sy - 1, z), DIRT)
+			# Perimeter rim
+			var is_edge: bool = (x == ARCH_BOTTOM_X - 3 or x == ARCH_BOTTOM_X + 3
+				or z == ARCH_BOTTOM_Z - 3 or z == ARCH_BOTTOM_Z + 3)
+			if is_edge:
+				_voxel_tool.set_voxel(Vector3i(x, bottom_sy + 1, z), STONE_BRICKS)
+			else:
+				for y in range(bottom_sy + 1, bottom_sy + 6):
+					_voxel_tool.set_voxel(Vector3i(x, y, z), AIR)
+
+	_build_arch_structure(ARCH_BOTTOM_X, bottom_sy, ARCH_BOTTOM_Z)
+
+	# ── Interaction areas ──
+	if _scene_root:
+		_add_arch_area("TopArch", ARCH_TOP_X, top_sy, ARCH_TOP_Z, bottom_stand)
+		_add_arch_area("BottomArch", ARCH_BOTTOM_X, bottom_sy, ARCH_BOTTOM_Z, top_stand)
+
+
+func _build_arch_structure(cx: int, sy: int, cz: int):
+	# Flatten a 5×5 area at surface level
+	for x in range(cx - 2, cx + 3):
+		for z in range(cz - 2, cz + 3):
+			_voxel_tool.set_voxel(Vector3i(x, sy, z), STONE_BRICKS)
+			for y in range(sy + 1, sy + 7):
+				_voxel_tool.set_voxel(Vector3i(x, y, z), AIR)
+
+	# Two pillars (3 blocks tall)
+	for y in range(sy + 1, sy + 4):
+		_voxel_tool.set_voxel(Vector3i(cx - 1, y, cz), STONE_BRICKS)
+		_voxel_tool.set_voxel(Vector3i(cx + 1, y, cz), STONE_BRICKS)
+
+	# Lintel across the top
+	for x in range(cx - 1, cx + 2):
+		_voxel_tool.set_voxel(Vector3i(x, sy + 4, cz), STONE_BRICKS)
+
+	# Glass cap (glowing)
+	_voxel_tool.set_voxel(Vector3i(cx, sy + 5, cz), GLASS)
+
+	# Purple/blue magic light
+	if _scene_root:
+		_add_campfire_light(
+			Vector3(cx + 0.5, sy + 4.5, cz + 0.5),
+			"ArchLight_%d_%d" % [cx, cz], Color(0.5, 0.2, 1.0), 2.5, 10.0)
+
+
+func _add_arch_area(area_name: String, cx: int, sy: int, cz: int, dest: Vector3):
+	var area := Area3D.new()
+	area.name = area_name
+	var coll := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(4, 4, 4)
+	coll.shape = shape
+	area.add_child(coll)
+	area.set_meta("interaction", "magic_arch")
+	area.set_meta("teleport_to", dest)
+	_scene_root.add_child(area)
+	area.global_position = Vector3(cx + 0.5, sy + 2.0, cz + 0.5)
+
+
+## World position of the bottom magic arch (for void teleport).
+func get_bottom_arch_pos() -> Vector3:
+	return _bottom_arch_pos
+
 
 func _add_campfire_light(pos: Vector3, node_name: String, color: Color, energy: float, range_val: float):
 	var light := OmniLight3D.new()
