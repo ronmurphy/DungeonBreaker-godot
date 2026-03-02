@@ -132,7 +132,7 @@ func _wait_for_terrain_editable():
 	## Poll until the VoxelTool says the camp area is editable.
 	## Checks a small AABB around origin (covers bonfire/spire area).
 	var vt := _terrain.get_voxel_tool()
-	var check_aabb := AABB(Vector3(-40, -5, -40), Vector3(80, 30, 95))
+	var check_aabb := AABB(Vector3(-65, -25, -65), Vector3(130, 50, 145))
 
 	for attempt in 200:  # up to ~3+ seconds
 		if vt.is_area_editable(check_aabb):

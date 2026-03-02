@@ -21,6 +21,12 @@ const ISLAND_RADIUS := 46.0   # hard cutoff from centre
 const ISLAND_TAPER  :=  6.0   # width of the soft-fade shoreline
 const SEA_LEVEL     :=  0     # base Y of the island surface
 
+# ── Lowland — grassy ground surrounding the plateau ─────────────────────────
+const LOWLAND_LEVEL    := -17    # base Y (matches bottom magic arch elevation)
+const LOWLAND_RADIUS   := 90.0  # outer edge of lowland ring
+const LOWLAND_TAPER    :=  8.0  # soft fade at outer edge
+const LOWLAND_HILL_AMP :=  3.0  # max hill height variation
+
 # ── Gaussian peaks (same as JS camp: two landmark hills) ─────────────────────
 # Peak 1 — dominant mountain, east-southeast
 const PEAK1_X      :=  16.0
@@ -90,6 +96,38 @@ func _island_mask(x: float, z: float) -> float:
 		return 1.0
 
 
+## Compute lowland terrain height at world (x, z).
+## Returns a float centred on LOWLAND_LEVEL with gentle hills.
+func _get_lowland_height(x: float, z: float) -> float:
+	# Reuse _noise at a different scale for broad rolling hills
+	var hill := _noise.get_noise_2d(x * 0.7, z * 0.7) * LOWLAND_HILL_AMP
+	# Finer detail for micro variation
+	var micro := _noise.get_noise_2d(x * 2.0 + 500.0, z * 2.0 + 500.0) * 0.8
+	return float(LOWLAND_LEVEL) + hill + micro
+
+
+## Check if world (x, z) is in the lowland zone (outside island, inside world edge).
+## Returns 0.0–1.0 (used for edge taper).
+func _lowland_mask(x: float, z: float) -> float:
+	var dist := sqrt(x * x + z * z)
+
+	# Must be outside the island (with a small buffer for a clean cliff face)
+	var inner_edge := ISLAND_RADIUS + 2.0
+	if dist < inner_edge:
+		return 0.0
+
+	# Wobble outer edge with noise (same as island edge for visual consistency)
+	var wobble := _edge_noise.get_noise_2d(x, z) * 4.0
+	var effective_outer := LOWLAND_RADIUS + wobble
+
+	if dist > effective_outer:
+		return 0.0
+	elif dist > effective_outer - LOWLAND_TAPER:
+		return (effective_outer - dist) / LOWLAND_TAPER
+	else:
+		return 1.0
+
+
 func _generate_block(buffer: VoxelBuffer, origin: Vector3i, _lod: int):
 	var block_size := int(buffer.get_size().x)
 	var oy := origin.y
@@ -103,13 +141,9 @@ func _generate_block(buffer: VoxelBuffer, origin: Vector3i, _lod: int):
 		buffer.fill(AIR, _CHANNEL)
 		return
 
-	if oy + block_size < -4:
-		# Entirely underground (below any valley) → all dirt
-		# But only if we're inside the island at the chunk centre
-		# For simplicity, fill with dirt (the island mask check happens per-column)
+	if oy + block_size < -22:
+		# Entirely underground (below both island and lowland) → all dirt
 		buffer.fill(DIRT, _CHANNEL)
-		# We'll still need to check per-column in the border case, but this is
-		# a fast path for deep chunks under the island interior
 		return
 
 	# Per-column generation
@@ -120,9 +154,26 @@ func _generate_block(buffer: VoxelBuffer, origin: Vector3i, _lod: int):
 			var mask := _island_mask(float(gx), float(gz))
 
 			if mask <= 0.0:
-				# Outside island — all air in this column
-				for y in block_size:
-					buffer.set_voxel(AIR, x, y, z, _CHANNEL)
+				# Outside island — check lowland
+				var low_mask := _lowland_mask(float(gx), float(gz))
+				if low_mask <= 0.0:
+					# Beyond all terrain — air
+					for y in block_size:
+						buffer.set_voxel(AIR, x, y, z, _CHANNEL)
+				else:
+					# Lowland terrain
+					var low_h := _get_lowland_height(float(gx), float(gz))
+					# Taper: reduce hill variation at outer edge, base stays at LOWLAND_LEVEL
+					var low_int := int(round(float(LOWLAND_LEVEL) + (low_h - float(LOWLAND_LEVEL)) * low_mask))
+
+					for y in block_size:
+						var gy := oy + y
+						if gy > low_int:
+							buffer.set_voxel(AIR, x, y, z, _CHANNEL)
+						elif gy == low_int:
+							buffer.set_voxel(GRASS, x, y, z, _CHANNEL)
+						else:
+							buffer.set_voxel(DIRT, x, y, z, _CHANNEL)
 			else:
 				# Inside island
 				var terrain_h := _get_height_at(float(gx), float(gz))

@@ -75,13 +75,15 @@ func build_camp():
 	_build_dock()
 	_build_magic_arches()  # teleporter pair: camp surface ↔ below plateau
 	_scatter_foliage()
+	_build_lowland_trees()
+	_build_lowland_foliage()
 
 	print("CampBuilder: camp structures placed")
 
 
 ## Get surface Y at (x, z) — topmost solid block.
 func _surface_y(x: int, z: int) -> int:
-	for y in range(20, -5, -1):
+	for y in range(20, -25, -1):
 		var v := _voxel_tool.get_voxel(Vector3i(x, y, z))
 		if v != AIR:
 			return y
@@ -405,6 +407,112 @@ func _scatter_foliage():
 
 			# Only place on plain GRASS (not path stone, plaza, dock planks)
 			var sy := _surface_y(fx, fz)
+			if _voxel_tool.get_voxel(Vector3i(fx, sy, fz)) != GRASS:
+				continue
+			if _voxel_tool.get_voxel(Vector3i(fx, sy + 1, fz)) != AIR:
+				continue
+
+			_voxel_tool.set_voxel(Vector3i(fx, sy + 1, fz), block)
+			placed += 1
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOWLAND TREES — scattered around the grassy plain below the camp plateau
+# ══════════════════════════════════════════════════════════════════════════════
+
+const LOWLAND_TREE_POSITIONS := [
+	Vector2i(  0,  58),   # south, near bottom arch
+	Vector2i(-15,  55),   # SW of arch
+	Vector2i( 18,  52),   # SE of arch
+	Vector2i(-28,  62),   # far SW
+	Vector2i( 30,  60),   # far SE
+	Vector2i(-10,  72),   # deep south
+	Vector2i( 12,  70),   # deep south
+	Vector2i(-55,  10),   # west lowland
+	Vector2i(-60, -15),   # NW lowland
+	Vector2i( 58,  15),   # east lowland
+	Vector2i( 55, -20),   # NE lowland
+	Vector2i(-40,  50),   # SW lowland
+]
+
+
+func _build_lowland_trees():
+	for tp in LOWLAND_TREE_POSITIONS:
+		var tx: int = tp.x
+		var tz: int = tp.y
+		var sy := _surface_y(tx, tz)
+
+		# Skip if no ground found (outside lowland radius)
+		if sy < -22:
+			continue
+
+		# 4-block trunk
+		for y in range(sy + 1, sy + 5):
+			_voxel_tool.set_voxel(Vector3i(tx, y, tz), LOG_Y)
+
+		# Canopy ring 1 — 3×3 LEAVES at trunk top (sy+4)
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				_voxel_tool.set_voxel(Vector3i(tx + dx, sy + 4, tz + dz), LEAVES)
+
+		# Canopy ring 2 — 3×3 LEAVES one above (sy+5)
+		for dx in range(-1, 2):
+			for dz in range(-1, 2):
+				_voxel_tool.set_voxel(Vector3i(tx + dx, sy + 5, tz + dz), LEAVES)
+
+		# Cap — single block (sy+6)
+		_voxel_tool.set_voxel(Vector3i(tx, sy + 6, tz), LEAVES)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOWLAND FOLIAGE — Scatter tall grass and dead shrubs on lowland terrain
+# ══════════════════════════════════════════════════════════════════════════════
+func _build_lowland_foliage():
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99  # different seed from camp foliage
+
+	# Zones to avoid (cx, cz, radius) — bottom arch + lowland trees
+	var avoid_cx: Array[int] = [ARCH_BOTTOM_X]
+	var avoid_cz: Array[int] = [ARCH_BOTTOM_Z]
+	var avoid_r:  Array[int] = [            8]
+
+	for tp in LOWLAND_TREE_POSITIONS:
+		avoid_cx.append(tp.x)
+		avoid_cz.append(tp.y)
+		avoid_r.append(4)
+
+	var foliage_blocks: Array[int] = [TALL_GRASS, DEAD_SHRUB]
+	var foliage_counts: Array[int] = [        40,         20]
+
+	for fi in range(foliage_blocks.size()):
+		var block: int = foliage_blocks[fi]
+		var count: int = foliage_counts[fi]
+
+		var placed   := 0
+		var attempts := 0
+		while placed < count and attempts < count * 30:
+			attempts += 1
+			# Random position in the lowland zone (radius 48–85 from centre)
+			var angle := rng.randf() * TAU
+			var dist := rng.randf_range(48.0, 85.0)
+			var fx: int = roundi(cos(angle) * dist)
+			var fz: int = roundi(sin(angle) * dist)
+
+			# Skip structure zones
+			var too_close := false
+			for ai in range(avoid_cx.size()):
+				var dx: int = fx - avoid_cx[ai]
+				var dz: int = fz - avoid_cz[ai]
+				if sqrt(float(dx * dx + dz * dz)) < float(avoid_r[ai]):
+					too_close = true
+					break
+			if too_close:
+				continue
+
+			# Only place on plain GRASS
+			var sy := _surface_y(fx, fz)
+			if sy < -22:
+				continue
 			if _voxel_tool.get_voxel(Vector3i(fx, sy, fz)) != GRASS:
 				continue
 			if _voxel_tool.get_voxel(Vector3i(fx, sy + 1, fz)) != AIR:
