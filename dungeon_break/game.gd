@@ -7,6 +7,7 @@ extends Node
 const PlayerScene = preload("res://dungeon_break/player/player.tscn")
 const IsometricCamera = preload("res://dungeon_break/player/isometric_camera.gd")
 const CampBuilderScript = preload("res://dungeon_break/generator/camp_builder.gd")
+const CampAnimalsScript = preload("res://dungeon_break/world/camp_animals.gd")
 const WandererScript = preload("res://dungeon_break/entities/wanderer_controller.gd")
 const DayNightCycleScript = preload("res://dungeon_break/world/day_night_cycle.gd")
 const CloudShadowCasterShader = preload("res://dungeon_break/world/cloud_shadow_caster.gdshader")
@@ -34,6 +35,7 @@ var _wanderer_ctrl = null
 var _day_night: Node = null
 var _hud: CanvasLayer = null
 var _cloud_shadow_caster: MeshInstance3D = null
+var _camp_animals = null
 var _lowland_grass: MultiMeshInstance3D = null
 var _lowland_grass_mat: ShaderMaterial = null
 
@@ -109,6 +111,10 @@ func _build_camp():
 
 	_camp_builder.build_camp()
 	_npc_sprites = _camp_builder.spawn_rescued_npcs()
+	_camp_animals = CampAnimalsScript.new()
+	_camp_animals.name = "CampAnimals"
+	add_child(_camp_animals)
+	_camp_animals.setup(_camp_builder)
 	_wanderer_ctrl.spawn_camp_wanderers()
 	_build_cloud_shadow_caster()
 	_build_lowland_billboard_grass()
