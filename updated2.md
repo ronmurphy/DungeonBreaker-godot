@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document (continued)
-*Continued from `updated.md`. Last updated: 2026-03-01 (session 7)*
+*Continued from `updated.md`. Last updated: 2026-03-02 (session 9)*
 
 > This file picks up where `updated.md` left off. See that file for the base project overview, tech stack, combat system, class table, and room type reference.
 
@@ -385,3 +385,44 @@ Daniels (`armor_shop`) and Conner (`potion_shop`) now buy items from the player 
 
 **Files touched:**
 - `dungeon_break/ui/shop_ui.gd`
+
+---
+
+## Session 9 Summary — iGPU-Safe Lowlands Grass Wind + Foliage Density Pass
+
+### 1. Lowlands-Only Wind Grass Layer (iGPU-Safe)
+
+Added a lightweight wind-driven grass render pass for the lowlands using one `MultiMeshInstance3D`:
+- Uses existing `tall_grass` assets (`tall_grass.obj` + `tall_grass_sprite.png`)
+- Single draw-style instancing with no grass shadow casting
+- Alpha scissor cutout shader for low overdraw cost
+- Spawn ring constrained to lowlands middle ring (outside camp plateau)
+- Per-preset caps and distance scaling kept for low/medium safety
+
+Final visual tuning made the layer visible on low-end hardware:
+- Reduced alpha cutoff
+- Increased per-instance scale variation
+- Adjusted Y placement so blades anchor into terrain better
+
+**Files touched:**
+- `dungeon_break/world/lowland_billboard_grass.gdshader` (new)
+- `dungeon_break/game.gd`
+
+### 2. Lowlands Voxel Foliage Changed to Multi-Block Patches
+
+Lowland voxel foliage generation was upgraded from sparse singles to clustered patches:
+- `TALL_GRASS` now spawns in multi-block patch groups across lowlands
+- `DEAD_SHRUB` remains as lighter single scatter for variety
+- Existing avoid-zones for arch and lowland trees are preserved
+
+This gives the lowlands a denser, more natural grass read without forcing higher graphics presets.
+
+**Files touched:**
+- `dungeon_break/generator/camp_builder.gd`
+
+### 3. Debug Logging Cleanup
+
+Temporary `LowlandGrass:` spawn/quality debug prints were removed after validation.
+
+**Files touched:**
+- `dungeon_break/game.gd`

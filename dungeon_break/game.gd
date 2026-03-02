@@ -60,7 +60,6 @@ var _bonfire_rest_pending: bool = false
 var _e_was_pressed: bool = false
 var _r_was_pressed: bool = false
 var _c_was_pressed: bool = false
-var _lowland_grass_debug_printed: bool = false
 
 
 func _ready():
@@ -211,7 +210,6 @@ func _build_lowland_billboard_grass() -> void:
 	# - no shadow casting on grass
 	var positions := _collect_lowland_grass_positions(720)
 	if positions.is_empty():
-		print("LowlandGrass: no spawn positions found for middle ring filter.")
 		return
 
 	_lowland_grass_mat = ShaderMaterial.new()
@@ -248,28 +246,6 @@ func _build_lowland_billboard_grass() -> void:
 	_lowland_grass.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	_lowland_grass.extra_cull_margin = 64.0
 	_camp_objects.add_child(_lowland_grass)
-
-	if not _lowland_grass_debug_printed:
-		var min_y := INF
-		var max_y := -INF
-		var min_r := INF
-		var max_r := -INF
-		var sample: Array[String] = []
-		for p in positions:
-			min_y = minf(min_y, p.y)
-			max_y = maxf(max_y, p.y)
-			var r := Vector2(p.x, p.z).length()
-			min_r = minf(min_r, r)
-			max_r = maxf(max_r, r)
-			if sample.size() < 6:
-				sample.append("(%.1f, %.1f, %.1f)" % [p.x, p.y, p.z])
-		print("LowlandGrass: spawned=%d y=[%.1f..%.1f] r=[%.1f..%.1f] preset=%d visible=%d" % [
-			positions.size(), min_y, max_y, min_r, max_r,
-			int(GraphicsManager.current_preset) if GraphicsManager else -1,
-			_lowland_grass.multimesh.visible_instance_count
-		])
-		print("LowlandGrass: sample ", str(sample))
-		_lowland_grass_debug_printed = true
 
 
 func _collect_lowland_grass_positions(target_count: int) -> Array[Vector3]:
@@ -340,11 +316,6 @@ func _apply_lowland_grass_quality() -> void:
 	_lowland_grass.visibility_range_end = vis_end
 	if _lowland_grass_mat:
 		_lowland_grass_mat.set_shader_parameter("sway_strength", sway)
-	if _lowland_grass_debug_printed:
-		print("LowlandGrass: quality preset=%d visible=%d/%d vis_end=%.1f sway=%.2f" % [
-			preset, _lowland_grass.multimesh.visible_instance_count,
-			_lowland_grass.multimesh.instance_count, vis_end, sway
-		])
 
 
 func _wait_for_terrain_editable():
