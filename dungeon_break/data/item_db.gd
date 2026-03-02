@@ -28,6 +28,18 @@ const EQUIP_SLOTS := {
 	ItemType.BOOTS:  "equip_boots",
 }
 
+const ARMOR_TYPES := [
+	ItemType.HELM,
+	ItemType.CHEST,
+	ItemType.LEGS,
+	ItemType.BOOTS,
+]
+
+const CONSUMABLE_TYPES := [
+	ItemType.FOOD,
+	ItemType.POTION,
+]
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ITEM DEFINITIONS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -454,7 +466,7 @@ func create_item(item_id: String) -> Dictionary:
 		push_warning("ItemDB: unknown item '%s'" % item_id)
 		return {}
 	var base: Dictionary = ITEMS[item_id]
-	return base.duplicate(true)
+	return normalize_item(base.duplicate(true))
 
 
 ## Get the item definition (read-only).
@@ -462,9 +474,73 @@ func get_item_def(item_id: String) -> Dictionary:
 	return ITEMS.get(item_id, {})
 
 
+## Return the canonical type for an item dict.
+## Falls back to item id definition for old saves missing/invalid type.
+func resolve_item_type(item: Dictionary) -> int:
+	var t = item.get("type", -1)
+	if t is int:
+		return int(t)
+	var item_id: String = item.get("id", "")
+	if item_id != "":
+		var def: Dictionary = get_item_def(item_id)
+		if not def.is_empty():
+			return int(def.get("type", -1))
+	# Legacy flags fallback
+	if bool(item.get("is_food", false)):
+		return ItemType.FOOD
+	if bool(item.get("is_potion", false)):
+		return ItemType.POTION
+	if bool(item.get("is_weapon", false)):
+		return ItemType.WEAPON
+	if bool(item.get("is_armor", false)):
+		return ItemType.CHEST
+	return int(t)
+
+
+func is_consumable(item: Dictionary) -> bool:
+	return resolve_item_type(item) in CONSUMABLE_TYPES
+
+
+func is_weapon(item: Dictionary) -> bool:
+	return resolve_item_type(item) == ItemType.WEAPON
+
+
+func is_armor(item: Dictionary) -> bool:
+	return resolve_item_type(item) in ARMOR_TYPES
+
+
+## Normalize a loaded/runtime item dict to the canonical schema.
+func normalize_item(item: Dictionary) -> Dictionary:
+	if item.is_empty():
+		return {}
+
+	var out: Dictionary = item.duplicate(true)
+	var item_id: String = out.get("id", "")
+	if item_id != "":
+		var def: Dictionary = get_item_def(item_id)
+		if not def.is_empty():
+			# Keep dynamic/runtime fields (e.g. durability) from save item,
+			# but enforce canonical metadata/type from database.
+			for k in ["id", "name", "icon", "description"]:
+				out[k] = def.get(k, out.get(k, ""))
+			out["type"] = int(def.get("type", resolve_item_type(out)))
+			return out
+
+	out["type"] = resolve_item_type(out)
+	return out
+
+
+func normalize_item_array(arr: Array) -> Array:
+	var out: Array = []
+	for v in arr:
+		if v is Dictionary:
+			out.append(normalize_item(v as Dictionary))
+	return out
+
+
 ## Use a consumable item (food/potion/misc). Returns description of effect, or "" if unusable.
 func use_item(item: Dictionary) -> String:
-	var item_type: int = item.get("type", -1)
+	var item_type: int = resolve_item_type(item)
 
 	# ── MISC: torch fuel items usable outside combat ──
 	if item_type == ItemType.MISC:
@@ -491,6 +567,13 @@ func use_item(item: Dictionary) -> String:
 			return ""
 
 		var msg := ""
+		var heal_amount: int = item.get("heal_amount", 0)
+		if heal_amount > 0:
+			var old_hp: int = GameData.hp
+			GameData.heal(heal_amount)
+			var gained_hp: int = GameData.hp - old_hp
+			if gained_hp > 0:
+				msg += "+%d HP  " % gained_hp
 
 		var guts_bonus: int = item.get("guts_bonus", 0)
 		if guts_bonus > 0:
@@ -539,7 +622,8 @@ func use_item(item: Dictionary) -> String:
 
 ## Equip an item. Returns the previously equipped item (or empty dict).
 func equip_item(item: Dictionary) -> Dictionary:
-	var item_type: int = item.get("type", -1)
+	item = normalize_item(item)
+	var item_type: int = resolve_item_type(item)
 	if item_type not in EQUIP_SLOTS:
 		return {}
 
@@ -584,7 +668,7 @@ func unequip_slot(slot_type: int) -> Dictionary:
 func add_to_backpack(item: Dictionary) -> bool:
 	if GameData.backpack.size() >= GameData.BACKPACK_SIZE + GameData.backpack_bonus_slots:
 		return false
-	GameData.backpack.append(item.duplicate(true))
+	GameData.backpack.append(normalize_item(item))
 	GameData.inventory_changed.emit()
 	return true
 

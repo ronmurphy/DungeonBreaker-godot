@@ -617,13 +617,21 @@ func _companion_use_heal_item(unit_idx: int, on_player: bool) -> bool:
 	var unit: Dictionary = _units[unit_idx]
 	for bi in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[bi]
-		var t: int = item.get("type", -1)
-		if t != ItemDB.ItemType.FOOD and t != ItemDB.ItemType.POTION:
+		if not ItemDB.is_consumable(item):
 			continue
 		var item_name: String = item.get("name", "item")
+		var old_player_hp: int = GameData.hp
 		var msg: String = ItemDB.use_item(item)
 		if msg == "":
 			continue
+		if not on_player:
+			# ItemDB applies healing to GameData (player); redirect that heal to the companion.
+			var gained_player_hp: int = GameData.hp - old_player_hp
+			if gained_player_hp > 0:
+				GameData.hp = old_player_hp
+				GameData.hp_changed.emit(GameData.hp, GameData.hp_max)
+				unit["hp"] = mini(int(unit["hp"]) + gained_player_hp, int(unit["hp_max"]))
+				_units[unit_idx] = unit
 		ItemDB.remove_from_backpack(bi)
 		if on_player:
 			action_resolved.emit("[color=lime]%s uses your %s on you![/color]  %s" % [unit["name"], item_name, msg])

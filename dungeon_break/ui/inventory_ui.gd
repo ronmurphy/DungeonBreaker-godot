@@ -536,7 +536,7 @@ func _refresh_backpack():
 			btn.text = item.get("name", "?").substr(0, 3)
 			btn.add_theme_font_size_override("font_size", 9)
 
-		match item.get("type", -1):
+		match ItemDB.resolve_item_type(item):
 			0:          s.bg_color = Color(0.2, 0.1, 0.1, 0.9);  s.border_color = Color(0.8, 0.3, 0.3)
 			1, 2, 3, 4: s.bg_color = Color(0.1, 0.1, 0.2, 0.9);  s.border_color = Color(0.3, 0.5, 0.85)
 			5:          s.bg_color = Color(0.1, 0.14, 0.07, 0.9); s.border_color = Color(0.5, 0.75, 0.3)
@@ -621,7 +621,7 @@ func _refresh_detail():
 	if val > 0:   stats_text += "  ◆ %d g" % val
 	_detail_stats.text = stats_text.strip_edges()
 
-	var item_type: int = item.get("type", -1)
+	var item_type: int = ItemDB.resolve_item_type(item)
 
 	if _selected_index <= -100:
 		_add_action_btn("Unequip", Color(0.7, 0.55, 0.3), func():
@@ -665,16 +665,18 @@ func _refresh_detail():
 
 		var _is_usable_misc: bool = item_type == ItemDB_Script.ItemType.MISC and (
 			item.get("torch_fuel", 0) as int > 0 or item.get("special_effect", "") as String != "")
-		if item_type == ItemDB_Script.ItemType.FOOD or item_type == ItemDB_Script.ItemType.POTION or _is_usable_misc:
+		if ItemDB.is_consumable(item) or _is_usable_misc:
 			_add_action_btn("Use", Color(0.3, 0.85, 0.35), func():
 				if _selected_index < 0 or _selected_index >= GameData.backpack.size():
 					return
 				var item_to_use: Dictionary = GameData.backpack[_selected_index]
 				var msg: String = ItemDB.use_item(item_to_use)
 				if msg == "":
-					var t2: int = item_to_use.get("type", -1)
+					var t2: int = ItemDB.resolve_item_type(item_to_use)
 					if t2 == ItemDB_Script.ItemType.MISC and item_to_use.get("torch_fuel", 0) as int > 0:
 						_show_toast("Torch already at full fuel.")
+					elif GameData.in_combat:
+						_show_toast("No effect right now.")
 					else:
 						_show_toast("Consumables only grant buffs during combat.")
 					return
@@ -790,7 +792,7 @@ func _do_equip_to_companion(key: String):
 	var companion: Dictionary = GameData.get_companion(key)
 	if companion.is_empty():
 		return
-	var is_weapon: bool = item.get("type", -1) == ItemDB_Script.ItemType.WEAPON
+	var is_weapon: bool = ItemDB.is_weapon(item)
 	var slot_key: String = "equip_weapon" if is_weapon else "equip_armor"
 	var old: Dictionary = companion.get(slot_key, {})
 	companion[slot_key] = item
@@ -853,8 +855,7 @@ func _unhandled_input(event: InputEvent):
 func _quick_use_consumable():
 	for i in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[i]
-		var t: int = item.get("type", -1)
-		if t == ItemDB.ItemType.FOOD or t == ItemDB.ItemType.POTION:
+		if ItemDB.is_consumable(item):
 			_quick_use_at_index(i)
 			return
 	_show_toast("No food or potions!")
@@ -864,11 +865,14 @@ func _quick_use_at_index(idx: int):
 	if idx < 0 or idx >= GameData.backpack.size():
 		return
 	var item: Dictionary = GameData.backpack[idx]
-	var t: int = item.get("type", -1)
-	if t == ItemDB.ItemType.FOOD or t == ItemDB.ItemType.POTION:
+	var t: int = ItemDB.resolve_item_type(item)
+	if ItemDB.is_consumable(item):
 		var msg: String = ItemDB.use_item(item)
 		if msg == "":
-			_show_toast("Consumables only grant buffs during combat.")
+			if GameData.in_combat:
+				_show_toast("No effect right now.")
+			else:
+				_show_toast("Consumables only grant buffs during combat.")
 			return
 		ItemDB.remove_from_backpack(idx)
 		_show_toast("%s: %s" % [item.get("name", "Item"), msg])
@@ -935,7 +939,8 @@ func _group_backpack_items(filter_types: Array = []) -> Array:
 	var id_map: Dictionary = {}
 	for i in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[i]
-		if not filter_types.is_empty() and item.get("type", -1) not in filter_types:
+		var item_type: int = ItemDB.resolve_item_type(item)
+		if not filter_types.is_empty() and item_type not in filter_types:
 			continue
 		var item_id: String = item.get("id", "_%d" % i)
 		if item_id in id_map:

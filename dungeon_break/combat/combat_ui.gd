@@ -699,7 +699,7 @@ func _get_usable_items() -> Array:
 	var result: Array = []
 	for i in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[i]
-		var t: int = item.get("type", -1)
+		var t: int = _resolve_item_type(item)
 		if t == ItemDB.ItemType.FOOD or t == ItemDB.ItemType.POTION:
 			result.append({"item": item, "index": i})
 	return result
@@ -720,7 +720,7 @@ func _build_item_grid_slot(group: Dictionary) -> Control:
 	btn.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 
 	var s := StyleBoxFlat.new()
-	var item_type: int = item.get("type", -1)
+	var item_type: int = _resolve_item_type(item)
 	if item_type == ItemDB.ItemType.FOOD:
 		s.bg_color = Color(0.1, 0.14, 0.07, 0.92)
 		s.border_color = Color(0.5, 0.75, 0.3)
@@ -1262,7 +1262,8 @@ func _group_backpack_items(filter_types: Array = []) -> Array:
 	var id_map: Dictionary = {}
 	for i in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[i]
-		if not filter_types.is_empty() and item.get("type", -1) not in filter_types:
+		var t: int = _resolve_item_type(item)
+		if not filter_types.is_empty() and t not in filter_types:
 			continue
 		var item_id: String = item.get("id", "_%d" % i)
 		if item_id in id_map:
@@ -1273,6 +1274,10 @@ func _group_backpack_items(filter_types: Array = []) -> Array:
 			id_map[item_id] = groups.size()
 			groups.append({"item": item, "indices": [i], "count": 1})
 	return groups
+
+
+func _resolve_item_type(item: Dictionary) -> int:
+	return ItemDB.resolve_item_type(item)
 
 
 # ── Combat log ────────────────────────────────────────────────────────────────
