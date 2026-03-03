@@ -145,6 +145,12 @@ var current_floor: int = 1
 var floors_cleared: int = 0
 var total_kills: int = 0
 
+# Run stats (reset each new game)
+var run_gold_earned: int = 0
+var run_damage_dealt: int = 0
+var run_damage_taken: int = 0
+var cause_of_death: String = ""
+
 # Job progression (FFT-style simplified)
 var unlocked_jobs: Dictionary = {}   # int job_id -> bool
 var job_rank: Dictionary = {}        # int job_id -> int rank
@@ -270,6 +276,10 @@ func _init_class(cls: PlayerClass):
 	scene_state  = "camp"
 	dungeon_seed = 0
 	in_combat = false
+	run_gold_earned = 0
+	run_damage_dealt = 0
+	run_damage_taken = 0
+	cause_of_death = ""
 	_reset_job_progress()
 	clear_combat_buffs()
 
@@ -412,6 +422,7 @@ func take_damage(raw: int) -> int:
 ## Deal exact damage (no AC reduction). Used by tactical combat which
 ## already handles defense via clash rolls.
 func take_raw_damage(amount: int) -> int:
+	run_damage_taken += amount
 	hp = maxi(0, hp - amount)
 	hp_changed.emit(hp, hp_max)
 	if hp <= 0:
@@ -427,6 +438,8 @@ func heal(amount: int):
 
 ## Add gold.
 func add_gold(amount: int):
+	if amount > 0:
+		run_gold_earned += amount
 	gold += amount
 	gold_changed.emit(gold)
 

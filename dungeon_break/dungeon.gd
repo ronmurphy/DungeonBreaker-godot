@@ -13,6 +13,7 @@ const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
 signal return_to_camp()
 signal advance_floor()
 signal dungeon_ready()
+signal player_defeated()
 
 @onready var _terrain: VoxelTerrain = $VoxelTerrain
 @onready var _players: Node = $Players
@@ -464,7 +465,7 @@ func _trigger_room_combat(room: Dictionary):
 		_camera.set_combat_mode(true)
 
 
-func _on_combat_ended(victory: bool, room: Dictionary):
+func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 	_combat_active = false
 	_set_wall_combat_mode(false)
 	if _player and is_instance_valid(_player):
@@ -524,10 +525,12 @@ func _on_combat_ended(victory: bool, room: Dictionary):
 				var npc_name: String = npc_def.get("name", new_npc) as String
 				_hud.show_toast("%s has joined the camp!" % npc_name, 5.0)
 	else:
-		# Player died — return to camp with penalty
-		GameData.hp = GameData.hp_max / 2
-		GameData.gold = maxi(0, GameData.gold - 10)
-		_do_return_to_camp()
+		if fled:
+			# Player fled — return to camp
+			_do_return_to_camp()
+		else:
+			# Player died — show death screen
+			player_defeated.emit()
 
 
 func _enable_boss_portal():

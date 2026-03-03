@@ -5,6 +5,7 @@ const CharSelectScene  = preload("res://dungeon_break/ui/character_select.tscn")
 const CampScene        = preload("res://dungeon_break/game.tscn")
 const DungeonScene     = preload("res://dungeon_break/dungeon.tscn")
 const SaveSlotUIScript = preload("res://dungeon_break/ui/save_slot_ui.gd")
+const DeathScreenScript = preload("res://dungeon_break/ui/death_screen.gd")
 
 var _current_scene: Node = null
 
@@ -318,6 +319,7 @@ func _load_dungeon(floor_num: int):
 	dungeon.return_to_camp.connect(_on_return_to_camp)
 	dungeon.advance_floor.connect(_on_advance_floor)
 	dungeon.dungeon_ready.connect(_hide_load_overlay, CONNECT_ONE_SHOT)
+	dungeon.player_defeated.connect(_on_player_defeated, CONNECT_ONE_SHOT)
 	print("Main: dungeon floor %d loaded" % floor_num)
 
 
@@ -345,3 +347,12 @@ func _on_return_to_camp():
 
 func _on_advance_floor():
 	_load_dungeon(GameData.current_floor)
+
+
+func _on_player_defeated():
+	_clear_current()
+	var ds := DeathScreenScript.new()
+	ds.name = "DeathScreen"
+	ds.new_run_requested.connect(func(): ds.queue_free(); _clear_current(); _show_character_select())
+	ds.menu_requested.connect(func(): ds.queue_free(); _clear_current(); _show_save_slots())
+	add_child(ds)

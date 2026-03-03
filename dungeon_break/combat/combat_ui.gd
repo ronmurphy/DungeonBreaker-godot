@@ -340,7 +340,7 @@ func _on_unit_moved(unit: Dictionary, _from: Vector2i, to: Vector2i):
 		_log("[color=gray]Moved to (%d, %d)[/color]" % [to.x, to.y])
 
 
-func _on_combat_ended(victory: bool):
+func _on_combat_ended(victory: bool, _fled: bool = false):
 	_action_panel.visible = false
 	_enemy_target_panel.visible = false
 	_close_sub_panel()

@@ -38,7 +38,7 @@ const _SFX_HIT  := "res://assets/sfx/Craft.ogg"
 const _SFX_MISS := "res://assets/sfx/Select.ogg"
 const _SFX_GUTS := "res://assets/sfx/Fire.ogg"
 
-signal combat_ended(victory: bool)
+signal combat_ended(victory: bool, fled: bool)
 signal combat_started()
 signal turn_order_changed(order: Array)
 signal unit_turn_started(unit: Dictionary)
@@ -86,6 +86,7 @@ var _next_unit_uid: int = 1
 
 var _room: Dictionary = {}
 var _round: int = 0
+var _last_attacker_name: String = ""
 
 # True while waiting for the player to resolve a recruit swap/replace modal.
 # player_act() awaits recruit_decision_made before advancing the turn.
@@ -1097,6 +1098,8 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 			attacker["name"], counter_dmg])
 	elif enemy_roll > player_roll:
 		var dmg := maxi(1, enemy_roll - player_roll)
+		if target["type"] == "player":
+			_last_attacker_name = attacker.get("name", "an enemy")
 		_apply_damage(target_idx, dmg)
 		action_resolved.emit("[color=orange]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
 			attacker["name"], target["name"], enemy_roll, player_roll, dmg])
@@ -1156,7 +1159,7 @@ func _do_flee():
 		action_resolved.emit("[color=yellow]Escaped![/color]")
 		phase = Phase.ENDED
 		_cleanup()
-		combat_ended.emit(false)
+		combat_ended.emit(false, true)
 	else:
 		action_resolved.emit("[color=gray]Can't escape![/color]")
 
@@ -1202,6 +1205,7 @@ func _apply_damage(unit_idx: int, damage: int, suppress_fx: bool = false):
 		GameData.take_raw_damage(damage)
 		unit["hp"] = GameData.hp
 	else:
+		GameData.run_damage_dealt += damage
 		# Update entity meta (works for both enemies and companions)
 		if is_instance_valid(unit.get("entity", null)):
 			unit["entity"].set_meta("hp", unit["hp"])
@@ -1340,14 +1344,15 @@ func _check_end() -> bool:
 		phase = Phase.ENDED
 		action_resolved.emit("[color=green]VICTORY![/color]")
 		_cleanup()
-		combat_ended.emit(true)
+		combat_ended.emit(true, false)
 		return true
 
 	if GameData.hp <= 0:
 		phase = Phase.ENDED
 		action_resolved.emit("[color=red]DEFEAT...[/color]")
+		GameData.cause_of_death = ("Slain by " + _last_attacker_name) if _last_attacker_name != "" else "Fallen in battle"
 		_cleanup()
-		combat_ended.emit(false)
+		combat_ended.emit(false, false)
 		return true
 
 	return false
