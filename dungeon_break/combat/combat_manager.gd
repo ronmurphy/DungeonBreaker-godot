@@ -1055,13 +1055,13 @@ func _do_attack(attacker_idx: int, target_idx: int):
 						_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.5, 0.1))
 						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.18)
-						# AoE splash — half damage to all units adjacent to target
+						# AoE splash — half damage to all ENEMY units adjacent to target
 						var aoe_dmg: int = maxi(1, dmg / 2)
 						for i in _units.size():
 							if i == target_idx:
 								continue
 							var u: Dictionary = _units[i]
-							if not u["alive"]:
+							if not u["alive"] or u["type"] == "player" or u["type"] == "companion":
 								continue
 							var d: int = absi(u["grid_pos"].x - to_gpos.x) + absi(u["grid_pos"].y - to_gpos.y)
 							if d <= 1:
@@ -1226,6 +1226,16 @@ func _do_attack(attacker_idx: int, target_idx: int):
 				attacker["name"], _ranged_verb(weapon_id), target["name"], player_roll, enemy_roll, dmg, log_suffix])
 		else:
 			_apply_damage(target_idx, dmg)
+			# Ring of Vampirism — heal % of melee damage dealt
+			var vamp_pct: int = GameData.get_accessory_value("vampirism")
+			if vamp_pct > 0:
+				var vamp_heal: int = maxi(1, dmg * vamp_pct / 100)
+				GameData.heal(vamp_heal)
+				var p_unit: Dictionary = _units[attacker_idx]
+				p_unit["hp"] = GameData.hp
+				if tactical_grid:
+					var a_wpos := tactical_grid.grid_to_world(p_unit["grid_pos"]) + Vector3(0, 1.6, 0)
+					_fx_float_text(a_wpos, "+%d HP" % vamp_heal, Color(0.9, 0.2, 0.3))
 			action_resolved.emit("[color=yellow]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
 				attacker["name"], target["name"], player_roll, enemy_roll, dmg])
 	elif enemy_roll > player_roll:
@@ -1269,6 +1279,12 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 		_apply_damage(target_idx, dmg)
 		action_resolved.emit("[color=orange]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
 			attacker["name"], target["name"], enemy_roll, player_roll, dmg])
+		# Ring of Thorns — reflect flat damage back to melee attackers
+		if target["type"] == "player":
+			var thorns_dmg: int = GameData.get_accessory_value("thorns")
+			if thorns_dmg > 0 and attacker["alive"]:
+				_apply_damage(attacker_idx, thorns_dmg)
+				action_resolved.emit("[color=mediumpurple]Ring of Thorns[/color] reflects [color=red]%d damage![/color]" % thorns_dmg)
 	else:
 		action_resolved.emit("[color=gray]%s attacks %s but misses! [color=white]%d vs %d[/color][/color]" % [
 			attacker["name"], target["name"], enemy_roll, player_roll])
@@ -1585,7 +1601,20 @@ func _apply_damage(unit_idx: int, damage: int, suppress_fx: bool = false):
 		_fx_camera_shake(0.18 if is_player_hit else 0.10)
 
 	if unit["hp"] <= 0:
-		_kill_unit(unit_idx)
+		# Phoenix Crystal — revive once per run at 50% HP
+		if unit["type"] == "player" and GameData.has_accessory_passive("phoenix") and not GameData.phoenix_used:
+			GameData.phoenix_used = true
+			var revive_hp: int = maxi(1, GameData.hp_max * GameData.get_accessory_value("phoenix") / 100)
+			unit["hp"] = revive_hp
+			GameData.hp = revive_hp
+			GameData.hp_changed.emit(GameData.hp, GameData.hp_max)
+			action_resolved.emit("[color=gold]☀ Phoenix Crystal blazes![/color] Revived with [color=lime]%d HP![/color]" % revive_hp)
+			if tactical_grid:
+				var pw := tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.2, 0)
+				_fx_float_text(pw, "REVIVE!", Color(1.0, 0.85, 0.2))
+				_fx_camera_shake(0.25)
+		else:
+			_kill_unit(unit_idx)
 
 
 func _kill_unit(unit_idx: int):
@@ -1622,6 +1651,19 @@ func _kill_unit(unit_idx: int):
 
 		unit_defeated.emit(unit)
 		action_resolved.emit("[color=green]%s defeated![/color] +%d gold%s%s" % [unit["name"], gold_drop, xp_msg, loot_msg])
+
+		# Blood Pendant — heal on enemy kill
+		var kill_heal: int = GameData.get_accessory_value("on_kill_heal")
+		if kill_heal > 0:
+			GameData.heal(kill_heal)
+			# Update player unit hp in combat array
+			for pu in _units:
+				if pu["type"] == "player" and pu["alive"]:
+					pu["hp"] = GameData.hp
+					if tactical_grid:
+						var hw := tactical_grid.grid_to_world(pu["grid_pos"]) + Vector3(0, 1.6, 0)
+						_fx_float_text(hw, "+%d HP" % kill_heal, Color(0.9, 0.2, 0.3))
+					break
 
 	elif unit["type"] == "companion":
 		if is_instance_valid(unit.get("entity", null)):

@@ -37,8 +37,10 @@ const _POTION_T1 := ["honey", "cookie", "energy_bar", "potion_red", "potion_blue
 # Tier 2 adds: remaining potions + buff foods
 
 const _MAGIC_T0 := ["blood_pendant", "poison_dart", "crystal_wand"]
-const _MAGIC_T1 := ["magic_knife", "shuriken"]
-# Tier 2 adds: ancient_amulet, fire_staff, ice_bow, skull_wand, storm_staff
+const _MAGIC_T1 := ["magic_knife", "shuriken", "ring_of_thorns", "ring_of_vampirism"]
+# Tier 2 adds: ancient_amulet, fire_staff, ice_bow, skull_wand, storm_staff,
+#   ring_of_fortitude, gauntlet_of_might, hourglass_of_haste, phoenix_crystal,
+#   elixir_power, elixir_iron, elixir_vitality, elixir_speed
 
 var _npc_key: String = ""
 var _gold_label: Label = null
@@ -406,11 +408,12 @@ func _item_allowed(id: String, itype: int, role: String, tier: int) -> bool:
 			return itype == ItemDB.ItemType.POTION \
 				or (itype == ItemDB.ItemType.FOOD and id in POTION_SHOP_FOOD)
 		"magic_shop":
-			if itype != ItemDB.ItemType.MISC and id not in MAGIC_WEAPON_IDS:
+			if itype != ItemDB.ItemType.MISC and itype != ItemDB.ItemType.ACCESSORY \
+					and itype != ItemDB.ItemType.ELIXIR and id not in MAGIC_WEAPON_IDS:
 				return false
 			if tier == 0:   return id in _MAGIC_T0
 			elif tier == 1: return id in _MAGIC_T0 or id in _MAGIC_T1
-			return true  # tier 2: all magic items
+			return true  # tier 2: all magic items + accessories + elixirs
 	return false
 
 

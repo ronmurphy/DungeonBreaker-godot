@@ -5,27 +5,30 @@ extends Node
 ## Autoloaded as "ItemDB".
 
 # ── Item Types ───────────────────────────────────────────────────────────────
-enum ItemType { WEAPON, HELM, CHEST, LEGS, BOOTS, FOOD, POTION, KEY, MISC }
+enum ItemType { WEAPON, HELM, CHEST, LEGS, BOOTS, FOOD, POTION, KEY, MISC, ACCESSORY, ELIXIR }
 
 const TYPE_NAMES := {
-	ItemType.WEAPON: "Weapon",
-	ItemType.HELM:   "Helm",
-	ItemType.CHEST:  "Chest",
-	ItemType.LEGS:   "Legs",
-	ItemType.BOOTS:  "Boots",
-	ItemType.FOOD:   "Food",
-	ItemType.POTION: "Potion",
-	ItemType.KEY:    "Key",
-	ItemType.MISC:   "Misc",
+	ItemType.WEAPON:    "Weapon",
+	ItemType.HELM:      "Helm",
+	ItemType.CHEST:     "Chest",
+	ItemType.LEGS:      "Legs",
+	ItemType.BOOTS:     "Boots",
+	ItemType.FOOD:      "Food",
+	ItemType.POTION:    "Potion",
+	ItemType.KEY:       "Key",
+	ItemType.MISC:      "Misc",
+	ItemType.ACCESSORY: "Accessory",
+	ItemType.ELIXIR:    "Elixir",
 }
 
 # ── Item slot mapping ────────────────────────────────────────────────────────
 const EQUIP_SLOTS := {
-	ItemType.WEAPON: "equip_weapon",
-	ItemType.HELM:   "equip_helm",
-	ItemType.CHEST:  "equip_chest",
-	ItemType.LEGS:   "equip_legs",
-	ItemType.BOOTS:  "equip_boots",
+	ItemType.WEAPON:    "equip_weapon",
+	ItemType.HELM:      "equip_helm",
+	ItemType.CHEST:     "equip_chest",
+	ItemType.LEGS:      "equip_legs",
+	ItemType.BOOTS:     "equip_boots",
+	ItemType.ACCESSORY: "equip_accessory",
 }
 
 const ARMOR_TYPES := [
@@ -47,6 +50,7 @@ const STACKABLE_TYPES := [
 	ItemType.POTION,
 	ItemType.KEY,
 	ItemType.MISC,
+	ItemType.ELIXIR,
 ]
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -214,18 +218,80 @@ const ITEMS := {
 		"ac_bonus": 1, "value": 25,
 	},
 
-	# ── ACCESSORIES ──────────────────────────────────────────────────────────
+	# ── ACCESSORIES (equippable — one slot) ──────────────────────────────────
 	"blood_pendant": {
-		"id": "blood_pendant", "name": "Blood Pendant", "type": ItemType.MISC,
+		"id": "blood_pendant", "name": "Blood Pendant", "type": ItemType.ACCESSORY,
 		"icon": "res://assets/art/tools/blood_pendant.png",
 		"description": "Gain 1 HP per kill.",
-		"value": 50, "on_kill_heal": 1,
+		"value": 50, "passive": "on_kill_heal", "passive_value": 1,
 	},
 	"ancient_amulet": {
-		"id": "ancient_amulet", "name": "Ancient Amulet", "type": ItemType.MISC,
+		"id": "ancient_amulet", "name": "Ancient Amulet", "type": ItemType.ACCESSORY,
 		"icon": "res://assets/art/tools/ancientAmulet.png",
-		"description": "+1 to all stats.",
-		"value": 100, "all_stats_bonus": 1,
+		"description": "+1 to all stats while equipped.",
+		"value": 100, "passive": "all_stats", "passive_value": 1,
+	},
+	"ring_of_thorns": {
+		"id": "ring_of_thorns", "name": "Ring of Thorns", "type": ItemType.ACCESSORY,
+		"icon": "res://assets/art/tools/red_ring_1.png",
+		"description": "Reflect 2 damage back to melee attackers.",
+		"value": 55, "passive": "thorns", "passive_value": 2,
+	},
+	"ring_of_vampirism": {
+		"id": "ring_of_vampirism", "name": "Ring of Vampirism", "type": ItemType.ACCESSORY,
+		"icon": "res://assets/art/tools/red_ring_2.png",
+		"description": "Heal 25% of melee damage dealt.",
+		"value": 65, "passive": "vampirism", "passive_value": 25,
+	},
+	"ring_of_fortitude": {
+		"id": "ring_of_fortitude", "name": "Ring of Fortitude", "type": ItemType.ACCESSORY,
+		"icon": "res://assets/art/tools/ring_silver_green.png",
+		"description": "+2 AC and +5 max HP while equipped.",
+		"value": 70, "passive": "fortitude", "passive_value": 2, "hp_bonus": 5,
+	},
+	"phoenix_crystal": {
+		"id": "phoenix_crystal", "name": "Phoenix Crystal", "type": ItemType.ACCESSORY,
+		"icon": "res://assets/art/tools/pheonix_crystal.png",
+		"description": "Revive once per dungeon run at 50% HP when killed.",
+		"value": 120, "passive": "phoenix", "passive_value": 50,
+	},
+	"gauntlet_of_might": {
+		"id": "gauntlet_of_might", "name": "Gauntlet of Might", "type": ItemType.ACCESSORY,
+		"icon": "res://assets/art/tools/gauntlet_of_strength.png",
+		"description": "+3 ATK while equipped.",
+		"value": 80, "passive": "atk_bonus", "passive_value": 3,
+	},
+	"hourglass_of_haste": {
+		"id": "hourglass_of_haste", "name": "Hourglass of Haste", "type": ItemType.ACCESSORY,
+		"icon": "res://assets/art/tools/pheonix_hourglass.png",
+		"description": "+2 SPD while equipped.",
+		"value": 75, "passive": "spd_bonus", "passive_value": 2,
+	},
+
+	# ── ELIXIRS (permanent stat upgrades — consumed on use) ──────────────────
+	"elixir_power": {
+		"id": "elixir_power", "name": "Elixir of Power", "type": ItemType.ELIXIR,
+		"icon": "res://assets/art/tools/limited_potion_red.png",
+		"description": "Permanently grants +1 STR. (One-time use)",
+		"value": 60, "perm_stat": "str", "perm_amount": 1,
+	},
+	"elixir_iron": {
+		"id": "elixir_iron", "name": "Elixir of Iron", "type": ItemType.ELIXIR,
+		"icon": "res://assets/art/tools/limited_potion_grey.png",
+		"description": "Permanently grants +1 AC. (One-time use)",
+		"value": 60, "perm_stat": "ac", "perm_amount": 1,
+	},
+	"elixir_vitality": {
+		"id": "elixir_vitality", "name": "Elixir of Vitality", "type": ItemType.ELIXIR,
+		"icon": "res://assets/art/tools/limited_potion_green.png",
+		"description": "Permanently grants +5 max HP. (One-time use)",
+		"value": 60, "perm_stat": "hp", "perm_amount": 5,
+	},
+	"elixir_speed": {
+		"id": "elixir_speed", "name": "Elixir of Speed", "type": ItemType.ELIXIR,
+		"icon": "res://assets/art/tools/limited_potion_blue.png",
+		"description": "Permanently grants +1 SPD. (One-time use)",
+		"value": 60, "perm_stat": "spd", "perm_amount": 1,
 	},
 
 	# ── FOOD ─────────────────────────────────────────────────────────────────
@@ -469,7 +535,19 @@ const ENEMY_LOOT := [
 
 	# Rare accessories
 	[3, 99, 1,  "blood_pendant"],
+	[4, 99, 1,  "ring_of_thorns"],
+	[4, 99, 1,  "ring_of_vampirism"],
+	[5, 99, 1,  "ring_of_fortitude"],
 	[5, 99, 1,  "ancient_amulet"],
+	[6, 99, 1,  "gauntlet_of_might"],
+	[6, 99, 1,  "hourglass_of_haste"],
+	[7, 99, 1,  "phoenix_crystal"],
+
+	# Rare elixirs (permanent stat boosts)
+	[4, 99, 1,  "elixir_power"],
+	[4, 99, 1,  "elixir_iron"],
+	[5, 99, 1,  "elixir_vitality"],
+	[5, 99, 1,  "elixir_speed"],
 ]
 
 # Drop chance per enemy kill (out of 100)
@@ -559,6 +637,10 @@ func is_armor(item: Dictionary) -> bool:
 	return resolve_item_type(item) in ARMOR_TYPES
 
 
+func is_accessory(item: Dictionary) -> bool:
+	return resolve_item_type(item) == ItemType.ACCESSORY
+
+
 func is_stackable(item: Dictionary) -> bool:
 	return resolve_item_type(item) in STACKABLE_TYPES
 
@@ -620,9 +702,32 @@ func stack_item_array(arr: Array) -> Array:
 	return out
 
 
-## Use a consumable item (food/potion/misc). Returns description of effect, or "" if unusable.
+## Use a consumable item (food/potion/misc/elixir). Returns description of effect, or "" if unusable.
 func use_item(item: Dictionary) -> String:
 	var item_type: int = resolve_item_type(item)
+
+	# ── ELIXIR: permanent stat upgrade (usable anywhere, even outside combat) ──
+	if item_type == ItemType.ELIXIR:
+		var stat_key: String = item.get("perm_stat", "")
+		var amount: int = item.get("perm_amount", 0)
+		if stat_key == "" or amount <= 0:
+			return ""
+		match stat_key:
+			"str":
+				GameData.stat_str += amount
+				return "Permanently gained +%d STR!" % amount
+			"ac":
+				GameData.ac += amount
+				return "Permanently gained +%d AC!" % amount
+			"hp":
+				GameData.hp_max += amount
+				GameData.hp = mini(GameData.hp + amount, GameData.hp_max)
+				GameData.hp_changed.emit(GameData.hp, GameData.hp_max)
+				return "Permanently gained +%d max HP!" % amount
+			"spd":
+				GameData.stat_spd += amount
+				return "Permanently gained +%d SPD!" % amount
+		return ""
 
 	# ── MISC: torch fuel items usable outside combat ──
 	if item_type == ItemType.MISC:
@@ -724,6 +829,12 @@ func equip_item(item: Dictionary) -> Dictionary:
 			if old_spd > 0:
 				GameData.stat_spd -= old_spd
 
+	# Apply / remove accessory passive stat bonuses
+	if item_type == ItemType.ACCESSORY:
+		_apply_accessory_stats(item, true)
+		if old_item and not old_item.is_empty():
+			_apply_accessory_stats(old_item, false)
+
 	GameData.equipment_changed.emit()
 	return old_item
 
@@ -742,8 +853,36 @@ func unequip_slot(slot_type: int) -> Dictionary:
 		if spd_bonus > 0:
 			GameData.stat_spd -= spd_bonus
 
+	if item and slot_type == ItemType.ACCESSORY:
+		_apply_accessory_stats(item, false)
+
 	GameData.equipment_changed.emit()
 	return item
+
+
+## Apply or remove accessory passive stat changes (equip=true / unequip=false).
+func _apply_accessory_stats(item: Dictionary, equipping: bool) -> void:
+	var sign: int = 1 if equipping else -1
+	var passive: String = item.get("passive", "")
+	match passive:
+		"all_stats":
+			var v: int = item.get("passive_value", 0) * sign
+			GameData.stat_str += v
+			GameData.stat_dex += v
+			GameData.stat_int += v
+			GameData.stat_lck += v
+			GameData.stat_spd += v
+		"fortitude":
+			GameData.ac += item.get("passive_value", 0) * sign
+			GameData.hp_max += item.get("hp_bonus", 0) * sign
+			GameData.hp = mini(GameData.hp, GameData.hp_max)
+			GameData.hp_changed.emit(GameData.hp, GameData.hp_max)
+		"atk_bonus", "spd_bonus":
+			var v: int = item.get("passive_value", 0) * sign
+			if passive == "atk_bonus":
+				GameData.combat_buff_atk += v
+			else:
+				GameData.stat_spd += v
 
 
 ## Add item to backpack. Returns true if added, false if full.

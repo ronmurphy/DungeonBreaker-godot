@@ -219,6 +219,8 @@ var equip_helm: Dictionary = {}
 var equip_chest: Dictionary = {}
 var equip_legs: Dictionary = {}
 var equip_boots: Dictionary = {}
+var equip_accessory: Dictionary = {} # Accessory slot (ring / pendant / crystal)
+var phoenix_used: bool = false       # Phoenix Crystal one-time revive consumed this run
 
 # ── Guts (delayed-power attack meter) ────────────────────────────────────────
 var guts: int = 0
@@ -304,6 +306,8 @@ func _init_class(cls: PlayerClass):
 	equip_chest = {}
 	equip_legs = {}
 	equip_boots = {}
+	equip_accessory = {}
+	phoenix_used = false
 	status_effects.clear()
 	rescued_npcs = ["daniels", "conner"]
 	companions.clear()
@@ -501,6 +505,18 @@ func get_total_ac() -> int:
 		if piece:
 			total += piece.get("ac_bonus", 0)
 	return total + ac_bonus_temp + combat_buff_ac
+
+
+## Check if the equipped accessory has the given passive id.
+func has_accessory_passive(passive_id: String) -> bool:
+	return equip_accessory.get("passive", "") == passive_id
+
+
+## Get the passive value of the equipped accessory (0 if none / wrong passive).
+func get_accessory_value(passive_id: String) -> int:
+	if equip_accessory.get("passive", "") == passive_id:
+		return int(equip_accessory.get("passive_value", 0))
+	return 0
 
 
 func get_combat_speed() -> int:
@@ -825,6 +841,8 @@ func to_save_dict() -> Dictionary:
 		"equip_chest": equip_chest.duplicate(true),
 		"equip_legs": equip_legs.duplicate(true),
 		"equip_boots": equip_boots.duplicate(true),
+		"equip_accessory": equip_accessory.duplicate(true),
+		"phoenix_used": phoenix_used,
 		"guts": guts,
 		"scene_state":       scene_state,
 		"dungeon_seed":      dungeon_seed,
@@ -875,6 +893,8 @@ func from_save_dict(data: Dictionary):
 	equip_chest = ItemDB.normalize_item(data.get("equip_chest", {}))
 	equip_legs = ItemDB.normalize_item(data.get("equip_legs", {}))
 	equip_boots = ItemDB.normalize_item(data.get("equip_boots", {}))
+	equip_accessory = ItemDB.normalize_item(data.get("equip_accessory", {}))
+	phoenix_used = bool(data.get("phoenix_used", false))
 	guts         = data.get("guts",         0)
 	scene_state  = data.get("scene_state",  "camp")
 	dungeon_seed = data.get("dungeon_seed", 0)

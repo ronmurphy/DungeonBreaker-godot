@@ -222,6 +222,12 @@ func _build_paper_doll_col(parent: HBoxContainer):
 	col.add_child(boots_row)
 	boots_row.add_child(_make_equip_slot("Boots", -104, Color(0.3, 0.4, 0.65, 0.7)))
 
+	# Accessory slot
+	var acc_row := HBoxContainer.new()
+	acc_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(acc_row)
+	acc_row.add_child(_make_equip_slot("Ring", -105, Color(0.85, 0.55, 0.9, 0.7)))
+
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(spacer)
@@ -496,6 +502,7 @@ func _refresh_equipment():
 		-102: GameData.equip_chest,
 		-103: GameData.equip_legs,
 		-104: GameData.equip_boots,
+		-105: GameData.equip_accessory,
 	}
 
 	_gold_label.text = "◆  %d  gold" % GameData.gold
@@ -658,7 +665,7 @@ func _refresh_detail():
 
 	if _selected_index <= -100:
 		_add_action_btn("Unequip", Color(0.7, 0.55, 0.3), func():
-			var slot_type: int = -(_selected_index + 100)
+			var slot_type: int = _equip_idx_to_type(_selected_index)
 			var old: Dictionary = ItemDB.unequip_slot(slot_type)
 			if old and not old.is_empty():
 				ItemDB.add_to_backpack(old)
@@ -669,7 +676,7 @@ func _refresh_detail():
 	else:
 		if item_type in [ItemDB_Script.ItemType.WEAPON, ItemDB_Script.ItemType.HELM,
 				ItemDB_Script.ItemType.CHEST, ItemDB_Script.ItemType.LEGS,
-				ItemDB_Script.ItemType.BOOTS]:
+				ItemDB_Script.ItemType.BOOTS, ItemDB_Script.ItemType.ACCESSORY]:
 			_add_action_btn("Equip", Color(0.3, 0.6, 1.0), func():
 				var removed: Dictionary = ItemDB.remove_from_backpack(_selected_index)
 				if not removed.is_empty():
@@ -696,9 +703,24 @@ func _refresh_detail():
 					_add_action_btn("→ Companion…", Color(0.85, 0.65, 0.2),
 						func(): _show_companion_equip_picker(active_keys))
 
+		# Elixirs can be used anytime (permanent stat boost)
+		if item_type == ItemDB_Script.ItemType.ELIXIR:
+			_add_action_btn("Drink", Color(0.9, 0.6, 0.2), func():
+				if _selected_index < 0 or _selected_index >= GameData.backpack.size():
+					return
+				var item_to_use: Dictionary = GameData.backpack[_selected_index]
+				var msg: String = ItemDB.use_item(item_to_use)
+				if msg != "":
+					ItemDB.remove_from_backpack(_selected_index)
+					_show_toast(msg)
+				_selected_index = -1
+				_refresh()
+			)
+
 		var _is_usable_misc: bool = item_type == ItemDB_Script.ItemType.MISC and (
 			item.get("torch_fuel", 0) as int > 0 or item.get("special_effect", "") as String != "")
-		if ItemDB.is_consumable(item) or _is_usable_misc:
+		var _is_food_or_potion: bool = item_type == ItemDB_Script.ItemType.FOOD or item_type == ItemDB_Script.ItemType.POTION
+		if (_is_food_or_potion or _is_usable_misc):
 			_add_action_btn("Use", Color(0.3, 0.85, 0.35), func():
 				if _selected_index < 0 or _selected_index >= GameData.backpack.size():
 					return
@@ -774,6 +796,18 @@ func _refresh_stats():
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+## Map UI equip slot index (-100...-105) to ItemDB.ItemType enum.
+func _equip_idx_to_type(idx: int) -> int:
+	match idx:
+		-100: return ItemDB_Script.ItemType.WEAPON
+		-101: return ItemDB_Script.ItemType.HELM
+		-102: return ItemDB_Script.ItemType.CHEST
+		-103: return ItemDB_Script.ItemType.LEGS
+		-104: return ItemDB_Script.ItemType.BOOTS
+		-105: return ItemDB_Script.ItemType.ACCESSORY
+	return -1
+
+
 func _get_selected_item() -> Dictionary:
 	if _selected_index >= 0 and _selected_index < GameData.backpack.size():
 		return GameData.backpack[_selected_index]
@@ -783,6 +817,7 @@ func _get_selected_item() -> Dictionary:
 		-102: return GameData.equip_chest
 		-103: return GameData.equip_legs
 		-104: return GameData.equip_boots
+		-105: return GameData.equip_accessory
 	return {}
 
 
