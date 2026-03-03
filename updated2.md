@@ -426,3 +426,238 @@ Temporary `LowlandGrass:` spawn/quality debug prints were removed after validati
 
 **Files touched:**
 - `dungeon_break/game.gd`
+
+---
+
+## Session 10 Summary — Bug Fixes, XP/Level System, Class Skills, Visual Polish, and Magic Weapons
+
+### 1. Death Screen Fix
+
+Fixed death screen appearing off-screen and "New Run" button not dismissing it.
+- Repositioned to center-anchored layout
+- Added `ds.queue_free()` on button press
+
+**Files touched:**
+- `dungeon_break/ui/death_screen.gd` (or equivalent)
+
+### 2. Flee Bug Fix
+
+Fleeing from combat was showing the death screen. Added `fled: bool` parameter to `combat_ended` signal and routed flee outcomes to return-to-camp instead of death handling.
+
+**Files touched:**
+- `dungeon_break/combat/combat_manager.gd`
+- `dungeon_break/dungeon.gd`
+
+### 3. Companion Count Bug
+
+Run summary showed 0 companions recruited because `active_companions` was already cleared before the count was read. Added `run_companions_recruited` counter that increments on recruitment and is read before cleanup.
+
+**Files touched:**
+- `dungeon_break/data/game_data.gd`
+
+### 4. XP / Level System + Class Stat Growth
+
+Implemented player leveling:
+- `player_level`, `player_xp` in GameData
+- `grant_xp(amount)` → returns number of levels gained
+- `xp_to_next_level()` → `50 + (level - 1) * 25` scaling
+- `signal level_up(new_level: int)`
+- `CLASS_LEVEL_GROWTH` dict — per-class stat gains on level up (HP, STR, DEX, INT, SPD, AC)
+- Companion levels sync to player level
+
+XP sources: 10 + floor×5 base per enemy kill, bosses give double.
+
+**Files touched:**
+- `dungeon_break/data/game_data.gd`
+- `dungeon_break/combat/combat_manager.gd`
+
+### 5. Nine Unique Job Special Skills
+
+Each of the 9 classes now has a unique combat skill (2-turn cooldown after use):
+
+| Class | Skill | Effect |
+|-------|-------|--------|
+| VANGUARD | Shield Wall | +3 AC for 2 turns |
+| SCOUNDREL | Shadowstep | Teleport to any unoccupied walkable tile |
+| ARCANIST | Arcane Blast | d8 AoE damage to all enemies in 2-tile radius of target |
+| CONFESSOR | Bless | Heal self d6 + grant +2 ATK for 2 turns |
+| STRIDER | Steady Shot | Next ranged attack deals +d6 bonus damage |
+| MINSTREL | War Song | All companions get +2 ATK for 2 turns |
+| TEMPLAR | Holy Smite | d10 damage to target + heal self for half |
+| REANIMATOR | Soul Drain | d6 damage + heal self equal to damage dealt |
+| TINKERER | Shock Mine | d6 damage + stun (freeze 1 turn) to nearest enemy |
+
+Implemented via `_do_skill_*` functions in `combat_manager.gd` and `JOB_SPECIAL_SKILL` dict in `game_data.gd`. Cooldown tracked via `GameData.skill_cooldown`. UI shows greyed-out button with countdown.
+
+Shadowstep fix: changed `is_blocked()` to `is_walkable()` + occupancy check.
+
+**Files touched:**
+- `dungeon_break/data/game_data.gd`
+- `dungeon_break/combat/combat_manager.gd`
+- `dungeon_break/combat/combat_ui.gd`
+
+### 6. Default Font Change
+
+Set `Cinzel-VariableFont_wght.ttf` as the default project font via `project.godot` `[gui]` section.
+
+**Files touched:**
+- `project.godot`
+
+### 7. Six Visual Polish Features
+
+#### a. Damage Float Text Scale-Pop
+Float text now punches up 1.5× scale then settles to 1.0× before fading, making hits feel punchier.
+
+#### b. Player Footstep Dust Particles
+GPUParticles3D attached to player that emits brown-grey puffs during movement. Disabled on LOW graphics preset.
+
+#### c. Torch/Campfire Flicker Lights
+Campfire and torch lights now flicker via looping tween that wobbles `light_energy` and `omni_range` ±15%.
+
+#### d. Sprite Drop Shadows
+Player, NPC, and entity sprites get a semi-transparent dark PlaneMesh shadow below them. Disabled on LOW.
+
+#### e. Level-Up Screen Flash
+On `GameData.level_up` signal: golden flash overlay + "LEVEL UP!" banner with tween animation on the HUD.
+
+#### f. Combat Entry Vignette
+Custom `combat_vignette.gdshader` — screen-edge darkening that pulses in on combat start and fades out on combat end.
+
+**Files touched:**
+- `dungeon_break/combat/combat_manager.gd` (float text tween)
+- `dungeon_break/player/player_controller.gd` (dust particles)
+- `dungeon_break/generator/camp_builder.gd` (flicker lights)
+- `dungeon_break/entities/entity_manager.gd` (drop shadows)
+- `dungeon_break/entities/npc_sprite.gd` (NPC drop shadows)
+- `dungeon_break/entities/character_sprite.gd` (player drop shadow)
+- `dungeon_break/ui/game_hud.gd` (level-up flash)
+- `dungeon_break/dungeon.gd` (combat vignette system)
+- `dungeon_break/ui/combat_vignette.gdshader` (new)
+
+### 8. Five New Magic Weapons
+
+Ported enchantment concepts from "The Long Nights" (original game) as 5 new magic weapons with unique on-hit effects, projectile visuals, impact FX, and combat log verbs.
+
+| Weapon | Art | ATK | Range | On-Hit Effect | Price | Loot Floors |
+|--------|-----|-----|-------|---------------|-------|-------------|
+| **Poison Dart** | dart.png | +2 | +3 | Poison: 2 dmg/turn for 2 turns | 12g | 1–4 |
+| **Crystal Wand** | cryatal.png | +3 | +3 | Armor Pierce: halves target's AC for the clash roll | 18g | 1–4 |
+| **Shuriken** | shuriken.png | +2 | +2 | Ricochet: bounces to up to 2 nearby enemies for 1/3 dmg | 30g | 3–6 |
+| **Skull Wand** | skull.png | +4 | +2 | Life Steal: heals attacker 25% of damage dealt | 55g | 4+ |
+| **Storm Staff** | stick_2.png | +5 | +3 | Chain Lightning: half dmg bounces to 1 adjacent enemy | 75g | 6+ |
+
+#### Shop Availability
+- **Poison Dart**: Conner (T0, from game start) + Zara (T0)
+- **Crystal Wand**: Daniels (T0, always stocked as an extra item) + Zara (T0)
+- **Shuriken**: Zara (T1, floors 2+)
+- **Skull Wand**: Zara (T2, floors 5+)
+- **Storm Staff**: Zara (T2, floors 5+)
+
+#### New Combat Systems Added
+- **Poison tick system**: Enemies take `poison_dmg` per turn for `poison_turns` turns, processed at start of enemy turn (before freeze check). Green float text "−X Poison" + combat log message. Poison can kill.
+- **Crystal wand AC pierce**: Target's defense is halved before the clash roll (`effective_defense = max(1, defense / 2)`).
+- **Shuriken ricochet**: After primary hit, attempts to bounce to up to 2 additional enemies within Manhattan distance 2, dealing 1/3 damage each.
+- **Skull wand life steal**: After dealing damage, heals attacker for 25% (min 1) via `GameData.heal()`. Green "+X HP" float text on attacker.
+- **Storm staff chain lightning**: After primary hit, chains half damage to the nearest adjacent enemy (Manhattan distance ≤1). Visual chain lightning arc (`_fx_chain_lightning`) connects the two targets.
+
+#### New Impact FX Functions
+- `_fx_poison_impact()` — green droplets + green light flash
+- `_fx_arcane_impact()` — purple crystal shards + purple light flash
+- `_fx_life_drain_impact()` — dark expanding sphere + inward-spiraling tendrils + purple-red flash
+- `_fx_lightning_impact()` — 8 electric arcs radiating outward + bright blue-white flash
+- `_fx_chain_lightning(from, to)` — cylinder beam with glow sleeve, flicker animation, auto-cleanup
+
+#### Projectile Visuals
+Each weapon has a unique projectile tint and texture in `_fx_projectile()`:
+- Poison Dart: spark_06 texture, toxic green
+- Crystal Wand: circle_01 texture, purple arcane
+- Shuriken: star_05 texture, bright silver, fastest travel (0.18s)
+- Skull Wand: magic_01 texture, dark purple
+- Storm Staff: spark_01 texture, electric blue, fast travel (0.16s)
+
+**Files touched:**
+- `dungeon_break/data/item_db.gd` — 5 weapon definitions + loot table entries
+- `dungeon_break/combat/combat_manager.gd` — poison tick system, AC pierce, 5 impact callbacks, 5 projectile visuals, 5 ranged verbs, 5 log suffixes, 5 new FX functions
+- `dungeon_break/ui/shop_ui.gd` — `MAGIC_WEAPON_IDS` updated, Daniels extras, Conner T0 list, Zara tiered lists, potion_shop tier logic fix
+
+---
+
+## "The Long Nights" Systems Audit
+
+Full audit of the original game (`/home/brad/Documents/Godot/theLongNights-godot/project/`) was completed and documented in `docs/theLongNights_systems_audit.md`. Key reusable systems identified:
+
+| Priority | System | Effort | Status |
+|----------|--------|--------|--------|
+| 🔴 HIGH | Skyshard Power System (on-hit enchantments) | Low | **Partially ported** — 5 new weapons use the pattern |
+| 🔴 HIGH | Combat math (d20 rolls, damage formula) | Low | Already adapted in DungeonBreaker |
+| 🟡 MED | Push block puzzles (Sokoban rooms) | Medium | Researched, not yet ported |
+| 🟡 MED | Accessory passive effects (rings, pendants) | Low | **Next priority** |
+| 🟡 MED | Permanent stat elixirs | Low | **Next priority** |
+| 🟡 MED | Companion roster equipment system | Medium | Deferred |
+| 🟢 LOW | Hunting system (race-weighted companion loot) | Low | Deferred |
+| 🟢 LOW | Fishing minigame | Medium | Deferred |
+
+### Available Unused Art Assets for Future Items
+`skyshard.png`, `pheonix_crystal.png`, `pheonix_feather.png`, `pheonix_hourglass.png`, `red_ring_1.png`, `red_ring_2.png`, `ring_silver_green.png`, `gauntlet_of_strength.png`, `hatchet.png`, `machete.png`, `machete_2.png`, `limited_potion_*.png` (9 colors)
+
+### Next Planned Items
+- **6 Accessories**: Ring of Thorns, Ring of Vampirism, Ring of Fortitude, Phoenix Crystal, Gauntlet of Might, Hourglass of Haste
+- **4 Permanent Elixirs**: Power (+1 STR), Iron (+1 AC), Vitality (+2 HP), Speed (+1 SPD)
+- **Fire Staff nerf**: Exclude friendly units from AoE splash
+
+---
+
+## Known Pending Work (Updated)
+
+| Item | Priority | Notes |
+|---|---|---|
+| Accessories with passive effects | High | 6 rings/pendants with on-hit/on-kill/per-turn effects |
+| Permanent stat elixirs | High | Rare dungeon rewards using limited_potion art |
+| Fire staff AoE nerf | High | Exclude friendly units from splash damage |
+| Push block puzzle rooms | Medium | Sokoban-style rooms in dungeon — researched from original game |
+| Camp NPC dialogue | Medium | Joe, Mira, Old Pell — interaction zones exist, no dialogue tree yet |
+| Vault room loot pass | Medium | Currently has chest + gold ore; needs richer decoration and varied loot |
+| Class-specific mechanics | Medium | Reanimator (raise dead), Confessor (faith buffs) partially done via skills |
+| Gamepad support | Medium | Needs InputMap refactor + UI focus chains |
+| Visual novel cutscenes | Low | Planned for story beats |
+| Drag-and-drop inventory | Low | Current inventory is click-to-equip only |
+| Save slot delete | Low | No way to clear a save slot from the UI |
+
+---
+
+## File Index (additions since session 9)
+
+```
+dungeon_break/
+  combat/
+    combat_manager.gd    ← flee fix, XP/kill, 9 class skills, skill cooldowns,
+                           Shadowstep fix, float text pop, 5 magic weapon effects,
+                           poison tick system, 5 new FX functions,
+                           chain lightning visual
+  data/
+    game_data.gd         ← run_companions_recruited, player_level/xp,
+                           grant_xp(), xp_to_next_level(), level_up signal,
+                           JOB_SPECIAL_SKILL, CLASS_LEVEL_GROWTH,
+                           skill_cooldown, steady_shot_bonus, taunt_active
+    item_db.gd           ← 5 new magic weapons (poison_dart, crystal_wand,
+                           shuriken, skull_wand, storm_staff) + loot entries
+  entities/
+    entity_manager.gd    ← drop shadows on entities
+    npc_sprite.gd        ← NPC drop shadows
+    character_sprite.gd  ← player drop shadow
+  generator/
+    camp_builder.gd      ← torch/campfire flicker lights
+  player/
+    player_controller.gd ← footstep dust particles
+  ui/
+    combat_vignette.gdshader  ← NEW: screen-edge darkening shader
+    game_hud.gd               ← level-up flash overlay
+    shop_ui.gd                ← 5 new magic weapons in shop tiers,
+                                DANIELS_EXTRAS + CONNER T0 updates,
+                                potion_shop tier logic fix
+  dungeon.gd             ← combat vignette system
+  main.gd                ← (no changes this session)
+docs/
+  theLongNights_systems_audit.md  ← NEW: full audit of original game systems
+project.godot            ← Cinzel font as default
+```

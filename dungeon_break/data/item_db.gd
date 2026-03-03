@@ -140,6 +140,38 @@ const ITEMS := {
 		"attack_bonus": 3, "value": 35, "range_bonus": 2, "pierce": true,
 	},
 
+	# ── MAGIC WEAPONS ────────────────────────────────────────────────────────
+	"poison_dart": {
+		"id": "poison_dart", "name": "Poison Dart", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/dart.png",
+		"description": "A hollow dart loaded with toxin. Poisons the target for 2 turns. +3 attack range.",
+		"attack_bonus": 2, "value": 12, "range_bonus": 3, "on_hit": "poison",
+	},
+	"crystal_wand": {
+		"id": "crystal_wand", "name": "Crystal Wand", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/cryatal.png",
+		"description": "A wand carved from raw crystal. Pierces 50% of the target's armor. +3 attack range.",
+		"attack_bonus": 3, "value": 18, "range_bonus": 3, "on_hit": "armor_pierce",
+	},
+	"shuriken": {
+		"id": "shuriken", "name": "Shuriken", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/shuriken.png",
+		"description": "A spinning blade that ricochets to nearby foes. Hits up to 2 extra enemies for reduced damage. +2 attack range.",
+		"attack_bonus": 2, "value": 30, "range_bonus": 2, "on_hit": "ricochet",
+	},
+	"skull_wand": {
+		"id": "skull_wand", "name": "Skull Wand", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/skull.png",
+		"description": "A necrotic focus that siphons life from its victims. Heals attacker for 25% of damage dealt. +2 attack range.",
+		"attack_bonus": 4, "value": 55, "range_bonus": 2, "on_hit": "life_steal",
+	},
+	"storm_staff": {
+		"id": "storm_staff", "name": "Storm Staff", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/stick_2.png",
+		"description": "A gnarled staff crackling with lightning. Chains half damage to one adjacent enemy. +3 attack range.",
+		"attack_bonus": 5, "value": 75, "range_bonus": 3, "on_hit": "chain_lightning",
+	},
+
 	# ── ARMOR (HELM) ────────────────────────────────────────────────────────
 	"helm_iron": {
 		"id": "helm_iron", "name": "Iron Helm", "type": ItemType.HELM,
@@ -416,6 +448,13 @@ const ENEMY_LOOT := [
 	[6, 99, 1,  "morningstar"],
 	[5, 99, 1,  "fire_staff"],
 	[5, 99, 1,  "ice_bow"],
+
+	# Magic weapons
+	[1, 4,  4,  "poison_dart"],
+	[1, 4,  3,  "crystal_wand"],
+	[3, 6,  2,  "shuriken"],
+	[4, 99, 1,  "skull_wand"],
+	[6, 99, 1,  "storm_staff"],
 
 	# Armor
 	[1, 3,  5,  "chest_leather"],

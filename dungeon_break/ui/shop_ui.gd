@@ -10,10 +10,11 @@ signal shop_closed
 const ACVoiceBoxScript = preload("res://dungeon_break/ui/ac_voicebox.gd")
 
 # Magic weapons sold by Zara (WEAPON type with arcane flavor)
-const MAGIC_WEAPON_IDS: Array = ["magic_knife", "fire_staff", "ice_bow"]
+const MAGIC_WEAPON_IDS: Array = ["magic_knife", "fire_staff", "ice_bow",
+	"poison_dart", "crystal_wand", "shuriken", "skull_wand", "storm_staff"]
 
 # Non-armor items Daniels (armor_shop) always stocks — general goods
-const DANIELS_EXTRAS: Array = ["boomerang"]
+const DANIELS_EXTRAS: Array = ["boomerang", "crystal_wand"]
 
 # Food items sold by Conner alongside potions (all tiers combined)
 const POTION_SHOP_FOOD: Array = ["bread", "apple", "mushroom", "berry", "honey", "cookie", "energy_bar"]
@@ -30,13 +31,13 @@ const _ARMOR_T0 := ["chest_leather", "boots_leather"]
 const _ARMOR_T1 := ["helm_iron", "chest_chain", "boots_iron"]
 # Tier 2 adds: helm_knight
 
-const _POTION_T0 := ["mushroom", "berry", "apple", "bread"]
+const _POTION_T0 := ["mushroom", "berry", "apple", "bread", "poison_dart"]
 const _POTION_T1 := ["honey", "cookie", "energy_bar", "potion_red", "potion_blue"]
 # Tier 2 adds: remaining potions + buff foods
 
-const _MAGIC_T0 := ["blood_pendant"]
-const _MAGIC_T1 := ["magic_knife"]
-# Tier 2 adds: ancient_amulet, fire_staff, ice_bow
+const _MAGIC_T0 := ["blood_pendant", "poison_dart", "crystal_wand"]
+const _MAGIC_T1 := ["magic_knife", "shuriken"]
+# Tier 2 adds: ancient_amulet, fire_staff, ice_bow, skull_wand, storm_staff
 
 var _npc_key: String = ""
 var _gold_label: Label = null
@@ -383,9 +384,13 @@ func _item_allowed(id: String, itype: int, role: String, tier: int) -> bool:
 			elif tier == 1: return id in _WEAPON_T0 or id in _WEAPON_T1
 			return true  # tier 2: all non-magic weapons
 		"potion_shop":
-			if tier == 0:   return id in _POTION_T0
-			elif tier == 1: return id in _POTION_T0 or id in _POTION_T1
+			# Tier 0/1 items always available (includes poison_dart weapon)
+			if id in _POTION_T0 or id in _POTION_T1:
+				if tier == 0:   return id in _POTION_T0
+				return true
 			# tier 2: all potions + potion-shop food
+			if tier < 2:
+				return false
 			return itype == ItemDB.ItemType.POTION \
 				or (itype == ItemDB.ItemType.FOOD and id in POTION_SHOP_FOOD)
 		"magic_shop":

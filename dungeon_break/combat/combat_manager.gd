@@ -479,6 +479,21 @@ func _start_enemy_turn(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
 	phase = Phase.ENEMY_THINKING
 
+	# Poison tick — take damage at start of turn, then decrement
+	if unit.get("poison_turns", 0) > 0:
+		var pdmg: int = unit.get("poison_dmg", 2)
+		_apply_damage(unit_idx, pdmg)
+		unit["poison_turns"] -= 1
+		if tactical_grid:
+			_fx_float_text(
+				tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.5, 0),
+				"-%d Poison" % pdmg, Color(0.3, 0.85, 0.15)
+			)
+		action_resolved.emit("[color=green]%s takes %d poison damage! (%d turns left)[/color]" % [unit["name"], pdmg, unit["poison_turns"]])
+		if not unit["alive"]:
+			_advance_turn()
+			return
+
 	# Frozen: skip this turn, thaw next
 	if unit.get("frozen_turns", 0) > 0:
 		unit["frozen_turns"] -= 1
@@ -989,9 +1004,14 @@ func _do_attack(attacker_idx: int, target_idx: int):
 	var is_ranged: bool = attacker.get("attack_range", 1) > 1
 	var weapon_id: String = GameData.equip_weapon.get("id", "") if attacker["type"] == "player" else ""
 
+	# Crystal wand — halve target defense before rolling (armor pierce)
+	var effective_defense: int = target["defense"]
+	if weapon_id == "crystal_wand":
+		effective_defense = maxi(1, effective_defense / 2)
+
 	# Clash roll
 	var player_roll: int = GameData.clash_roll(attacker["attack"])
-	var enemy_roll: int = _clash_roll(target["defense"])
+	var enemy_roll: int = _clash_roll(effective_defense)
 
 	if player_roll > enemy_roll:
 		var dmg := maxi(1, player_roll - enemy_roll)
@@ -1066,6 +1086,96 @@ func _do_attack(attacker_idx: int, target_idx: int):
 								continue
 							if u["grid_pos"] in knife_path:
 								_apply_damage(i, pierce_dmg)
+				"poison_dart":
+					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_poison_impact(to_wpos)
+						_fx_float_text(to_wpos, "-%d  POISONED!" % dmg, Color(0.3, 0.85, 0.15))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.08)
+				"crystal_wand":
+					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_arcane_impact(to_wpos)
+						_fx_float_text(to_wpos, "-%d  Pierce AC!" % dmg, Color(0.8, 0.5, 1.0))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.10)
+				"shuriken":
+					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_impact(to_wpos, "slash")
+						_fx_float_text(to_wpos, "-%d" % dmg, Color(0.8, 0.8, 0.9))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.10)
+						# Ricochet: bounce to up to 2 nearby enemies for 1/3 damage
+						var ricochet_dmg: int = maxi(1, dmg / 3)
+						var bounced := 0
+						for i in _units.size():
+							if bounced >= 2:
+								break
+							if i == target_idx:
+								continue
+							var u: Dictionary = _units[i]
+							if not u["alive"] or u["type"] == "player" or u["type"] == "companion":
+								continue
+							var d: int = absi(u["grid_pos"].x - to_gpos.x) + absi(u["grid_pos"].y - to_gpos.y)
+							if d <= 2:
+								_apply_damage(i, ricochet_dmg)
+								if tactical_grid:
+									var u_wpos := tactical_grid.grid_to_world(u["grid_pos"]) + Vector3(0, 1.1, 0)
+									_fx_float_text(u_wpos, "-%d Ricochet" % ricochet_dmg, Color(0.8, 0.8, 0.9))
+								bounced += 1
+				"skull_wand":
+					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_life_drain_impact(to_wpos)
+						_fx_float_text(to_wpos, "-%d" % dmg, Color(0.6, 0.15, 0.5))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.12)
+						# Life steal: heal attacker 25% of damage dealt
+						var heal_amt: int = maxi(1, dmg / 4)
+						GameData.heal(heal_amt)
+						var p_unit: Dictionary = _units[attacker_idx]
+						p_unit["hp"] = GameData.hp
+						if tactical_grid:
+							var a_wpos := tactical_grid.grid_to_world(p_unit["grid_pos"]) + Vector3(0, 1.6, 0)
+							_fx_float_text(a_wpos, "+%d HP" % heal_amt, Color(0.4, 1.0, 0.3))
+				"storm_staff":
+					impact_cb = func() -> void:
+						if not is_instance_valid(self): return
+						if tactical_grid and is_instance_valid(tactical_grid):
+							tactical_grid.clear_ranged_path()
+						_fx_lightning_impact(to_wpos)
+						_fx_float_text(to_wpos, "-%d" % dmg, Color(0.5, 0.8, 1.0))
+						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_camera_shake(0.15)
+						# Chain lightning: half damage to one adjacent enemy
+						var chain_dmg: int = maxi(1, dmg / 2)
+						var chained := false
+						for i in _units.size():
+							if chained:
+								break
+							if i == target_idx:
+								continue
+							var u: Dictionary = _units[i]
+							if not u["alive"] or u["type"] == "player" or u["type"] == "companion":
+								continue
+							var d: int = absi(u["grid_pos"].x - to_gpos.x) + absi(u["grid_pos"].y - to_gpos.y)
+							if d <= 1:
+								_apply_damage(i, chain_dmg)
+								if tactical_grid:
+									var u_wpos := tactical_grid.grid_to_world(u["grid_pos"]) + Vector3(0, 1.1, 0)
+									_fx_chain_lightning(to_wpos, u_wpos)
+									_fx_float_text(u_wpos, "-%d Chain!" % chain_dmg, Color(0.5, 0.8, 1.0))
+								chained = true
 				_:
 					impact_cb = func() -> void:
 						if not is_instance_valid(self): return
@@ -1082,6 +1192,9 @@ func _do_attack(attacker_idx: int, target_idx: int):
 			# Weapon-specific status effects
 			if weapon_id == "ice_bow":
 				target["frozen_turns"] = 1
+			elif weapon_id == "poison_dart":
+				target["poison_turns"] = 2
+				target["poison_dmg"] = 2
 
 			# Launch projectile
 			if weapon_id == "boomerang":
@@ -1099,6 +1212,16 @@ func _do_attack(attacker_idx: int, target_idx: int):
 				log_suffix = "  [color=orange](+AoE)[/color]"
 			elif weapon_id == "throwing_knives":
 				log_suffix = "  [color=lightblue](Pierce)[/color]"
+			elif weapon_id == "poison_dart":
+				log_suffix = "  [color=green](Poisoned!)[/color]"
+			elif weapon_id == "crystal_wand":
+				log_suffix = "  [color=mediumpurple](AC Pierce)[/color]"
+			elif weapon_id == "shuriken":
+				log_suffix = "  [color=silver](Ricochet)[/color]"
+			elif weapon_id == "skull_wand":
+				log_suffix = "  [color=mediumorchid](Life Steal)[/color]"
+			elif weapon_id == "storm_staff":
+				log_suffix = "  [color=dodgerblue](⚡ Chain)[/color]"
 			action_resolved.emit("[color=yellow]%s[/color] %s %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]%s" % [
 				attacker["name"], _ranged_verb(weapon_id), target["name"], player_roll, enemy_roll, dmg, log_suffix])
 		else:
@@ -1860,6 +1983,11 @@ func _ranged_verb(weapon_id: String) -> String:
 		"crossbow":        return "shoots"
 		"boomerang":       return "hurls"
 		"throwing_knives": return "hurls knives at"
+		"poison_dart":     return "poisons"
+		"crystal_wand":    return "zaps"
+		"shuriken":        return "flings a shuriken at"
+		"skull_wand":      return "drains"
+		"storm_staff":     return "electrocutes"
 		_:                 return "launches at"
 
 
@@ -1887,6 +2015,24 @@ func _fx_projectile(from_pos: Vector3, to_pos: Vector3, weapon_id: String, on_la
 			tex_path    = _FX_SPARK[1]               # spark_03.png — crossbow bolt
 			tint        = Color(1.8, 1.5, 0.9, 1.0)  # bright white-gold
 			travel_time = 0.20
+		"poison_dart":
+			tex_path    = _FX_SPARK[2]               # spark_06.png — poison dart
+			tint        = Color(0.4, 1.8, 0.3, 1.0)  # toxic green
+			travel_time = 0.20
+		"crystal_wand":
+			tex_path    = _FX_MAGIC[1]               # circle_01.png — arcane bolt
+			tint        = Color(0.9, 0.5, 2.0, 1.0)  # purple arcane
+		"shuriken":
+			tex_path    = _FX_STAR[1]                # star_05.png — spinning blade
+			tint        = Color(1.6, 1.6, 1.8, 1.0)  # bright silver
+			travel_time = 0.18
+		"skull_wand":
+			tex_path    = _FX_MAGIC[0]               # magic_01.png — necrotic bolt
+			tint        = Color(1.2, 0.3, 1.0, 1.0)  # dark purple
+		"storm_staff":
+			tex_path    = _FX_SPARK[0]               # spark_01.png — lightning bolt
+			tint        = Color(0.6, 1.2, 2.5, 1.0)  # electric blue
+			travel_time = 0.16
 		_:
 			tex_path    = _FX_STAR[0]                # star_01.png — generic thrown
 			tint        = Color(1.5, 1.2, 0.5, 1.0)
@@ -2187,7 +2333,7 @@ func _fx_ice_impact(world_pos: Vector3) -> void:
 
 		var tw := shard.create_tween().set_parallel(true)
 		tw.tween_property(shard, "global_position", target_pos, 0.28).set_ease(Tween.EASE_OUT)
-		tw.tween_property(shard, "modulate:a", 0.0, 0.35).set_delay(0.12)
+		tw.tween_property(mat, "albedo_color", Color(0.6, 0.9, 1.0, 0.0), 0.35).set_delay(0.12)
 		tw.chain().tween_callback(shard.queue_free)
 
 	# Blue light flash
@@ -2229,7 +2375,7 @@ func _fx_fire_impact(world_pos: Vector3) -> void:
 
 	var ctw := core.create_tween().set_parallel(true)
 	ctw.tween_property(core, "scale", Vector3.ONE * 3.5, 0.30).set_ease(Tween.EASE_OUT)
-	ctw.tween_property(core, "modulate:a", 0.0, 0.36)
+	ctw.tween_property(cmat, "albedo_color", Color(1.0, 0.55, 0.1, 0.0), 0.36)
 	ctw.chain().tween_callback(core.queue_free)
 
 	# 8 ember sparks flying outward
@@ -2243,6 +2389,7 @@ func _fx_fire_impact(world_pos: Vector3) -> void:
 
 		var emat := StandardMaterial3D.new()
 		emat.albedo_color = Color(1.0, 0.40, 0.0, 1.0)
+		emat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		emat.emission_enabled = true
 		emat.emission = Color(1.0, 0.2, 0.0)
 		emat.emission_energy_multiplier = 2.8
@@ -2257,7 +2404,7 @@ func _fx_fire_impact(world_pos: Vector3) -> void:
 
 		var etw := ember.create_tween().set_parallel(true)
 		etw.tween_property(ember, "global_position", target_pos, 0.35).set_ease(Tween.EASE_OUT)
-		etw.tween_property(ember, "modulate:a", 0.0, 0.40).set_delay(0.10)
+		etw.tween_property(emat, "albedo_color", Color(1.0, 0.40, 0.0, 0.0), 0.40).set_delay(0.10)
 		etw.chain().tween_callback(ember.queue_free)
 
 	# Orange light flash
@@ -2271,6 +2418,273 @@ func _fx_fire_impact(world_pos: Vector3) -> void:
 	var ftw := flash.create_tween()
 	ftw.tween_property(flash, "light_energy", 0.0, 0.38)
 	ftw.tween_callback(flash.queue_free)
+
+
+## Poison dart impact — green mist puff + dripping particles.
+func _fx_poison_impact(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# 6 green poison droplets
+	for i in 6:
+		var drop := MeshInstance3D.new()
+		var dmesh := SphereMesh.new()
+		dmesh.radius = 0.06
+		dmesh.height = 0.12
+		drop.mesh = dmesh
+		drop.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.3, 0.9, 0.2, 0.9)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = Color(0.2, 0.8, 0.1)
+		mat.emission_energy_multiplier = 2.5
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		drop.material_override = mat
+		_scene_root.add_child(drop)
+		drop.global_position = world_pos
+
+		var angle: float = (float(i) / 6.0) * TAU + randf_range(-0.2, 0.2)
+		var target_pos := world_pos + Vector3(cos(angle) * 0.8, randf_range(-0.3, 0.5), sin(angle) * 0.8)
+
+		var tw := drop.create_tween().set_parallel(true)
+		tw.tween_property(drop, "global_position", target_pos, 0.40).set_ease(Tween.EASE_OUT)
+		tw.tween_property(mat, "albedo_color", Color(0.3, 0.9, 0.2, 0.0), 0.50).set_delay(0.10)
+		tw.chain().tween_callback(drop.queue_free)
+
+	# Green light flash
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.3, 0.9, 0.1)
+	light.light_energy = 3.0
+	light.omni_range = 2.5
+	light.shadow_enabled = false
+	_scene_root.add_child(light)
+	light.global_position = world_pos
+	var ltw := light.create_tween()
+	ltw.tween_property(light, "light_energy", 0.0, 0.40)
+	ltw.tween_callback(light.queue_free)
+
+
+## Crystal wand impact — purple arcane shatter ring.
+func _fx_arcane_impact(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# 6 purple crystal shards
+	for i in 6:
+		var shard := MeshInstance3D.new()
+		var smesh := BoxMesh.new()
+		smesh.size = Vector3(0.05, 0.18, 0.05)
+		shard.mesh = smesh
+		shard.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.7, 0.4, 1.0, 0.9)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = Color(0.6, 0.3, 1.0)
+		mat.emission_energy_multiplier = 3.0
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		shard.material_override = mat
+		_scene_root.add_child(shard)
+		shard.global_position = world_pos
+
+		var angle: float = (float(i) / 6.0) * TAU
+		var target_pos := world_pos + Vector3(cos(angle) * 1.0, randf_range(0.2, 0.8), sin(angle) * 1.0)
+		shard.look_at(target_pos)
+
+		var tw := shard.create_tween().set_parallel(true)
+		tw.tween_property(shard, "global_position", target_pos, 0.25).set_ease(Tween.EASE_OUT)
+		tw.tween_property(mat, "albedo_color", Color(0.7, 0.4, 1.0, 0.0), 0.35).set_delay(0.10)
+		tw.chain().tween_callback(shard.queue_free)
+
+	# Purple light flash
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.6, 0.3, 1.0)
+	light.light_energy = 4.0
+	light.omni_range = 3.0
+	light.shadow_enabled = false
+	_scene_root.add_child(light)
+	light.global_position = world_pos
+	var ltw := light.create_tween()
+	ltw.tween_property(light, "light_energy", 0.0, 0.30)
+	ltw.tween_callback(light.queue_free)
+
+
+## Skull wand impact — dark purple life drain tendrils.
+func _fx_life_drain_impact(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# Expanding dark sphere
+	var core := MeshInstance3D.new()
+	var cmesh := SphereMesh.new()
+	cmesh.radius = 0.15
+	cmesh.height = 0.30
+	core.mesh = cmesh
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var cmat := StandardMaterial3D.new()
+	cmat.albedo_color = Color(0.4, 0.05, 0.3, 0.85)
+	cmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	cmat.emission_enabled = true
+	cmat.emission = Color(0.6, 0.1, 0.5)
+	cmat.emission_energy_multiplier = 2.5
+	cmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	core.material_override = cmat
+	_scene_root.add_child(core)
+	core.global_position = world_pos
+
+	var ctw := core.create_tween().set_parallel(true)
+	ctw.tween_property(core, "scale", Vector3.ONE * 2.5, 0.30).set_ease(Tween.EASE_OUT)
+	ctw.tween_property(cmat, "albedo_color", Color(0.4, 0.05, 0.3, 0.0), 0.35)
+	ctw.chain().tween_callback(core.queue_free)
+
+	# 5 dark tendrils spiralling inward (draining effect)
+	for i in 5:
+		var tendril := MeshInstance3D.new()
+		var tmesh := BoxMesh.new()
+		tmesh.size = Vector3(0.04, 0.04, 0.3)
+		tendril.mesh = tmesh
+		tendril.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.8, 0.15, 0.6, 0.9)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = Color(0.5, 0.1, 0.4)
+		mat.emission_energy_multiplier = 2.0
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		tendril.material_override = mat
+		_scene_root.add_child(tendril)
+
+		var angle: float = (float(i) / 5.0) * TAU
+		var start_pos := world_pos + Vector3(cos(angle) * 1.2, randf_range(0.0, 0.8), sin(angle) * 1.2)
+		tendril.global_position = start_pos
+
+		var tw := tendril.create_tween().set_parallel(true)
+		tw.tween_property(tendril, "global_position", world_pos, 0.30).set_ease(Tween.EASE_IN)
+		tw.tween_property(mat, "albedo_color", Color(0.8, 0.15, 0.6, 0.0), 0.35).set_delay(0.10)
+		tw.chain().tween_callback(tendril.queue_free)
+
+	# Purple-red light flash
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.6, 0.1, 0.4)
+	light.light_energy = 3.5
+	light.omni_range = 3.0
+	light.shadow_enabled = false
+	_scene_root.add_child(light)
+	light.global_position = world_pos
+	var ltw := light.create_tween()
+	ltw.tween_property(light, "light_energy", 0.0, 0.35)
+	ltw.tween_callback(light.queue_free)
+
+
+## Storm staff impact — electric discharge burst.
+func _fx_lightning_impact(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# 8 electric arcs radiating outward
+	for i in 8:
+		var arc := MeshInstance3D.new()
+		var amesh := BoxMesh.new()
+		amesh.size = Vector3(0.04, 0.04, 0.35)
+		arc.mesh = amesh
+		arc.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.5, 0.85, 1.0, 0.95)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.emission_enabled = true
+		mat.emission = Color(0.4, 0.8, 1.0)
+		mat.emission_energy_multiplier = 4.0
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		arc.material_override = mat
+		_scene_root.add_child(arc)
+		arc.global_position = world_pos
+
+		var angle: float = (float(i) / 8.0) * TAU + randf_range(-0.2, 0.2)
+		var target_pos := world_pos + Vector3(cos(angle) * 1.2, randf_range(0.1, 0.6), sin(angle) * 1.2)
+		arc.look_at(target_pos)
+
+		var tw := arc.create_tween().set_parallel(true)
+		tw.tween_property(arc, "global_position", target_pos, 0.15).set_ease(Tween.EASE_OUT)
+		tw.tween_property(mat, "albedo_color", Color(0.5, 0.85, 1.0, 0.0), 0.25).set_delay(0.05)
+		tw.chain().tween_callback(arc.queue_free)
+
+	# Bright blue-white light flash
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.5, 0.8, 1.0)
+	light.light_energy = 6.0
+	light.omni_range = 4.0
+	light.shadow_enabled = false
+	_scene_root.add_child(light)
+	light.global_position = world_pos
+	var ltw := light.create_tween()
+	ltw.tween_property(light, "light_energy", 0.0, 0.25)
+	ltw.tween_callback(light.queue_free)
+
+
+## Chain lightning arc between two world positions.
+func _fx_chain_lightning(from_pos: Vector3, to_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	var distance: float = from_pos.distance_to(to_pos)
+
+	# Main bolt beam
+	var bolt := MeshInstance3D.new()
+	var bmesh := CylinderMesh.new()
+	bmesh.height = distance
+	bmesh.top_radius = 0.04
+	bmesh.bottom_radius = 0.04
+	bolt.mesh = bmesh
+	bolt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.5, 0.85, 1.0, 1.0)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.emission_enabled = true
+	mat.emission = Color(0.6, 0.9, 1.0)
+	mat.emission_energy_multiplier = 8.0
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	bolt.material_override = mat
+	_scene_root.add_child(bolt)
+
+	# Position between the two points
+	bolt.global_position = (from_pos + to_pos) / 2.0
+	if distance > 0.1:
+		bolt.look_at(to_pos, Vector3.UP)
+		bolt.rotate_object_local(Vector3.RIGHT, PI / 2.0)
+
+	# Outer glow
+	var glow := MeshInstance3D.new()
+	var gmesh := CylinderMesh.new()
+	gmesh.height = distance
+	gmesh.top_radius = 0.10
+	gmesh.bottom_radius = 0.10
+	glow.mesh = gmesh
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+	var gmat := StandardMaterial3D.new()
+	gmat.albedo_color = Color(0.5, 0.85, 1.0, 0.5)
+	gmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gmat.emission_enabled = true
+	gmat.emission = Color(0.6, 0.9, 1.0)
+	gmat.emission_energy_multiplier = 5.0
+	gmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	glow.material_override = gmat
+	bolt.add_child(glow)
+
+	# Flicker + fade
+	var tw := bolt.create_tween()
+	tw.set_loops(2)
+	tw.tween_property(mat, "emission_energy_multiplier", 12.0, 0.05)
+	tw.tween_property(mat, "emission_energy_multiplier", 4.0, 0.05)
+	tw.chain().tween_property(mat, "albedo_color", Color(0.5, 0.85, 1.0, 0.0), 0.15)
+	tw.chain().tween_callback(bolt.queue_free)
 
 
 ## Three throwing knives fly from `from_pos` to `to_pos` in quick succession.
