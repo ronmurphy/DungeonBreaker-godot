@@ -40,11 +40,19 @@ const NPC_DEFS: Dictionary = {
 	},
 	"mahan": {
 		"name":          "Mahan",
-		"role":          "weapon_shop",
+		"role":          "enhanced_armor_shop",
 		"sprite_prefix": "res://assets/art/npc_sprites/mahan",
 		"greeting":      "Every blade tells a story. Let me find yours.",
 		"voice_pitch":   2.6,
 		"voice_speed":   0.85,
+	},
+	"steven": {
+		"name":          "Steven",
+		"role":          "enhanced_weapons_shop",
+		"sprite_prefix": "res://assets/art/npc_sprites/steven",
+		"greeting":      "Looking for something with an edge? You found the right guy.",
+		"voice_pitch":   2.3,
+		"voice_speed":   0.90,
 	},
 	"claude": {
 		"name":          "Claude",
@@ -58,12 +66,13 @@ const NPC_DEFS: Dictionary = {
 
 ## Role → shop label shown in the HUD prompt.
 const ROLE_LABELS: Dictionary = {
-	"armor_shop":     "Armor Shop",
-	"potion_shop":    "Potion Shop",
-	"magic_shop":     "Magic Shop",
-	"structure_shop": "Build Shop",
-	"weapon_shop":    "Weapon Shop",
-	"sage":           "Speak to Sage",
+	"armor_shop":              "General Store",
+	"potion_shop":             "Potion Shop",
+	"magic_shop":              "Magic Shop",
+	"structure_shop":          "Build Shop",
+	"enhanced_weapons_shop":   "Weapons Shop",
+	"enhanced_armor_shop":     "Armor Shop",
+	"sage":                    "Speak to Sage",
 }
 
 

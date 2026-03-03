@@ -1,8 +1,9 @@
 extends CanvasLayer
 ## ShopUI — modal item shop for camp NPCs.
 ##
-## Handles armor_shop (Daniels), weapon_shop (Mahan), potion_shop (Conner),
-## and magic_shop (Zara) roles. Michelle's structure_shop uses structure_shop_ui.gd.
+## Handles armor_shop (Daniels), enhanced_weapons_shop (Steven),
+## enhanced_armor_shop (Mahan), potion_shop (Conner), and magic_shop (Zara) roles.
+## Michelle's structure_shop uses structure_shop_ui.gd.
 ## Instantiated by game.gd on NPC interaction.
 
 signal shop_closed
@@ -14,7 +15,7 @@ const MAGIC_WEAPON_IDS: Array = ["magic_knife", "fire_staff", "ice_bow",
 	"poison_dart", "crystal_wand", "shuriken", "skull_wand", "storm_staff"]
 
 # Non-armor items Daniels (armor_shop) always stocks — general goods
-const DANIELS_EXTRAS: Array = ["boomerang", "crystal_wand"]
+const DANIELS_EXTRAS: Array = ["boomerang", "crystal_wand", "poison_dart"]
 
 # Food items sold by Conner alongside potions (all tiers combined)
 const POTION_SHOP_FOOD: Array = ["bread", "apple", "mushroom", "berry", "honey", "cookie", "energy_bar"]
@@ -31,7 +32,7 @@ const _ARMOR_T0 := ["chest_leather", "boots_leather"]
 const _ARMOR_T1 := ["helm_iron", "chest_chain", "boots_iron"]
 # Tier 2 adds: helm_knight
 
-const _POTION_T0 := ["mushroom", "berry", "apple", "bread", "poison_dart"]
+const _POTION_T0 := ["mushroom", "berry", "apple", "bread"]
 const _POTION_T1 := ["honey", "cookie", "energy_bar", "potion_red", "potion_blue"]
 # Tier 2 adds: remaining potions + buff foods
 
@@ -368,21 +369,32 @@ func _get_shop_items(role: String) -> Array:
 func _item_allowed(id: String, itype: int, role: String, tier: int) -> bool:
 	match role:
 		"armor_shop":
-			# Daniels also stocks a few general-goods items at all tiers
+			# Daniels — general store: T0 weapons + T0 armor + extras
 			if id in DANIELS_EXTRAS:
 				return true
+			if itype == ItemDB.ItemType.WEAPON and not (id in MAGIC_WEAPON_IDS):
+				return id in _WEAPON_T0
 			if not (itype == ItemDB.ItemType.HELM or itype == ItemDB.ItemType.CHEST
 					or itype == ItemDB.ItemType.LEGS or itype == ItemDB.ItemType.BOOTS):
 				return false
-			if tier == 0:   return id in _ARMOR_T0
-			elif tier == 1: return id in _ARMOR_T0 or id in _ARMOR_T1
-			return true  # tier 2: all armor
-		"weapon_shop":
+			return id in _ARMOR_T0
+		"enhanced_weapons_shop":
+			# Steven — mid-to-high weapons (T1+)
 			if itype != ItemDB.ItemType.WEAPON or id in MAGIC_WEAPON_IDS:
 				return false
-			if tier == 0:   return id in _WEAPON_T0
-			elif tier == 1: return id in _WEAPON_T0 or id in _WEAPON_T1
-			return true  # tier 2: all non-magic weapons
+			if id in _WEAPON_T0:
+				return false
+			if tier <= 1: return id in _WEAPON_T1
+			return true  # tier 2: all non-magic, non-T0 weapons
+		"enhanced_armor_shop":
+			# Mahan — mid-to-high armor (T1+)
+			if not (itype == ItemDB.ItemType.HELM or itype == ItemDB.ItemType.CHEST
+					or itype == ItemDB.ItemType.LEGS or itype == ItemDB.ItemType.BOOTS):
+				return false
+			if id in _ARMOR_T0:
+				return false
+			if tier <= 1: return id in _ARMOR_T1
+			return true  # tier 2: all non-T0 armor
 		"potion_shop":
 			# Tier 0/1 items always available (includes poison_dart weapon)
 			if id in _POTION_T0 or id in _POTION_T1:

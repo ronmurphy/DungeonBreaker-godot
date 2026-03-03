@@ -17,7 +17,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 config/name="Dungeon Break"
 run/main_scene="res://dungeon_break/main.tscn"
 config/features=PackedStringArray("4.6")
-boot_splash/image="uid://b0d5ofnyc2ech"
+boot_splash/image="uid://0284oa843kmr"
 config/icon="res://icon.png"
 boot_splash/minimum_display_time=4
 

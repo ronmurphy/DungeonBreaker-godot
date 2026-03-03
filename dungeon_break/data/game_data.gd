@@ -129,32 +129,36 @@ var searched_camp_objects: Dictionary = {}
 var game_day: int = 0           # increments each time world_time wraps past midnight
 var _searched_day: int = -1     # the game_day the current search set belongs to
 
-## One NPC unlocked per floor cleared, in this exact order.
-## Daniels + Conner are always present from game start (not in this list).
-const NPC_UNLOCK_SEQUENCE: Array[String] = ["michelle", "mahan", "claude", "zara"]
+## NPCs unlocked when each floor is cleared (1-based floor → NPC keys).
+## Daniels + Conner are always present from game start.
+const NPC_UNLOCK_MAP: Dictionary = {
+	1: ["michelle"],
+	2: ["mahan", "steven"],
+	3: ["claude"],
+	4: ["zara"],
+}
 
-## Rescue the NPC tied to the given floor number (1-based).
-## Returns the NPC key on success, "" if already rescued or out of range.
-func rescue_npc_for_floor(floor_num: int) -> String:
-	var idx: int = floor_num - 1
-	if idx < 0 or idx >= NPC_UNLOCK_SEQUENCE.size():
-		return ""
-	var key: String = NPC_UNLOCK_SEQUENCE[idx]
-	if key in rescued_npcs:
-		return ""
-	rescued_npcs.append(key)
-	return key
+## Rescue NPCs tied to the given floor number (1-based).
+## Returns an array of newly rescued NPC keys (may be empty).
+func rescue_npcs_for_floor(floor_num: int) -> Array[String]:
+	var result: Array[String] = []
+	var keys: Array = NPC_UNLOCK_MAP.get(floor_num, [])
+	for key: String in keys:
+		if key not in rescued_npcs:
+			rescued_npcs.append(key)
+			result.append(key)
+	return result
 
 ## Catch-up: ensure every NPC that should have been unlocked by now is present.
 ## Called on save load to handle old saves missing the new NPC data.
 func _apply_npc_catchup() -> void:
 	# Old saves may have floors_cleared=0 even if current_floor>1; use whichever is higher.
 	var effective_cleared: int = maxi(floors_cleared, current_floor - 1)
-	for i in NPC_UNLOCK_SEQUENCE.size():
-		if effective_cleared > i:
-			var key: String = NPC_UNLOCK_SEQUENCE[i]
-			if key not in rescued_npcs:
-				rescued_npcs.append(key)
+	for floor_num: int in NPC_UNLOCK_MAP.keys():
+		if effective_cleared >= floor_num:
+			for key: String in NPC_UNLOCK_MAP[floor_num]:
+				if key not in rescued_npcs:
+					rescued_npcs.append(key)
 
 # Core stats (single-digit)
 var stat_str: int = 2
