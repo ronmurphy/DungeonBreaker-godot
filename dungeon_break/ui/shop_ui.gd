@@ -445,20 +445,12 @@ func _add_sell_section() -> void:
 
 func _group_backpack_for_sell() -> Array:
 	var groups: Array = []
-	var id_map: Dictionary = {}
 	for i in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[i]
 		var t: int = ItemDB.resolve_item_type(item)
 		if t == ItemDB.ItemType.KEY:
 			continue
-		var item_id: String = item.get("id", "_%d" % i)
-		if item_id in id_map:
-			var gi: int = id_map[item_id]
-			groups[gi]["indices"].append(i)
-			groups[gi]["count"] += 1
-		else:
-			id_map[item_id] = groups.size()
-			groups.append({"item": item, "indices": [i], "count": 1})
+		groups.append({"item": item, "indices": [i], "count": int(item.get("count", 1))})
 	return groups
 
 
@@ -478,7 +470,7 @@ func _add_sell_row(group: Dictionary) -> void:
 	var item: Dictionary = group["item"]
 	var count: int = int(group["count"])
 	var first_idx: int = int(group["indices"][0])
-	var sell_price: int = _get_sell_price(item)
+	var sell_price: int = _get_sell_price(item) * count
 
 	var row_panel := PanelContainer.new()
 	var row_style := StyleBoxFlat.new()
@@ -532,16 +524,19 @@ func _on_sell_pressed(backpack_idx: int) -> void:
 	if backpack_idx < 0 or backpack_idx >= GameData.backpack.size():
 		return
 	var item: Dictionary = GameData.backpack[backpack_idx]
-	var sell_price: int = _get_sell_price(item)
+	var stack_count: int = int(item.get("count", 1))
+	var sell_price: int = _get_sell_price(item) * stack_count
 	if sell_price <= 0:
 		_show_feedback("That item can't be sold.", Color(1.0, 0.6, 0.2))
 		return
 
-	var removed: Dictionary = ItemDB.remove_from_backpack(backpack_idx)
+	var removed: Dictionary = ItemDB.remove_from_backpack(backpack_idx, stack_count)
 	if removed.is_empty():
 		return
 
 	var iname: String = removed.get("name", "item")
+	if stack_count > 1:
+		iname = "%s x%d" % [iname, stack_count]
 	GameData.add_gold(sell_price)
 	_show_feedback("Sold %s for %dg." % [iname, sell_price], Color(0.5, 1.0, 0.6))
 	_populate_items(_role)

@@ -576,8 +576,8 @@ func _refresh_backpack():
 
 		_backpack_grid.add_child(container)
 
-	# Fill remaining slots up to 24 with empties
-	var remaining: int = GameData.BACKPACK_SIZE - _backpack_groups.size()
+	# Fill remaining slots with empties
+	var remaining: int = GameData.BACKPACK_SIZE + GameData.backpack_bonus_slots - _backpack_groups.size()
 	for _i in maxi(0, remaining):
 		var empty := Button.new()
 		empty.custom_minimum_size = Vector2(46, 46)
@@ -932,22 +932,15 @@ func _get_scaled_symbol(path: String, max_px: int) -> Texture2D:
 	return tex
 
 
-## Group backpack items by id for visual stacking.
+## Build display groups from the backpack. Each entry is already a stack in the data,
+## so each backpack slot maps directly to one group.
 ## Returns: [{item: Dictionary, indices: Array[int], count: int}, ...]
 func _group_backpack_items(filter_types: Array = []) -> Array:
 	var groups: Array = []
-	var id_map: Dictionary = {}
 	for i in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[i]
 		var item_type: int = ItemDB.resolve_item_type(item)
 		if not filter_types.is_empty() and item_type not in filter_types:
 			continue
-		var item_id: String = item.get("id", "_%d" % i)
-		if item_id in id_map:
-			var gi: int = id_map[item_id]
-			groups[gi]["indices"].append(i)
-			groups[gi]["count"] += 1
-		else:
-			id_map[item_id] = groups.size()
-			groups.append({"item": item, "indices": [i], "count": 1})
+		groups.append({"item": item, "indices": [i], "count": int(item.get("count", 1))})
 	return groups

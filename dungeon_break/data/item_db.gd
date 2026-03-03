@@ -40,6 +40,15 @@ const CONSUMABLE_TYPES := [
 	ItemType.POTION,
 ]
 
+## Item types that stack in the backpack (multiple units share one slot).
+## Weapons and armor are always count=1 (each occupies its own slot).
+const STACKABLE_TYPES := [
+	ItemType.FOOD,
+	ItemType.POTION,
+	ItemType.KEY,
+	ItemType.MISC,
+]
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ITEM DEFINITIONS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -466,7 +475,9 @@ func create_item(item_id: String) -> Dictionary:
 		push_warning("ItemDB: unknown item '%s'" % item_id)
 		return {}
 	var base: Dictionary = ITEMS[item_id]
-	return normalize_item(base.duplicate(true))
+	var item: Dictionary = normalize_item(base.duplicate(true))
+	item["count"] = 1
+	return item
 
 
 ## Get the item definition (read-only).
@@ -509,6 +520,10 @@ func is_armor(item: Dictionary) -> bool:
 	return resolve_item_type(item) in ARMOR_TYPES
 
 
+func is_stackable(item: Dictionary) -> bool:
+	return resolve_item_type(item) in STACKABLE_TYPES
+
+
 ## Normalize a loaded/runtime item dict to the canonical schema.
 func normalize_item(item: Dictionary) -> Dictionary:
 	if item.is_empty():
@@ -535,6 +550,34 @@ func normalize_item_array(arr: Array) -> Array:
 	for v in arr:
 		if v is Dictionary:
 			out.append(normalize_item(v as Dictionary))
+	return out
+
+
+## Convert a flat item array (old format) to stacked format.
+## Stackable items with the same id are merged into one entry with a "count" field.
+## Idempotent: running on already-stacked data is safe (items with count>1 stay merged).
+func stack_item_array(arr: Array) -> Array:
+	var out: Array = []
+	var id_map: Dictionary = {}
+	for raw in arr:
+		if not (raw is Dictionary):
+			continue
+		var item: Dictionary = raw as Dictionary
+		var item_id: String = item.get("id", "")
+		var count: int = int(item.get("count", 1))
+		if item_id != "" and is_stackable(item):
+			if item_id in id_map:
+				var idx: int = id_map[item_id]
+				out[idx]["count"] = int(out[idx].get("count", 1)) + count
+			else:
+				id_map[item_id] = out.size()
+				var entry: Dictionary = item.duplicate(true)
+				entry["count"] = count
+				out.append(entry)
+		else:
+			var entry: Dictionary = item.duplicate(true)
+			entry["count"] = 1
+			out.append(entry)
 	return out
 
 
@@ -665,19 +708,44 @@ func unequip_slot(slot_type: int) -> Dictionary:
 
 
 ## Add item to backpack. Returns true if added, false if full.
+## Stackable items (food/potion/key/misc) merge into an existing stack instead of taking a new slot.
 func add_to_backpack(item: Dictionary) -> bool:
+	item = normalize_item(item)
+	var add_count: int = int(item.get("count", 1))
+	if is_stackable(item):
+		var item_id: String = item.get("id", "")
+		if item_id != "":
+			for i in GameData.backpack.size():
+				var entry: Dictionary = GameData.backpack[i]
+				if entry.get("id", "") == item_id:
+					GameData.backpack[i]["count"] = int(GameData.backpack[i].get("count", 1)) + add_count
+					GameData.inventory_changed.emit()
+					return true
+	# No existing stack (or not stackable) — need a new slot
 	if GameData.backpack.size() >= GameData.BACKPACK_SIZE + GameData.backpack_bonus_slots:
 		return false
-	GameData.backpack.append(normalize_item(item))
+	item["count"] = add_count
+	GameData.backpack.append(item)
 	GameData.inventory_changed.emit()
 	return true
 
 
-## Remove item from backpack by index.
-func remove_from_backpack(index: int) -> Dictionary:
+## Remove item(s) from backpack by index.
+## For stackable items with count > amount, decrements the count and returns a copy with the removed amount.
+## Pass amount equal to item["count"] (or any value >= current count) to remove the entire stack.
+func remove_from_backpack(index: int, amount: int = 1) -> Dictionary:
 	if index < 0 or index >= GameData.backpack.size():
 		return {}
 	var item: Dictionary = GameData.backpack[index]
+	var current_count: int = int(item.get("count", 1))
+	if is_stackable(item) and current_count > amount:
+		# Partial removal — decrement count, keep the slot
+		GameData.backpack[index]["count"] = current_count - amount
+		var out: Dictionary = item.duplicate(true)
+		out["count"] = amount
+		GameData.inventory_changed.emit()
+		return out
+	# Remove the entire slot
 	GameData.backpack.remove_at(index)
 	GameData.inventory_changed.emit()
 	return item

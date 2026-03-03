@@ -1259,20 +1259,12 @@ func _hp_bar_color(ratio: float) -> Color:
 ## Returns: [{item: Dictionary, indices: Array[int], count: int}, ...]
 func _group_backpack_items(filter_types: Array = []) -> Array:
 	var groups: Array = []
-	var id_map: Dictionary = {}
 	for i in GameData.backpack.size():
 		var item: Dictionary = GameData.backpack[i]
 		var t: int = _resolve_item_type(item)
 		if not filter_types.is_empty() and t not in filter_types:
 			continue
-		var item_id: String = item.get("id", "_%d" % i)
-		if item_id in id_map:
-			var gi: int = id_map[item_id]
-			groups[gi]["indices"].append(i)
-			groups[gi]["count"] += 1
-		else:
-			id_map[item_id] = groups.size()
-			groups.append({"item": item, "indices": [i], "count": 1})
+		groups.append({"item": item, "indices": [i], "count": int(item.get("count", 1))})
 	return groups
 
 
