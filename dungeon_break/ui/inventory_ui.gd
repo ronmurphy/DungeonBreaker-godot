@@ -304,7 +304,7 @@ func _build_backpack_col(parent: HBoxContainer):
 	col.add_child(col_title)
 
 	_backpack_grid = GridContainer.new()
-	_backpack_grid.columns = 6
+	_backpack_grid.columns = 8
 	_backpack_grid.add_theme_constant_override("h_separation", 4)
 	_backpack_grid.add_theme_constant_override("v_separation", 4)
 	col.add_child(_backpack_grid)

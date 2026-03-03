@@ -3,7 +3,6 @@
 [ext_resource type="ArrayMesh" uid="uid://rq0nk6t5jqyc" path="res://blocky_game/blocks/grass/grass.obj" id="1"]
 [ext_resource type="ArrayMesh" uid="uid://dmi1fa4udxhx3" path="res://blocky_game/blocks/dirt/dirt.obj" id="2"]
 [ext_resource type="Material" uid="uid://bvllkch8a7b0w" path="res://blocky_game/blocks/terrain_material.tres" id="2_r7axq"]
-[ext_resource type="Material" path="res://blocky_game/blocks/terrain_material_wall.tres" id="wall_mat"]
 [ext_resource type="ArrayMesh" uid="uid://dungrukis54l4" path="res://blocky_game/blocks/log/log_y.obj" id="3"]
 [ext_resource type="ArrayMesh" uid="uid://cttendrth7rqh" path="res://blocky_game/blocks/log/log_x.obj" id="4"]
 [ext_resource type="ArrayMesh" uid="uid://bur41ote1leoo" path="res://blocky_game/blocks/log/log_z.obj" id="5"]
@@ -66,6 +65,7 @@
 [ext_resource type="ArrayMesh" uid="uid://byqacmotvx763" path="res://blocky_game/blocks/mgreycolor/mgreycolor.obj" id="63_iqhl2"]
 [ext_resource type="ArrayMesh" uid="uid://urm2kpt7p14m" path="res://blocky_game/blocks/lgreycolor/lgreycolor.obj" id="64_acdld"]
 [ext_resource type="ArrayMesh" uid="uid://6khci5abxho0" path="res://blocky_game/blocks/redcolor/redcolor.obj" id="65_qd0rp"]
+[ext_resource type="Material" path="res://blocky_game/blocks/terrain_material_wall.tres" id="wall_mat"]
 
 [sub_resource type="VoxelBlockyModelEmpty" id="VoxelBlockyModelEmpty_mk2sr"]
 resource_name = "air"
@@ -456,7 +456,7 @@ tile_front = Vector2i(9, 15)
 
 [sub_resource type="VoxelBlockyModelCube" id="VoxelBlockyModelCube_u5hj0"]
 resource_name = "sand_stone"
-material_override_0 = ExtResource("2_r7axq")
+material_override_0 = ExtResource("wall_mat")
 tile_left = Vector2i(10, 15)
 tile_right = Vector2i(10, 15)
 tile_bottom = Vector2i(10, 15)

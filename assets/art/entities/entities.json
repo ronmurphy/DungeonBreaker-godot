@@ -92,25 +92,6 @@
 		"dead_wood-leaves": 3
 	  }
 	},
-	"vine_creeper": {
-	  "name": "Vine Creeper",
-	  "type": "enemy",
-	  "tier": 2,
-	  "hp": 20,
-	  "attack": 5,
-	  "defense": 14,
-	  "speed": 2,
-	  "abilities": ["Thorny Vine", "Grapple"],
-	  "sprite_ready": null,
-	  "sprite_attack": null,
-	  "sprite_portrait": "vine_creeper.jpeg",
-	  "description": "Plant creature that emerges from giant pods.",
-	  "craftable": true,
-	  "craft_materials": {
-		"flower": 5,
-		"oak_wood": 3
-	  }
-	},
 	"zombie_crawler": {
 	  "name": "Zombie Crawler",
 	  "type": "enemy",
@@ -247,22 +228,6 @@
 	  "description": "Goblin-engineered tank with bulldozer plow, charges in straight lines.",
 	  "craftable": false,
 	  "drops": ["scrap_metal", "bulldozer_parts", "fuel_cells"]
-	},
-	"brood_guardian": {
-	  "name": "Brood Guardian",
-	  "type": "enemy",
-	  "tier": 2,
-	  "hp": 28,
-	  "attack": 7,
-	  "defense": 16,
-	  "speed": 3,
-	  "abilities": ["Brood Protection", "Damage Reduction", "Spawn Minions"],
-	  "sprite_ready": "brood_guardian_ready_pose_enhanced.png",
-	  "sprite_attack": "brood_guardian_attack_pose_enhanced.png",
-	  "sprite_portrait": "brood_guardian.jpeg",
-	  "description": "Protects smaller creatures, can summon reinforcements.",
-	  "craftable": false,
-	  "drops": ["guardian_carapace", "brood_essence"]
 	},
 	"zombie_brute": {
 	  "name": "Zombie Brute",

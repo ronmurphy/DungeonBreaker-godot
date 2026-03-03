@@ -33,6 +33,7 @@ var _combat_floor_height: int = 0  # elevation of the active combat room
 var _terrain_mat: StandardMaterial3D = null
 var _wall_tween: Tween = null
 var _e_was_pressed: bool = false
+var _chunk_keeper: VoxelViewer = null  # keeps all dungeon chunks loaded
 
 # Combat vignette overlay
 var _vignette_layer: CanvasLayer = null
@@ -91,17 +92,44 @@ func _build_dungeon():
 	# Add a temporary VoxelViewer at origin to force chunk loading.
 	# Without this, no chunks load (real viewer is on the player, who
 	# hasn't been spawned yet) and set_voxel() edits silently fail.
-	var temp_viewer := VoxelViewer.new()
-	temp_viewer.name = "TempViewer"
-	temp_viewer.position = Vector3.ZERO
-	temp_viewer.view_distance = 16   # ~256 blocks — covers largest dungeon
-	temp_viewer.requires_visuals = true
-	temp_viewer.requires_collisions = true
-	_terrain.add_child(temp_viewer)
+	#
+	# view_distance is in VOXELS (world units). The dungeon grid is centred
+	# at origin, so the farthest point is a grid corner at distance:
+	#   sqrt((cols/2)² + (rows/2)²)
+	# Floors 1-3: 64×64 → corner ~45 vx   Floors 4-6: 80×80 → ~57 vx
+	# Floors 7+:  96×96 → corner ~68 vx
+	# We pick the smallest value per tier that covers the corners + margin,
+	# to avoid requesting so many chunks that the loader can't finish in time.
+	var view_dist: int
+	if _floor_num <= 3:
+		view_dist = 56   # covers corner 45 + headroom
+	elif _floor_num <= 6:
+		view_dist = 72   # covers corner 57 + headroom
+	else:
+		view_dist = 96   # covers corner 68 + headroom
 
-	# Give chunks time to generate around the viewer
-	await get_tree().create_timer(1.5).timeout
-	await _wait_for_terrain_editable()
+	# Keep this viewer alive for the entire dungeon session.
+	# Without a stream/save on VoxelTerrain, freeing the viewer causes
+	# chunks to unload and regenerate from the base generator, erasing
+	# all stamped walls/floors.
+	_chunk_keeper = VoxelViewer.new()
+	_chunk_keeper.name = "ChunkKeeper"
+	_chunk_keeper.position = Vector3.ZERO
+	_chunk_keeper.view_distance = view_dist
+	_chunk_keeper.requires_visuals = true
+	_chunk_keeper.requires_collisions = true
+	_terrain.add_child(_chunk_keeper)
+
+	# Give chunks time to generate around the viewer — larger floors need longer
+	var initial_wait := 2.0 if _floor_num <= 3 else (3.0 if _floor_num <= 6 else 4.0)
+	await get_tree().create_timer(initial_wait).timeout
+	await _wait_for_terrain_editable(view_dist)
+
+	# IMPORTANT: refresh the stamper's voxel tool AFTER terrain is loaded.
+	# The tool obtained in setup() may reference a terrain state with no
+	# loaded chunks. Getting a fresh one now ensures set_voxel() works.
+	_dungeon_stamper.refresh_voxel_tool()
+	print("Dungeon: building floor %d (view_dist=%d, grid will be generated next)" % [_floor_num, view_dist])
 
 	# Cache wall material for combat transparency toggling (floor blocks use the other material)
 	_terrain_mat = load("res://blocky_game/blocks/terrain_material_wall.tres") as StandardMaterial3D
@@ -115,8 +143,7 @@ func _build_dungeon():
 
 	var data: Dictionary = _dungeon_stamper.build_dungeon(_floor_num)
 
-	# Clean up temp viewer now that stamping is done
-	temp_viewer.queue_free()
+	# NOTE: _chunk_keeper is intentionally kept alive — see comment above.
 
 	if data.is_empty():
 		push_error("Dungeon: failed to generate floor %d" % _floor_num)
@@ -236,7 +263,7 @@ func _spawn_enemies(data: Dictionary):
 	# Count and store the total number of clearable rooms for this floor
 	var clearable_count: int = 0
 	for room in rooms:
-		if room["room_type"] not in ["start", "bonfire", "merchant", "fountain", "alchemy"]:
+		if room["room_type"] not in ["start", "bonfire", "merchant", "fountain", "alchemy", "puzzle"]:
 			clearable_count += 1
 	GameData.set_floor_room_count(_floor_num, clearable_count)
 
@@ -249,7 +276,7 @@ func _spawn_enemies(data: Dictionary):
 		# Only spawn in uncleared normal/trap/locked rooms
 		if room["state"] != "uncleared":
 			continue
-		if room["room_type"] in ["start", "bonfire", "merchant", "fountain", "alchemy"]:
+		if room["room_type"] in ["start", "bonfire", "merchant", "fountain", "alchemy", "puzzle"]:
 			continue
 
 		# Enemy count: 1–3 for normal, 1 for boss
@@ -340,9 +367,22 @@ func _check_area_interactions():
 
 		var dist := player_pos.distance_to(child.global_position)
 		if dist > 3.0:
-			continue
+			# Puzzle reset areas cover the whole room — use a larger distance
+			if child.get_meta("interaction", "") == "puzzle_reset":
+				if dist > 15.0:
+					continue
+			else:
+				continue
 
 		var interaction: String = child.get_meta("interaction", "")
+
+		# Puzzle reset areas don't count as "near" unless the puzzle is unsolved
+		if interaction == "puzzle_reset":
+			var _prid: int = child.get_meta("room_id", -1)
+			var _proom: Dictionary = _get_room_by_id(_prid)
+			if _proom.is_empty() or _proom.get("state", "") != "uncleared":
+				continue
+
 		near_anything = true
 
 		match interaction:
@@ -377,6 +417,14 @@ func _check_area_interactions():
 						_hud.show_prompt("[E] Descend to Next Floor")
 					if e_just_pressed:
 						_do_advance_floor()
+			"puzzle_reset":
+				if _hud:
+					_hud.show_prompt("[R] Reset Puzzle")
+				if Input.is_key_pressed(KEY_R):
+					var prid: int = child.get_meta("room_id", -1)
+					var proom: Dictionary = _get_room_by_id(prid)
+					if not proom.is_empty():
+						_reset_puzzle(proom)
 
 	if not near_anything and _hud:
 		_hud.hide_prompt()
@@ -388,10 +436,28 @@ func _check_area_interactions():
 		var room: Dictionary = _dungeon_stamper.get_room_at_world(player_pos)
 		if not room.is_empty():
 			var rid: int = room["id"]
+
+			# Update push/pull mode indicator based on puzzle room presence
+			var in_puzzle: bool = room["room_type"] == "puzzle"
+			if _player and "_in_puzzle_room" in _player:
+				# Changed to a different puzzle state → handle
+				if _player._in_puzzle_room != in_puzzle:
+					_player._in_puzzle_room = in_puzzle
+					if not in_puzzle:
+						_player._pull_mode = false  # reset to push when leaving
+						if _hud and _hud.has_method("hide_block_mode"):
+							_hud.hide_block_mode()
+					else:
+						if _hud and _hud.has_method("set_block_mode"):
+							_hud.set_block_mode("PUSH")
+
 			if not _visited_rooms.has(rid):
 				_visited_rooms[rid] = true
 				_enable_room_lights(rid)
-			if room["state"] == "uncleared":
+				# Spawn puzzle blocks on first visit to a puzzle room
+				if room["room_type"] == "puzzle" and room.has("puzzle"):
+					_spawn_puzzle_blocks(room)
+			if room["state"] == "uncleared" and room["room_type"] != "puzzle":
 				_trigger_room_combat(room)
 
 
@@ -665,6 +731,125 @@ func _do_alchemy_brew():
 		print("Dungeon: not enough gold (need %d, have %d)" % [cost, GameData.gold])
 
 
+# ── Puzzle room logic ────────────────────────────────────────────────────────
+
+const PushBlockScript = preload("res://dungeon_break/world/push_block.gd")
+
+## Spawn push block entities for a puzzle room (called on first visit).
+func _spawn_puzzle_blocks(room: Dictionary):
+	var puzzle: Dictionary = room.get("puzzle", {})
+	if puzzle.is_empty():
+		return
+
+	var floor_y: int = puzzle.get("floor_y", 0)
+	var blocks: Array = puzzle["blocks"]
+	var targets: Array = puzzle["targets"]
+
+	for pos in blocks:
+		var block := Node3D.new()
+		block.set_script(PushBlockScript)
+		_dungeon_objects.add_child(block)
+		block.setup(pos, float(floor_y), room["id"])
+		block.moved.connect(_on_puzzle_block_moved.bind(room))
+
+	# Update on_target state for initial positions (in case a block starts on a target)
+	_update_puzzle_targets(room)
+
+	if _hud and _hud.has_method("show_toast"):
+		_hud.show_toast("Push the blocks onto the glowing plates!", 3.0)
+	print("Dungeon: spawned %d puzzle blocks in room %d" % [blocks.size(), room["id"]])
+
+
+## Called whenever a push block finishes moving.
+func _on_puzzle_block_moved(room: Dictionary):
+	_update_puzzle_targets(room)
+	_check_puzzle_solved(room)
+
+
+## Update on_target status for all push blocks in a room.
+func _update_puzzle_targets(room: Dictionary):
+	var puzzle: Dictionary = room.get("puzzle", {})
+	var targets: Array = puzzle.get("targets", [])
+	for block in get_tree().get_nodes_in_group("push_blocks"):
+		if not is_instance_valid(block):
+			continue
+		if block.room_id != room["id"]:
+			continue
+		block.set_on_target(block.grid_pos in targets)
+
+
+## Check if all targets in a puzzle room are covered by blocks.
+func _check_puzzle_solved(room: Dictionary):
+	var puzzle: Dictionary = room.get("puzzle", {})
+	var targets: Array = puzzle.get("targets", [])
+	if targets.is_empty():
+		return
+
+	# Build set of block positions in this room
+	var block_positions: Array[Vector2i] = []
+	for block in get_tree().get_nodes_in_group("push_blocks"):
+		if not is_instance_valid(block) or block.room_id != room["id"]:
+			continue
+		block_positions.append(block.grid_pos)
+
+	# Check every target is covered
+	for target: Vector2i in targets:
+		if target not in block_positions:
+			return  # Not solved yet
+
+	# ── Puzzle solved! ───────────────────────────────────────────────────
+	room["state"] = "cleared"
+	GameData.mark_room_cleared(_floor_num, room["id"])
+
+	# Remove push blocks (they served their purpose)
+	for block in get_tree().get_nodes_in_group("push_blocks"):
+		if is_instance_valid(block) and block.room_id == room["id"]:
+			block.queue_free()
+
+	# Reward: gold + bonus XP
+	var gold_reward: int = 15 + _floor_num * 5
+	var xp_reward: int = 10 + _floor_num * 3
+	GameData.gold += gold_reward
+	GameData.gold_changed.emit(GameData.gold)
+	GameData.grant_xp(xp_reward)
+
+	# Spawn a chest voxel at room centre as visual feedback
+	var puzzle_data: Dictionary = room.get("puzzle", {})
+	var floor_y: int = puzzle_data.get("floor_y", 0)
+	var ox: int = _dungeon_stamper.dungeon_data.get("offset_x", 0)
+	var oz: int = _dungeon_stamper.dungeon_data.get("offset_z", 0)
+	var cx: int = room["cx"] + ox
+	var cz: int = room["cy"] + oz
+	var vt: VoxelTool = _terrain.get_voxel_tool()
+	vt.channel = VoxelBuffer.CHANNEL_TYPE
+	vt.set_voxel(Vector3i(cx, floor_y + 1, cz), 48)  # CHEST block
+
+	if _hud and _hud.has_method("show_toast"):
+		_hud.show_toast("Puzzle solved!  +%dg  +%d XP" % [gold_reward, xp_reward], 3.5)
+	print("Dungeon: puzzle room %d solved! +%d gold, +%d XP" % [room["id"], gold_reward, xp_reward])
+
+
+## Reset all push blocks in a puzzle room to their spawn positions.
+func _reset_puzzle(room: Dictionary):
+	for block in get_tree().get_nodes_in_group("push_blocks"):
+		if is_instance_valid(block) and block.room_id == room["id"]:
+			block.reset()
+	_update_puzzle_targets(room)
+	if _hud and _hud.has_method("show_toast"):
+		_hud.show_toast("Puzzle reset.", 1.5)
+	print("Dungeon: puzzle room %d reset" % room["id"])
+
+
+## Look up a room dict by its ID from dungeon_data.
+func _get_room_by_id(rid: int) -> Dictionary:
+	if _dungeon_stamper == null or _dungeon_stamper.dungeon_data.is_empty():
+		return {}
+	for room in _dungeon_stamper.dungeon_data["rooms"]:
+		if room["id"] == rid:
+			return room
+	return {}
+
+
 func _on_area_body_entered(_body: Node3D, _area: Area3D):
 	pass  # Handled via proximity in _check_area_interactions
 
@@ -682,7 +867,9 @@ func _update_torch_light() -> void:
 	if _torch_light == null or not is_instance_valid(_torch_light):
 		return
 	var t: float = float(GameData.torch_fuel) / float(GameData.get_torch_fuel_max())
-	_torch_light.omni_range = lerpf(1.5, 10.0, t)
+	# Deeper floors get a slightly wider torch beam (rooms are bigger)
+	var max_range := 10.0 if _floor_num <= 3 else 14.0
+	_torch_light.omni_range = lerpf(1.5, max_range, t)
 	_torch_light.light_energy = lerpf(0.15, 1.8, t)
 
 
@@ -741,8 +928,13 @@ func _apply_quality_fallback_lighting() -> void:
 
 	_explore_ambient = DUNGEON_AMBIENT
 	_combat_ambient = COMBAT_AMBIENT
+
+	# Deeper floors get a small ambient boost so the lighter blocks stay readable
+	if _floor_num >= 4:
+		_explore_ambient += 0.03
+
 	if low_or_medium:
-		_explore_ambient = LOW_MED_DUNGEON_AMBIENT
+		_explore_ambient = maxf(_explore_ambient, LOW_MED_DUNGEON_AMBIENT)
 
 	if _fallback_fill_light and is_instance_valid(_fallback_fill_light):
 		_fallback_fill_light.visible = low_or_medium
@@ -808,17 +1000,24 @@ func _unhandled_input(event: InputEvent):
 		_combat_manager.player_select_move(grid_pos)
 
 
-func _wait_for_terrain_editable():
+func _wait_for_terrain_editable(half: int = 50):
 	var vt := _terrain.get_voxel_tool()
-	var half := 50  # covers largest dungeon (96/2 = 48) + margin
-	var check_aabb := AABB(Vector3(-half, -5, -half), Vector3(half * 2, 15, half * 2))
+	# Check the full area we need to stamp into — half on each axis from origin
+	var check_aabb := AABB(
+		Vector3(-half, -2, -half),
+		Vector3(half * 2, 12, half * 2)
+	)
 
-	for attempt in 200:
+	# Poll until editable — up to ~10s at 60fps
+	for attempt in 600:
 		if vt.is_area_editable(check_aabb):
+			print("Dungeon: terrain editable after %d frames (half=%d)" % [attempt, half])
 			return
 		await get_tree().process_frame
 
-	push_warning("Dungeon: terrain not editable after timeout — building anyway")
+	# If we get here, some chunks didn't load. Print a diagnostic and continue.
+	# The dungeon will be partially broken but at least won't hard-lock.
+	push_warning("Dungeon: terrain NOT fully editable after 600 frames (half=%d). Some walls may be missing." % half)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

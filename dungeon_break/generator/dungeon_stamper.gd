@@ -30,6 +30,8 @@ const IRON_ORE = 31
 const RUIN_STONE = 33
 const RUIN_FLOOR = 34
 const TELEPORT_STONE = 35
+const SAND   = 44
+const SAND_STONE = 45
 const CRATE  = 42
 const CHEST  = 48
 const RUST_BLOCK = 49
@@ -64,6 +66,14 @@ func setup(terrain: VoxelTerrain, scene_parent: Node3D):
 	_scene_root = scene_parent
 
 
+## Re-acquire the voxel tool after chunks have loaded.
+## Must be called between _wait_for_terrain_editable() and build_dungeon().
+func refresh_voxel_tool():
+	if _terrain:
+		_voxel_tool = _terrain.get_voxel_tool()
+		print("DungeonStamper: voxel tool refreshed")
+
+
 ## Generate and stamp a full dungeon floor. Returns dungeon data dict.
 func build_dungeon(floor_num: int) -> Dictionary:
 	if _voxel_tool == null:
@@ -83,18 +93,33 @@ func build_dungeon(floor_num: int) -> Dictionary:
 	var ox: int = -cols / 2
 	var oz: int = -rows / 2
 
+	print("DungeonStamper: floor %d — grid %dx%d, offset (%d,%d), %d rooms" % [
+		floor_num, cols, rows, ox, oz, rooms.size()])
+
+	# Quick editability spot-check: test a tile near the grid corner
+	var corner := Vector3i(ox + 1, 0, oz + 1)
+	var corner_editable := _voxel_tool.is_area_editable(AABB(Vector3(corner), Vector3(1, 1, 1)))
+	print("DungeonStamper: corner (%d,0,%d) editable=%s" % [corner.x, corner.z, str(corner_editable)])
+
 	# Determine block themes based on floor level
 	var wall_block := LOG_Y
 	var room_floor := PLANKS
 	var corr_floor := DIRT
 
-	if floor_num >= 5:
+	if floor_num >= 10:
+		# Void dungeon — very dark, endgame only
 		wall_block = VOID_STONE_BRICKS
 		room_floor = RUIN_FLOOR
 		corr_floor = VOID_STONE
-	elif floor_num >= 3:
+	elif floor_num >= 7:
+		# Grey stone dungeon — medium brightness, deep floors
 		wall_block = STONE_BRICKS
 		room_floor = RUIN_STONE
+		corr_floor = STONE
+	elif floor_num >= 4:
+		# Sandstone crypt — warm and readable, mid floors
+		wall_block = SAND_STONE
+		room_floor = SAND
 		corr_floor = STONE
 
 	# Build room_at lookup: grid position → room dict (for elevation queries)
@@ -107,6 +132,8 @@ func build_dungeon(floor_num: int) -> Dictionary:
 	# Stamp tiles. Walls are extended to MAX_ELEVATION+WALL_HEIGHT so elevated
 	# room walls reach the correct height. Elevated rooms get a solid platform
 	# base (Y=1..elev-1) plus floor at Y=elev; corridor tiles stay flat.
+	var stamp_count := 0
+	var fail_count := 0
 	for row in range(rows):
 		for col in range(cols):
 			var tile: int = grid[row][col]
@@ -127,29 +154,52 @@ func build_dungeon(floor_num: int) -> Dictionary:
 						floor_block = RUNE_CORE if randf() < 0.12 else room_floor
 
 				if elev > 0:
-					# Solid platform: fill Y=1..elev-1 (terrain gen left AIR here)
 					for y in range(1, elev):
 						_voxel_tool.set_voxel(Vector3i(wx, y, wz), wall_block)
-					# Elevated floor surface
+						stamp_count += 1
 					_voxel_tool.set_voxel(Vector3i(wx, elev, wz), floor_block)
-					# Clear room interior above elevated floor
+					stamp_count += 1
 					for y in range(elev + 1, elev + WALL_HEIGHT + 2):
 						_voxel_tool.set_voxel(Vector3i(wx, y, wz), AIR)
+						stamp_count += 1
 				else:
 					_voxel_tool.set_voxel(Vector3i(wx, FLOOR_Y, wz), floor_block)
+					stamp_count += 1
 					for y in range(FLOOR_Y + 1, FLOOR_Y + WALL_HEIGHT + 2):
 						_voxel_tool.set_voxel(Vector3i(wx, y, wz), AIR)
+						stamp_count += 1
 
 			elif tile == BspDungeon.CORRIDOR:
 				if corr_floor != DIRT:
 					_voxel_tool.set_voxel(Vector3i(wx, FLOOR_Y, wz), corr_floor)
+					stamp_count += 1
 				for y in range(FLOOR_Y + 1, FLOOR_Y + WALL_HEIGHT + 1):
 					_voxel_tool.set_voxel(Vector3i(wx, y, wz), AIR)
+					stamp_count += 1
 
 			elif tile == BspDungeon.WALL:
-				# Taller walls to cover both flat and elevated room sides
 				for y in range(FLOOR_Y, FLOOR_Y + MAX_ELEVATION + WALL_HEIGHT + 2):
 					_voxel_tool.set_voxel(Vector3i(wx, y, wz), wall_block)
+					stamp_count += 1
+
+	# Read-back verification: check a few wall tiles actually stuck
+	var verify_ok := 0
+	var verify_fail := 0
+	for room in rooms:
+		var wx_test: int = room["x"] + ox
+		var wz_test: int = room["y"] + oz
+		# The tile at (room_x-1, room_y) should be a WALL in the grid
+		if room["x"] > 0:
+			var test_col: int = room["x"] - 1
+			var test_row: int = room["y"]
+			if test_row >= 0 and test_row < rows and test_col >= 0 and test_col < cols:
+				if grid[test_row][test_col] == BspDungeon.WALL:
+					var read_back: int = _voxel_tool.get_voxel(Vector3i(test_col + ox, FLOOR_Y, test_row + oz))
+					if read_back == wall_block:
+						verify_ok += 1
+					else:
+						verify_fail += 1
+	print("DungeonStamper: stamped %d voxels. Verify: %d ok, %d FAILED read-back" % [stamp_count, verify_ok, verify_fail])
 
 	# Build staircases connecting corridors to elevated rooms
 	_build_staircases(grid, rooms, cols, rows, ox, oz, wall_block)
@@ -299,6 +349,8 @@ func _decorate_room(room: Dictionary, ox: int, oz: int, floor_num: int = 1):
 			pass  # Normal looking but needs a key
 		"vault":
 			_build_vault_room(wcx, wcz, room, ox, oz)
+		"puzzle":
+			_build_puzzle_room(wcx, wcz, room, ox, oz)
 		"normal":
 			pass  # Enemy rooms — decorated by enemy spawner
 
@@ -525,6 +577,136 @@ func _build_vault_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: in
 	area.global_position = Vector3(wcx, float(floor_y) + 2.0, wcz)
 
 	room["state"] = "cleared"
+
+
+## ── Puzzle room: Sokoban push-block puzzle ──────────────────────────────────
+## Places push blocks and target plates from a hand-designed template.
+## The room dict gets a "puzzle" key with block/target data used by dungeon.gd.
+
+# Templates: each is { "blocks": [Vector2i, ...], "targets": [Vector2i, ...] }
+# Coordinates are *relative to room top-left corner* (rx, ry), 1-tile inset.
+# Templates are designed for rooms at least 6×6 inner area.
+const _PUZZLE_TEMPLATES := [
+	# Template 0 — "Straight Shot" (easy, 2 blocks)
+	{
+		"blocks":  [Vector2i(2, 3), Vector2i(4, 3)],
+		"targets": [Vector2i(2, 5), Vector2i(4, 5)],
+	},
+	# Template 1 — "L-Push" (easy-medium, 2 blocks)
+	{
+		"blocks":  [Vector2i(2, 2), Vector2i(4, 4)],
+		"targets": [Vector2i(2, 5), Vector2i(4, 2)],
+	},
+	# Template 2 — "Trio" (medium, 3 blocks)
+	{
+		"blocks":  [Vector2i(2, 2), Vector2i(4, 2), Vector2i(3, 4)],
+		"targets": [Vector2i(5, 5), Vector2i(3, 5), Vector2i(1, 5)],
+	},
+	# Template 3 — "Diamond" (medium, 3 blocks)
+	{
+		"blocks":  [Vector2i(3, 1), Vector2i(1, 3), Vector2i(5, 3)],
+		"targets": [Vector2i(3, 5), Vector2i(1, 5), Vector2i(5, 5)],
+	},
+	# Template 4 — "Corner Trap" (medium-hard, 3 blocks)
+	{
+		"blocks":  [Vector2i(2, 2), Vector2i(4, 2), Vector2i(3, 3)],
+		"targets": [Vector2i(1, 5), Vector2i(5, 5), Vector2i(3, 5)],
+	},
+	# Template 5 — "Cross" (hard, 4 blocks)
+	{
+		"blocks":  [Vector2i(3, 1), Vector2i(1, 3), Vector2i(5, 3), Vector2i(3, 5)],
+		"targets": [Vector2i(3, 6), Vector2i(1, 6), Vector2i(5, 6), Vector2i(3, 1)],
+	},
+]
+
+## Pressure plate block — using RUNE_CORE gives a glowing look.
+const PRESSURE_PLATE_BLOCK := RUNE_CORE
+
+func _build_puzzle_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: int):
+	if not _scene_root:
+		return
+
+	var rx: int = room["x"]
+	var ry: int = room["y"]
+	var rw: int = room["w"]
+	var rh: int = room["h"]
+	var elev: int = room.get("floor_height", 0)
+	var floor_y := FLOOR_Y + elev
+
+	# Soft blue-purple puzzle light
+	_add_light(Vector3(wcx, float(floor_y) + 3.0, wcz), "PuzzleLight", Color(0.4, 0.5, 1.0), 2.5, 12.0)
+
+	# Pick a template that fits this room (need inner area ≥ max coord + 2 for walls)
+	var usable: Array = []
+	var inner_w: int = rw - 2  # 1-tile inset from each wall
+	var inner_h: int = rh - 2
+	for i in _PUZZLE_TEMPLATES.size():
+		var tmpl: Dictionary = _PUZZLE_TEMPLATES[i]
+		var fits := true
+		for pos: Vector2i in tmpl["blocks"] + tmpl["targets"]:
+			if pos.x >= inner_w or pos.y >= inner_h:
+				fits = false
+				break
+		if fits:
+			usable.append(i)
+
+	if usable.is_empty():
+		# Room too small — fall back to simplest 2-block template at (1,1) and (1,2)
+		usable.append(0)
+
+	var tmpl_idx: int = usable[randi() % usable.size()]
+	var tmpl: Dictionary = _PUZZLE_TEMPLATES[tmpl_idx]
+
+	# Possibly mirror the template (flip X) for variety
+	var mirror: bool = randf() < 0.5
+	var blocks_rel: Array = []
+	var targets_rel: Array = []
+	for pos: Vector2i in tmpl["blocks"]:
+		blocks_rel.append(Vector2i(inner_w - 1 - pos.x, pos.y) if mirror else pos)
+	for pos: Vector2i in tmpl["targets"]:
+		targets_rel.append(Vector2i(inner_w - 1 - pos.x, pos.y) if mirror else pos)
+
+	# Convert relative positions to world grid coordinates
+	# Inset by 1 from room edge so blocks don't sit against walls
+	var base_x: int = rx + 1 + ox
+	var base_z: int = ry + 1 + oz
+
+	var block_positions: Array = []  # Array[Vector2i] in world grid coords
+	var target_positions: Array = []
+
+	for pos: Vector2i in blocks_rel:
+		block_positions.append(Vector2i(base_x + pos.x, base_z + pos.y))
+	for pos: Vector2i in targets_rel:
+		var wp := Vector2i(base_x + pos.x, base_z + pos.y)
+		target_positions.append(wp)
+		# Stamp pressure plate voxel on the floor
+		_voxel_tool.set_voxel(Vector3i(wp.x, floor_y, wp.y), PRESSURE_PLATE_BLOCK)
+
+	# Puzzle reset sign (interaction area at room centre)
+	var area := Area3D.new()
+	area.name = "PuzzleResetArea_%d" % room["id"]
+	var coll := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(float(rw), 4.0, float(rh))
+	coll.shape = shape
+	area.add_child(coll)
+	area.set_meta("interaction", "puzzle_reset")
+	area.set_meta("room_id", room["id"])
+	_scene_root.add_child(area)
+	area.global_position = Vector3(wcx, float(floor_y) + 2.0, wcz)
+
+	# Store puzzle data in the room dict for dungeon.gd to use
+	room["puzzle"] = {
+		"blocks": block_positions,
+		"targets": target_positions,
+		"template": tmpl_idx,
+		"floor_y": floor_y,
+	}
+	# Puzzle rooms start uncleared — cleared when solved
+	room["state"] = "uncleared"
+
+	print("DungeonStamper: puzzle room %d — template %d, %d blocks, %d targets" % [
+		room["id"], tmpl_idx, block_positions.size(), target_positions.size()])
 
 
 ## Add sconces (lights) in room corners.

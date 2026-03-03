@@ -207,7 +207,7 @@ var scene_state: String = "camp"      # "camp" or "dungeon" — for save/load ro
 var dungeon_seed: int = 0             # RNG seed used to build current floor (0 = regenerate)
 
 # ── Inventory ────────────────────────────────────────────────────────────────
-const BACKPACK_SIZE := 24
+const BACKPACK_SIZE := 32
 const HOTBAR_SIZE := 6
 
 var backpack: Array = []  # Array of item dicts, max BACKPACK_SIZE

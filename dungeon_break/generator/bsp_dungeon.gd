@@ -24,7 +24,7 @@ const MIN_CHUNK := 10
 
 # ── Room assignment helpers ──────────────────────────────────────────────────
 const WALL_HEIGHT := 3          # voxel blocks high
-const CORRIDOR_W  := 2          # corridor width in tiles
+const CORRIDOR_W  := 1          # corridor width in tiles
 
 
 ## Generate a full dungeon floor. Returns a Dictionary:
@@ -424,6 +424,12 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 		rooms[available[assign_idx]]["room_type"] = "locked"
 		assign_idx += 1
 
+	# Puzzle (1) — sokoban push-block room, floors 3+
+	if _floor_num >= 3 and assign_idx < available.size():
+		rooms[available[assign_idx]]["room_type"] = "puzzle"
+		rooms[available[assign_idx]]["floor_height"] = 0  # must be flat
+		assign_idx += 1
+
 	# Rest stay "normal" — these get enemies
 
 	# Upper rooms not assigned boss become vault (decoy elevated rooms)
@@ -433,7 +439,7 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 
 	# Ensure interactive/safe rooms are always flat (elevation breaks their interactions)
 	# Boss rooms keep their elevation if they're upper rooms
-	const FLAT_TYPES := ["start", "bonfire", "merchant", "fountain"]
+	const FLAT_TYPES := ["start", "bonfire", "merchant", "fountain", "puzzle"]
 	for room in rooms:
 		if room["room_type"] in FLAT_TYPES:
 			room["floor_height"] = 0

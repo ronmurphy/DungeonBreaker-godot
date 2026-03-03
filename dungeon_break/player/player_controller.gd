@@ -59,6 +59,14 @@ var _click_marker: MeshInstance3D = null
 var _terrain_node: VoxelTerrain = null
 var _voxel_tool: VoxelTool = null
 
+# ── Push block cooldown (prevents multi-push per step) ──────────────────────
+var _push_cooldown: float = 0.0
+const PUSH_COOLDOWN_TIME := 0.25
+
+# ── Pull mode toggle (K key) ────────────────────────────────────────────────
+var _pull_mode: bool = false
+var _in_puzzle_room: bool = false
+
 # ── Footstep dust particles ──────────────────────────────────────────────────
 var _dust_particles: GPUParticles3D = null
 
@@ -282,6 +290,19 @@ func _do_click_to_move(mouse_pos: Vector2):
 func _physics_process(delta: float):
 	if combat_locked:
 		return
+
+	# Tick push block cooldown
+	if _push_cooldown > 0.0:
+		_push_cooldown -= delta
+
+	# ── K key: toggle push / pull mode ───────────────────────────────────
+	if Input.is_key_pressed(KEY_K) and _push_cooldown <= 0.0 and _in_puzzle_room:
+		_pull_mode = not _pull_mode
+		_push_cooldown = PUSH_COOLDOWN_TIME  # reuse cooldown to debounce
+		var hud = get_tree().get_first_node_in_group("game_hud")
+		if hud and hud.has_method("set_block_mode"):
+			hud.set_block_mode("PULL" if _pull_mode else "PUSH")
+
 	# ── WASD input ────────────────────────────────────────────────────────────
 	# Read live yaw from camera so rotation stays synced
 	var yaw_deg: float = 45.0
@@ -342,6 +363,10 @@ func _physics_process(delta: float):
 		elif _should_auto_jump(input_dir):
 			_velocity.y = jump_force
 			_grounded = false
+
+		# ── Push block detection ──────────────────────────────────────────
+		if _push_cooldown <= 0.0:
+			_try_push_block(input_dir)
 
 		# Update sprite direction (CharacterSprite) or fall back to simple flip
 		if _sprite != null:
@@ -416,3 +441,51 @@ func _apply_dust_quality(preset: int) -> void:
 		_:  # HIGH — full
 			_dust_particles.visible = true
 			_dust_particles.amount = 6
+
+
+# ── Push block helpers ───────────────────────────────────────────────────────
+
+## Check if the player is walking into a push block tile and push it,
+## or — in pull mode — drag a block behind the player into the vacated tile.
+func _try_push_block(move_dir: Vector3):
+	# Quantise movement to a cardinal direction (strongest axis)
+	var dir := Vector2i.ZERO
+	if absf(move_dir.x) > absf(move_dir.z):
+		dir = Vector2i(1, 0) if move_dir.x > 0 else Vector2i(-1, 0)
+	elif absf(move_dir.z) > 0.01:
+		dir = Vector2i(0, 1) if move_dir.z > 0 else Vector2i(0, -1)
+	else:
+		return
+
+	# Player's current tile in world grid
+	var player_tile := Vector2i(int(floor(global_position.x)), int(floor(global_position.z)))
+
+	if _pull_mode:
+		# Pull mode: look for a block BEHIND the player (opposite of move dir).
+		# That block will slide into the tile the player is leaving.
+		var behind_tile := player_tile - dir
+		for block in get_tree().get_nodes_in_group("push_blocks"):
+			if not is_instance_valid(block):
+				continue
+			if block.grid_pos == behind_tile:
+				if _voxel_tool == null and _terrain_node != null:
+					_voxel_tool = _terrain_node.get_voxel_tool()
+				if _voxel_tool:
+					_voxel_tool.channel = VoxelBuffer.CHANNEL_TYPE
+					if block.try_pull(player_tile, _voxel_tool):
+						_push_cooldown = PUSH_COOLDOWN_TIME
+				break
+	else:
+		# Push mode: block is ahead, push it further ahead.
+		var ahead_tile := player_tile + dir
+		for block in get_tree().get_nodes_in_group("push_blocks"):
+			if not is_instance_valid(block):
+				continue
+			if block.grid_pos == ahead_tile:
+				if _voxel_tool == null and _terrain_node != null:
+					_voxel_tool = _terrain_node.get_voxel_tool()
+				if _voxel_tool:
+					_voxel_tool.channel = VoxelBuffer.CHANNEL_TYPE
+					if block.try_push(dir, _voxel_tool):
+						_push_cooldown = PUSH_COOLDOWN_TIME
+				break

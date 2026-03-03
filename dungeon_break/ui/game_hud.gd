@@ -30,12 +30,16 @@ var _toast_label: Label = null
 var _toast_timer: float = 0.0
 var _toast_tween: Tween = null
 
+# Block mode indicator (push / pull)
+var _block_mode_label: Label = null
+
 # Level-up flash overlay
 var _levelup_flash: ColorRect = null
 var _levelup_label: Label = null
 
 
 func _ready():
+	add_to_group("game_hud")
 	_build_ui()
 	# Listen for level-up events
 	if not GameData.level_up.is_connected(_on_level_up):
@@ -107,6 +111,7 @@ func _build_ui():
 	# ── Hero panel (bottom-right, hidden until set_dungeon_mode(true)) ──
 	_build_hero_panel()
 	_build_toast_panel()
+	_build_block_mode_label()
 
 	# ── Settings modal ──
 	_build_settings_modal()
@@ -430,6 +435,37 @@ func _build_toast_panel() -> void:
 	_toast_label.add_theme_font_size_override("font_size", 14)
 	_toast_label.add_theme_color_override("font_color", Color(0.78, 0.92, 1.0))
 	_toast_panel.add_child(_toast_label)
+
+
+func _build_block_mode_label() -> void:
+	_block_mode_label = Label.new()
+	_block_mode_label.name = "BlockModeLabel"
+	_block_mode_label.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_block_mode_label.offset_left = -50
+	_block_mode_label.offset_right = 50
+	_block_mode_label.offset_top = 8
+	_block_mode_label.offset_bottom = 34
+	_block_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_block_mode_label.add_theme_font_size_override("font_size", 16)
+	_block_mode_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	_block_mode_label.add_theme_constant_override("shadow_offset_x", 1)
+	_block_mode_label.add_theme_constant_override("shadow_offset_y", 1)
+	_block_mode_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	_block_mode_label.visible = false
+	add_child(_block_mode_label)
+
+
+## Show the push/pull block mode indicator at top centre.
+func set_block_mode(text: String) -> void:
+	if _block_mode_label:
+		_block_mode_label.text = "[K] Mode: %s" % text
+		_block_mode_label.visible = true
+
+
+## Hide the block mode indicator.
+func hide_block_mode() -> void:
+	if _block_mode_label:
+		_block_mode_label.visible = false
 
 
 func show_toast(text: String, duration: float = 3.0) -> void:
