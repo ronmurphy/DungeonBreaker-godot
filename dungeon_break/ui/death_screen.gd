@@ -76,12 +76,13 @@ func _ready():
 	root.add_child(stats_box)
 
 	var stat_lines: Array = [
+		["Level", str(GameData.player_level)],
 		["Floor Reached", str(GameData.current_floor)],
 		["Enemies Slain", str(GameData.total_kills)],
 		["Gold Earned", "%dg" % GameData.run_gold_earned],
 		["Damage Dealt", str(GameData.run_damage_dealt)],
 		["Damage Taken", str(GameData.run_damage_taken)],
-		["Companions", str(GameData.companions.size())],
+		["Companions", str(GameData.run_companions_recruited)],
 	]
 
 	for row in stat_lines:

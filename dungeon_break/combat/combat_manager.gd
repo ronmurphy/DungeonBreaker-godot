@@ -297,6 +297,33 @@ func player_act(action: String, target_unit_idx: int = -1):
 			action_resolved.emit("%s waits." % unit["name"])
 		"flee":
 			_do_flee()
+		"skill_shield_wall":
+			_do_skill_shield_wall(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_shadowstep":
+			await _do_skill_shadowstep(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_arcane_blast":
+			_do_skill_arcane_blast(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_bless":
+			_do_skill_bless(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_steady_shot":
+			_do_skill_steady_shot(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_war_song":
+			_do_skill_war_song(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_holy_smite":
+			_do_skill_holy_smite(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_soul_drain":
+			_do_skill_soul_drain(unit_idx)
+			GameData.skill_cooldown = 2
+		"skill_shock_mine":
+			_do_skill_shock_mine(unit_idx)
+			GameData.skill_cooldown = 2
 
 	unit["has_acted"] = true
 
@@ -364,6 +391,7 @@ func _start_round():
 	_round += 1
 
 	# Reset per-round flags
+	GameData.taunt_active = false  # Shield Wall taunt expires at round start
 	for unit in _units:
 		unit["has_moved"] = false
 		unit["has_acted"] = false
@@ -423,6 +451,10 @@ func _advance_turn():
 
 func _start_player_turn(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
+
+	# Tick down skill cooldown
+	if GameData.skill_cooldown > 0:
+		GameData.skill_cooldown -= 1
 
 	# Sync player HP from GameData
 	unit["hp"] = GameData.hp
@@ -514,6 +546,13 @@ func _start_enemy_turn(unit_idx: int):
 ## from the given grid position. Defenders are weighted as if twice as close
 ## so enemies preferentially target them.
 func _get_nearest_player_faction(from_pos: Vector2i) -> int:
+	# Taunt: if Shield Wall is active, enemies must target the player
+	if GameData.taunt_active:
+		for i in _units.size():
+			var u: Dictionary = _units[i]
+			if u["type"] == "player" and u["alive"]:
+				return i
+
 	var best_idx: int = -1
 	var best_dist: float = INF
 	for i in _units.size():
@@ -956,6 +995,10 @@ func _do_attack(attacker_idx: int, target_idx: int):
 
 	if player_roll > enemy_roll:
 		var dmg := maxi(1, player_roll - enemy_roll)
+		# Apply Steady Shot bonus (Strider skill) — consumed on use, ranged only
+		if GameData.steady_shot_bonus > 0 and is_ranged:
+			dmg += GameData.steady_shot_bonus
+			GameData.steady_shot_bonus = 0
 		if is_ranged and tactical_grid:
 			# Fire the projectile — it will trigger impact FX on landing
 			var from_wpos: Vector3 = tactical_grid.grid_to_world(attacker["grid_pos"]) + Vector3(0, 1.1, 0)
@@ -1165,6 +1208,195 @@ func _do_flee():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# JOB SPECIAL SKILLS
+# ══════════════════════════════════════════════════════════════════════════════
+
+## VANGUARD — Shield Wall: Taunt all enemies to target you + AC buff.
+func _do_skill_shield_wall(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	GameData.taunt_active = true
+	GameData.ac_bonus_temp = 2
+	action_resolved.emit("[color=steelblue]%s raises a Shield Wall![/color] All enemies are [color=yellow]taunted![/color] (+2 AC)" % unit["name"])
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+			"SHIELD WALL!", Color(0.4, 0.6, 1.0))
+	_fx_camera_shake(0.12)
+
+
+## SCOUNDREL — Shadowstep: Teleport to any tile in move range + free bonus attack.
+func _do_skill_shadowstep(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	# Teleport to a random tile adjacent to an enemy (for maximum value)
+	var best_idx := _get_nearest_enemy(unit["grid_pos"])
+	if best_idx >= 0:
+		var enemy_pos: Vector2i = _units[best_idx]["grid_pos"]
+		var offsets: Array[Vector2i] = [Vector2i(1,0), Vector2i(-1,0), Vector2i(0,1), Vector2i(0,-1)]
+		offsets.shuffle()
+		var occupied := _get_occupied_positions(unit_idx)
+		var moved := false
+		for off in offsets:
+			var tp: Vector2i = enemy_pos + off
+			if tactical_grid.is_walkable(tp) and tp not in occupied:
+				_move_unit(unit_idx, tp)
+				moved = true
+				break
+		if moved:
+			action_resolved.emit("[color=purple]%s vanishes into shadow![/color]" % unit["name"])
+			if tactical_grid:
+				_fx_float_text(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+					"SHADOWSTEP!", Color(0.6, 0.2, 0.9))
+			_fx_camera_shake(0.08)
+			# Free bonus attack on the nearest enemy
+			await get_tree().create_timer(0.3).timeout
+			var targets := get_attackable_enemies(unit["grid_pos"], unit["attack_range"])
+			if not targets.is_empty():
+				_do_attack(unit_idx, targets[0]["unit_idx"])
+			return
+	# Fallback: just grant a speed boost if no teleport possible
+	action_resolved.emit("[color=purple]%s dashes through the shadows![/color] (+4 SPD)" % unit["name"])
+	GameData.combat_buff_spd += 4
+
+
+## ARCANIST — Arcane Blast: AoE d10 damage to ALL alive enemies (no friendly fire).
+func _do_skill_arcane_blast(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	var total_dmg: int = 0
+	var hit_count: int = 0
+	for i in _units.size():
+		var u: Dictionary = _units[i]
+		if u["type"] == "enemy" and u["alive"]:
+			var dmg := GameData.roll_die(10) + GameData.stat_int
+			_apply_damage(i, dmg)
+			total_dmg += dmg
+			hit_count += 1
+	action_resolved.emit("[color=cyan]%s unleashes an Arcane Blast![/color] [color=red]%d damage[/color] across %d enemies!" % [unit["name"], total_dmg, hit_count])
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+			"ARCANE BLAST!", Color(0.3, 0.7, 1.0))
+	_fx_camera_shake(0.30)
+
+
+## CONFESSOR — Bless: Heal self +4 HP (capped at max), heal all alive companions +2 HP.
+func _do_skill_bless(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	# Heal player
+	var heal_self: int = mini(4, GameData.hp_max - GameData.hp)
+	if heal_self > 0:
+		GameData.hp = mini(GameData.hp + 4, GameData.hp_max)
+		unit["hp"] = GameData.hp
+		GameData.hp_changed.emit(GameData.hp, GameData.hp_max)
+	# Heal companions
+	var comp_healed: int = 0
+	for i in _units.size():
+		var u: Dictionary = _units[i]
+		if u["type"] == "companion" and u["alive"]:
+			var c_heal: int = mini(2, u["hp_max"] - u["hp"])
+			if c_heal > 0:
+				u["hp"] += c_heal
+				comp_healed += 1
+	var msg := "[color=gold]%s invokes Bless![/color] " % unit["name"]
+	if heal_self > 0:
+		msg += "[color=green]+%d HP[/color] " % heal_self
+	else:
+		msg += "(already full) "
+	if comp_healed > 0:
+		msg += "Allies healed +2 HP!"
+	action_resolved.emit(msg)
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+			"BLESS!", Color(1.0, 0.9, 0.4))
+	_fx_camera_shake(0.06)
+
+
+## STRIDER — Steady Shot: +4 bonus damage on next ranged attack (persists until used).
+func _do_skill_steady_shot(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	GameData.steady_shot_bonus = 4
+	GameData.ac_bonus_temp = 1  # Slight AC bonus from taking aim stance
+	action_resolved.emit("[color=green]%s takes careful aim...[/color] Next ranged attack deals [color=red]+4 damage![/color]" % unit["name"])
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+			"STEADY SHOT!", Color(0.4, 0.9, 0.3))
+
+
+## MINSTREL — War Song: +2 ATK to self and all alive companions for the rest of this round.
+func _do_skill_war_song(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	GameData.combat_buff_atk += 2
+	# Buff companion attack stats directly for this round
+	var buffed: int = 0
+	for i in _units.size():
+		var u: Dictionary = _units[i]
+		if u["type"] == "companion" and u["alive"]:
+			u["attack"] += 2
+			buffed += 1
+	action_resolved.emit("[color=orchid]%s plays a rousing War Song![/color] [color=yellow]+2 ATK[/color] to all allies!" % unit["name"])
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(unit["grid_pos"]) + Vector3(0, 1.4, 0),
+			"WAR SONG!", Color(0.85, 0.5, 0.9))
+	_fx_camera_shake(0.06)
+
+
+## TEMPLAR — Holy Smite: Guaranteed hit, INT-based holy damage to nearest enemy.
+func _do_skill_holy_smite(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	var nearest_idx := _get_nearest_enemy(unit["grid_pos"])
+	if nearest_idx < 0:
+		action_resolved.emit("[color=yellow]No enemies to smite![/color]")
+		return
+	var target: Dictionary = _units[nearest_idx]
+	# Guaranteed hit — damage = d12 + INT stat (ignores defense)
+	var dmg := GameData.roll_die(12) + GameData.stat_int
+	_apply_damage(nearest_idx, dmg)
+	action_resolved.emit("[color=gold]%s calls down Holy Smite on %s![/color] [color=red]%d holy damage![/color] (ignores armor)" % [unit["name"], target["name"], dmg])
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(target["grid_pos"]) + Vector3(0, 1.4, 0),
+			"SMITE! -%d" % dmg, Color(1.0, 0.9, 0.3))
+	_fx_camera_shake(0.20)
+
+
+## REANIMATOR — Soul Drain: Steal HP from nearest enemy (deal damage, heal self).
+func _do_skill_soul_drain(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	var nearest_idx := _get_nearest_enemy(unit["grid_pos"])
+	if nearest_idx < 0:
+		action_resolved.emit("[color=yellow]No enemies to drain![/color]")
+		return
+	var target: Dictionary = _units[nearest_idx]
+	# Damage = d8 + INT
+	var dmg := GameData.roll_die(8) + GameData.stat_int
+	_apply_damage(nearest_idx, dmg)
+	# Heal self for half the damage dealt (capped at max HP)
+	var heal_amt: int = maxi(1, dmg / 2)
+	GameData.hp = mini(GameData.hp + heal_amt, GameData.hp_max)
+	unit["hp"] = GameData.hp
+	GameData.hp_changed.emit(GameData.hp, GameData.hp_max)
+	action_resolved.emit("[color=darkviolet]%s drains %s's soul![/color] [color=red]%d damage[/color], [color=green]+%d HP![/color]" % [unit["name"], target["name"], dmg, heal_amt])
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(target["grid_pos"]) + Vector3(0, 1.4, 0),
+			"SOUL DRAIN!", Color(0.6, 0.1, 0.7))
+	_fx_camera_shake(0.15)
+
+
+## TINKERER — Shock Mine: d6 damage + stun (freeze 1 turn) to nearest enemy.
+func _do_skill_shock_mine(unit_idx: int):
+	var unit: Dictionary = _units[unit_idx]
+	var nearest_idx := _get_nearest_enemy(unit["grid_pos"])
+	if nearest_idx < 0:
+		action_resolved.emit("[color=yellow]No enemies to target![/color]")
+		return
+	var target: Dictionary = _units[nearest_idx]
+	var dmg := GameData.roll_die(6) + GameData.stat_dex
+	_apply_damage(nearest_idx, dmg)
+	target["frozen_turns"] = 1  # Re-uses the existing freeze mechanic
+	action_resolved.emit("[color=yellow]%s deploys a Shock Mine on %s![/color] [color=red]%d damage[/color] + [color=cyan]STUNNED![/color]" % [unit["name"], target["name"], dmg])
+	if tactical_grid:
+		_fx_float_text(tactical_grid.grid_to_world(target["grid_pos"]) + Vector3(0, 1.4, 0),
+			"STUNNED!", Color(0.9, 0.9, 0.2))
+	_fx_camera_shake(0.15)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MOVEMENT
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1247,6 +1479,15 @@ func _kill_unit(unit_idx: int):
 		var gold_drop := randi_range(1, 5) + GameData.current_floor
 		GameData.add_gold(gold_drop)
 
+		# Grant XP — base 10 + 5 per floor, boss variants give double
+		var xp_base: int = 10 + GameData.current_floor * 5
+		if unit.get("variant", "normal") == "boss":
+			xp_base *= 2
+		var lvls: int = GameData.grant_xp(xp_base)
+		var xp_msg := "  +%d XP" % xp_base
+		if lvls > 0:
+			xp_msg += "  [color=yellow]LEVEL UP! → Lv%d[/color]" % GameData.player_level
+
 		# Roll for item drop
 		var loot: Dictionary = ItemDB.roll_loot(GameData.current_floor)
 		var loot_msg := ""
@@ -1257,7 +1498,7 @@ func _kill_unit(unit_idx: int):
 				loot_msg = "  Found %s but backpack full!" % loot.get("name", "item")
 
 		unit_defeated.emit(unit)
-		action_resolved.emit("[color=green]%s defeated![/color] +%d gold%s" % [unit["name"], gold_drop, loot_msg])
+		action_resolved.emit("[color=green]%s defeated![/color] +%d gold%s%s" % [unit["name"], gold_drop, xp_msg, loot_msg])
 
 	elif unit["type"] == "companion":
 		if is_instance_valid(unit.get("entity", null)):
@@ -1391,6 +1632,9 @@ func _cleanup():
 	# Reset temp bonuses
 	GameData.ac_bonus_temp = 0
 	GameData.counter_active = false
+	GameData.taunt_active = false
+	GameData.steady_shot_bonus = 0
+	GameData.skill_cooldown = 0
 	GameData.clear_combat_buffs()
 	GameData.in_combat = false
 

@@ -10,6 +10,7 @@ signal floor_changed(floor_num: int)
 signal inventory_changed()
 signal equipment_changed()
 signal player_died()
+signal level_up(new_level: int)
 
 # ── Player Classes ───────────────────────────────────────────────────────────
 enum PlayerClass {
@@ -35,6 +36,33 @@ const CLASS_NAMES := {
 	PlayerClass.TEMPLAR:     "Templar",
 	PlayerClass.REANIMATOR:  "Reanimator",
 	PlayerClass.TINKERER:    "Tinkerer",
+}
+
+# Job special skill names — each class gets a unique ability in place of "Defend"
+const JOB_SPECIAL_SKILL := {
+	PlayerClass.VANGUARD:    { "name": "Shield Wall",  "desc": "Taunt all enemies + AC buff",     "action": "skill_shield_wall" },
+	PlayerClass.SCOUNDREL:   { "name": "Shadowstep",   "desc": "Teleport + free bonus attack",    "action": "skill_shadowstep" },
+	PlayerClass.ARCANIST:    { "name": "Arcane Blast",  "desc": "AoE d10 to all enemies in range", "action": "skill_arcane_blast" },
+	PlayerClass.CONFESSOR:   { "name": "Bless",         "desc": "Heal self +4, allies +2 HP",      "action": "skill_bless" },
+	PlayerClass.STRIDER:     { "name": "Steady Shot",   "desc": "+4 dmg on next ranged attack",    "action": "skill_steady_shot" },
+	PlayerClass.MINSTREL:    { "name": "War Song",      "desc": "+2 ATK to party this round",      "action": "skill_war_song" },
+	PlayerClass.TEMPLAR:     { "name": "Holy Smite",    "desc": "INT-based hit, guaranteed strike", "action": "skill_holy_smite" },
+	PlayerClass.REANIMATOR:  { "name": "Soul Drain",    "desc": "Steal HP from nearest enemy",     "action": "skill_soul_drain" },
+	PlayerClass.TINKERER:    { "name": "Shock Mine",    "desc": "d6 dmg + stun nearest enemy",     "action": "skill_shock_mine" },
+}
+
+# Stat growth per level-up per class: which stat gets +1 at each level
+# Pattern repeats: primary, secondary, primary, tertiary, …
+const CLASS_LEVEL_GROWTH := {
+	PlayerClass.VANGUARD:    ["STR", "DEX", "STR", "LCK"],
+	PlayerClass.SCOUNDREL:   ["DEX", "LCK", "DEX", "STR"],
+	PlayerClass.ARCANIST:    ["INT", "DEX", "INT", "LCK"],
+	PlayerClass.CONFESSOR:   ["INT", "LCK", "INT", "DEX"],
+	PlayerClass.STRIDER:     ["DEX", "STR", "DEX", "LCK"],
+	PlayerClass.MINSTREL:    ["LCK", "INT", "LCK", "DEX"],
+	PlayerClass.TEMPLAR:     ["STR", "INT", "STR", "LCK"],
+	PlayerClass.REANIMATOR:  ["INT", "DEX", "INT", "STR"],
+	PlayerClass.TINKERER:    ["DEX", "INT", "DEX", "STR"],
 }
 
 # Base stats per class: { STR, DEX, INT, LCK }
@@ -141,6 +169,8 @@ var ac: int = 10  # Armor class (base 10 + equipment)
 var gold: int = 0
 
 # Progression
+var player_level: int = 1
+var player_xp: int = 0
 var current_floor: int = 1
 var floors_cleared: int = 0
 var total_kills: int = 0
@@ -149,6 +179,7 @@ var total_kills: int = 0
 var run_gold_earned: int = 0
 var run_damage_dealt: int = 0
 var run_damage_taken: int = 0
+var run_companions_recruited: int = 0
 var cause_of_death: String = ""
 
 # Job progression (FFT-style simplified)
@@ -224,6 +255,9 @@ func get_world_time_name() -> String:
 var stat_spd: int = 3         # Speed stat (for initiative rolls)
 var ac_bonus_temp: int = 0    # Temporary AC bonus from Defend/Counter (resets each turn)
 var counter_active: bool = false  # Counter stance active this turn
+var taunt_active: bool = false    # Shield Wall taunt — enemies forced to target player
+var steady_shot_bonus: int = 0    # Strider's Steady Shot: bonus damage on next ranged attack
+var skill_cooldown: int = 0       # Turns remaining before job special skill can be used again
 # Temporary buffs from consumables; cleared at end of combat.
 var combat_buff_str: int = 0
 var combat_buff_dex: int = 0
@@ -250,6 +284,8 @@ func _init_class(cls: PlayerClass):
 	stat_int = base["INT"]
 	stat_lck = base["LCK"]
 
+	player_level = 1
+	player_xp = 0
 	# HP scales with STR  (25 base + 4 per STR)
 	hp_max = 25 + stat_str * 4
 	hp = hp_max
@@ -279,6 +315,7 @@ func _init_class(cls: PlayerClass):
 	run_gold_earned = 0
 	run_damage_dealt = 0
 	run_damage_taken = 0
+	run_companions_recruited = 0
 	cause_of_death = ""
 	_reset_job_progress()
 	clear_combat_buffs()
@@ -307,8 +344,8 @@ func change_job(cls: PlayerClass) -> bool:
 	stat_int = base["INT"]
 	stat_lck = base["LCK"]
 
-	# Recompute max HP from class STR while preserving current HP percentage.
-	hp_max = 25 + stat_str * 4
+	# Recompute max HP from class STR + level while preserving current HP percentage.
+	hp_max = 25 + stat_str * 4 + (player_level - 1) * 2
 	hp = clampi(int(round(hp_ratio * float(hp_max))), 1, hp_max)
 	hp_changed.emit(hp, hp_max)
 	clear_combat_buffs()
@@ -476,6 +513,72 @@ func clear_combat_buffs() -> void:
 	combat_buff_ac = 0
 
 
+# ── XP / Level System ────────────────────────────────────────────────────────
+
+## XP needed to go from current level to the next (50 × current level).
+func xp_to_next_level() -> int:
+	return 50 * player_level
+
+
+## Grant XP to the player. Automatically levels up (possibly multiple times).
+## Returns the number of level-ups that occurred.
+func grant_xp(amount: int) -> int:
+	if amount <= 0:
+		return 0
+	player_xp += amount
+	var levels_gained: int = 0
+	while player_xp >= xp_to_next_level():
+		player_xp -= xp_to_next_level()
+		player_level += 1
+		levels_gained += 1
+		_apply_level_up_stats()
+		level_up.emit(player_level)
+	# Sync companion levels
+	_sync_companion_levels()
+	return levels_gained
+
+
+## Apply stat growth for the current level-up based on class growth pattern.
+func _apply_level_up_stats():
+	var growth: Array = CLASS_LEVEL_GROWTH.get(player_class, ["STR", "DEX", "INT", "LCK"])
+	var idx: int = (player_level - 2) % growth.size()  # -2 because we already incremented
+	var stat_key: String = growth[idx]
+	match stat_key:
+		"STR": stat_str += 1
+		"DEX": stat_dex += 1
+		"INT": stat_int += 1
+		"LCK": stat_lck += 1
+	# Recompute HP max — gain 4 HP per STR, always gain at least 2 HP per level
+	var old_hp_max := hp_max
+	hp_max = 25 + stat_str * 4 + (player_level - 1) * 2
+	var hp_gain := hp_max - old_hp_max
+	hp = mini(hp + hp_gain, hp_max)  # Heal by the amount gained
+	hp_changed.emit(hp, hp_max)
+
+
+## Get companion's level: 1 level below player, minimum 1.
+func get_companion_level() -> int:
+	return maxi(1, player_level - 1)
+
+
+## Sync companion levels — recalculates companion stats based on player level.
+func _sync_companion_levels():
+	var clvl: int = get_companion_level()
+	for c in companions:
+		var old_level: int = c.get("level", 1)
+		if clvl > old_level:
+			c["level"] = clvl
+			# Scale companion HP with level
+			var base_hp: int = c.get("base_hp_max", c.get("hp_max", 10))
+			var new_hp_max: int = base_hp + (clvl - 1) * 3
+			var hp_diff: int = new_hp_max - c.get("hp_max", base_hp)
+			c["hp_max"] = new_hp_max
+			c["hp"] = mini(c.get("hp", base_hp) + hp_diff, new_hp_max)
+			# Scale attack/defense slightly
+			c["attack"] = c.get("base_attack", c.get("attack", 5)) + (clvl - 1)
+			c["defense"] = c.get("base_defense", c.get("defense", 8)) + (clvl - 1)
+
+
 ## Advance to next floor.
 func advance_floor():
 	current_floor += 1
@@ -537,7 +640,23 @@ func get_companion(key: String) -> Dictionary:
 func add_companion(dict: Dictionary):
 	if not dict.has("tactic"):
 		dict["tactic"] = "balanced"
+	# Store base stats for level scaling
+	if not dict.has("base_hp_max"):
+		dict["base_hp_max"] = dict.get("hp_max", 10)
+	if not dict.has("base_attack"):
+		dict["base_attack"] = dict.get("attack", 5)
+	if not dict.has("base_defense"):
+		dict["base_defense"] = dict.get("defense", 8)
+	dict["level"] = get_companion_level()
+	# Apply level scaling immediately
+	var clvl: int = dict["level"]
+	if clvl > 1:
+		dict["hp_max"] = dict["base_hp_max"] + (clvl - 1) * 3
+		dict["hp"] = dict["hp_max"]
+		dict["attack"] = dict["base_attack"] + (clvl - 1)
+		dict["defense"] = dict["base_defense"] + (clvl - 1)
 	companions.append(dict)
+	run_companions_recruited += 1
 
 
 ## Set the combat tactic for a companion by entity_key.
@@ -688,6 +807,8 @@ func to_save_dict() -> Dictionary:
 		"hp_max": hp_max,
 		"ac": ac,
 		"gold": gold,
+		"player_level": player_level,
+		"player_xp": player_xp,
 		"current_floor": current_floor,
 		"floors_cleared": floors_cleared,
 		"total_kills": total_kills,
@@ -736,6 +857,8 @@ func from_save_dict(data: Dictionary):
 	hp_max = data.get("hp_max", 20)
 	ac = data.get("ac", 10)
 	gold = data.get("gold", 0)
+	player_level = data.get("player_level", 1)
+	player_xp = data.get("player_xp", 0)
 	current_floor = data.get("current_floor", 1)
 	floors_cleared = data.get("floors_cleared", 0)
 	total_kills = data.get("total_kills", 0)

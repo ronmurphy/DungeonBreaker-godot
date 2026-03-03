@@ -435,8 +435,14 @@ func _show_action_sub():
 	_add_sub_button("Counter [3]", "+4 AC + reflect", Color(1.0, 0.8, 0.2),
 		func(): _do_act("counter"))
 
-	_add_sub_button("Defend [4]", "+4 AC this round", Color(0.3, 0.6, 1.0),
-		func(): _do_act("defend"))
+	var job_skill: Dictionary = GameData.JOB_SPECIAL_SKILL.get(GameData.player_class, { "name": "Defend", "desc": "+4 AC this round", "action": "defend" })
+	var cd: int = GameData.skill_cooldown
+	if cd > 0:
+		_add_sub_button("%s [4]" % job_skill["name"], "Cooldown: %d turn%s" % [cd, "s" if cd > 1 else ""], Color(0.25, 0.25, 0.3),
+			func(): pass)  # disabled — callback does nothing
+	else:
+		_add_sub_button("%s [4]" % job_skill["name"], job_skill["desc"], Color(0.3, 0.6, 1.0),
+			func(): _do_act(job_skill["action"]))
 
 	# Recruit button — only shown if enemies are alive
 	if _combat and _combat.get_alive_enemies().size() > 0:

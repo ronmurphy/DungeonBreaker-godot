@@ -24,6 +24,9 @@ var _stat_hp_label: Label = null
 var _stat_name_label: Label = null
 var _stat_class_label: Label = null
 var _stat_class_icon: TextureRect = null
+var _stat_level_label: Label = null
+var _stat_xp_fill: ColorRect = null
+var _stat_xp_label: Label = null
 var _stat_floor_label: Label = null
 var _stat_str_label: Label = null
 var _stat_dex_label: Label = null
@@ -375,6 +378,36 @@ func _build_stats_col(parent: HBoxContainer):
 	_stat_class_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	class_row.add_child(_stat_class_label)
 
+	# Level label
+	_stat_level_label = Label.new()
+	_stat_level_label.add_theme_font_size_override("font_size", 12)
+	_stat_level_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.5))
+	_stat_level_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(_stat_level_label)
+
+	# XP bar
+	var xp_bg := Control.new()
+	xp_bg.custom_minimum_size = Vector2(0, 6)
+	xp_bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var xp_bg_r := ColorRect.new()
+	xp_bg_r.color = Color(0.05, 0.04, 0.08)
+	xp_bg_r.set_anchors_preset(Control.PRESET_FULL_RECT)
+	xp_bg.add_child(xp_bg_r)
+	_stat_xp_fill = ColorRect.new()
+	_stat_xp_fill.color = Color(0.85, 0.7, 0.2)
+	_stat_xp_fill.anchor_left = 0.0
+	_stat_xp_fill.anchor_top = 0.0
+	_stat_xp_fill.anchor_right = 0.0
+	_stat_xp_fill.anchor_bottom = 1.0
+	xp_bg.add_child(_stat_xp_fill)
+	col.add_child(xp_bg)
+
+	_stat_xp_label = Label.new()
+	_stat_xp_label.add_theme_font_size_override("font_size", 10)
+	_stat_xp_label.add_theme_color_override("font_color", Color(0.7, 0.65, 0.4))
+	_stat_xp_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(_stat_xp_label)
+
 	_stat_floor_label = Label.new()
 	_stat_floor_label.add_theme_font_size_override("font_size", 11)
 	_stat_floor_label.add_theme_color_override("font_color", Color(0.5, 0.55, 0.65))
@@ -725,6 +758,13 @@ func _refresh_stats():
 			_stat_class_icon.texture = null
 			_stat_class_icon.visible = false
 	_stat_floor_label.text = "Floor %d   ◆ %d gold" % [GameData.current_floor, GameData.gold]
+
+	# Level / XP
+	_stat_level_label.text = "Level %d" % GameData.player_level
+	var xp_needed: int = GameData.xp_to_next_level()
+	var xp_ratio: float = clampf(float(GameData.player_xp) / float(maxi(1, xp_needed)), 0.0, 1.0)
+	_stat_xp_fill.anchor_right = xp_ratio
+	_stat_xp_label.text = "XP  %d / %d" % [GameData.player_xp, xp_needed]
 
 	_stat_str_label.text = "STR  %d" % GameData.stat_str
 	_stat_dex_label.text = "DEX  %d" % GameData.stat_dex
