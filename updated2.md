@@ -661,3 +661,29 @@ docs/
   theLongNights_systems_audit.md  ← NEW: full audit of original game systems
 project.godot            ← Cinzel font as default
 ```
+
+---
+
+## Session 10 Notes — Vendor Rework & Cross-Class Forge Design
+*2026-03-03*
+
+### Vendor Reorganization
+
+- **Daniels** (`armor_shop`) — renamed to "General Store". Sells T0 weapons, T0 armor, and signature extras (crystal wand, poison dart, boomerang). Only vendor that buys items back.
+- **Steven** (`enhanced_weapons_shop`) — **NEW NPC**. Rescued alongside Mahan on Floor 2. Sells mid-to-high tier weapons (T1+). Does not buy items.
+- **Mahan** (`enhanced_armor_shop`) — role changed from `weapon_shop`. Sells mid-to-high tier armor (T1+). Does not buy items.
+- **Conner** — poison dart moved out of his shop; now Daniels-only.
+- Rescue system changed from flat sequence to floor → NPC map (`NPC_UNLOCK_MAP`) to support multiple rescues per floor.
+
+### Cross-Class Forge System (Design — not yet implemented)
+
+Steven and Mahan will offer a **cross-save meta-progression** forge system:
+
+- Playing a job class teaches Steven/Mahan that class's blueprint (persists in a global meta-save across all save slots)
+- Class-specific items: +3 to primary stat + unlocks that class's skill for any job class
+- **Reforge**: merge two class items into one — keeps both skills but loses 1 stat point per merge
+- Endgame: all 9 classes learned → ultimate weapon/armor with all class skills but reduced stats
+- Steven forges weapons, Mahan forges armor — 2× grind incentive
+
+Full design doc: `assets/help/cross-class.md`
+```
