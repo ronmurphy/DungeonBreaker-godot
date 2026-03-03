@@ -30,9 +30,16 @@ var _toast_label: Label = null
 var _toast_timer: float = 0.0
 var _toast_tween: Tween = null
 
+# Level-up flash overlay
+var _levelup_flash: ColorRect = null
+var _levelup_label: Label = null
+
 
 func _ready():
 	_build_ui()
+	# Listen for level-up events
+	if not GameData.level_up.is_connected(_on_level_up):
+		GameData.level_up.connect(_on_level_up)
 
 
 func _build_ui():
@@ -103,6 +110,32 @@ func _build_ui():
 
 	# ── Settings modal ──
 	_build_settings_modal()
+
+	# ── Level-up flash overlay (hidden until triggered) ──
+	_levelup_flash = ColorRect.new()
+	_levelup_flash.name = "LevelUpFlash"
+	_levelup_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_levelup_flash.color = Color(1.0, 0.95, 0.7, 0.0)
+	_levelup_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_levelup_flash)
+
+	_levelup_label = Label.new()
+	_levelup_label.name = "LevelUpLabel"
+	_levelup_label.set_anchors_preset(Control.PRESET_CENTER)
+	_levelup_label.offset_left   = -200
+	_levelup_label.offset_right  = 200
+	_levelup_label.offset_top    = -40
+	_levelup_label.offset_bottom = 40
+	_levelup_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_levelup_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_levelup_label.add_theme_font_size_override("font_size", 36)
+	_levelup_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.4))
+	_levelup_label.add_theme_constant_override("shadow_offset_x", 2)
+	_levelup_label.add_theme_constant_override("shadow_offset_y", 2)
+	_levelup_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	_levelup_label.modulate.a = 0.0
+	_levelup_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_levelup_label)
 
 
 func _build_hero_panel():
@@ -447,3 +480,31 @@ func show_prompt(text: String):
 func hide_prompt():
 	if _prompt_label:
 		_prompt_label.visible = false
+
+
+# ── Level-up flash effect ─────────────────────────────────────────────────────
+
+func _on_level_up(new_level: int) -> void:
+	if _levelup_flash == null or _levelup_label == null:
+		return
+
+	_levelup_label.text = "LEVEL UP!  Lv %d" % new_level
+
+	# Flash: white overlay peaks then fades
+	var tw := create_tween().set_parallel(true)
+
+	# Screen flash — quick bright then fade
+	tw.tween_property(_levelup_flash, "color:a", 0.35, 0.12) \
+		.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_property(_levelup_flash, "color:a", 0.0, 0.6) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+
+	# Label: scale up from small, hold, then fade out
+	_levelup_label.scale = Vector2(0.5, 0.5)
+	_levelup_label.pivot_offset = _levelup_label.size / 2.0
+	tw.tween_property(_levelup_label, "modulate:a", 1.0, 0.15)
+	tw.tween_property(_levelup_label, "scale", Vector2(1.0, 1.0), 0.25) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_interval(0.8)
+	tw.chain().tween_property(_levelup_label, "modulate:a", 0.0, 0.5) \
+		.set_trans(Tween.TRANS_SINE)

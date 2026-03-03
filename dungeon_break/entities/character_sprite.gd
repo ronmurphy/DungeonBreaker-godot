@@ -64,6 +64,10 @@ func _ready() -> void:
 	texture_filter  = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	pixel_size      = SPRITE_PIXEL_SIZE
 	render_priority = 2   # draw on top of grid tiles (priority 1)
+
+	# Drop shadow at feet
+	_add_drop_shadow()
+
 	if sprite_prefix != "":
 		setup(sprite_prefix)
 
@@ -220,3 +224,24 @@ func _to_idle() -> void:
 		_apply_pose("_back")
 	else:
 		_apply_pose("")
+
+
+## Add a flat dark ellipse below the sprite as a drop shadow.
+func _add_drop_shadow() -> void:
+	if GraphicsManager and GraphicsManager.current_preset == 0:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "Shadow"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(0.9, 0.55)
+	mi.mesh = plane
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.0, 0.0, 0.0, 0.25)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mi.material_override = mat
+	# Sprite origin is at transform.origin.y (1.1 in player.tscn), shadow at ground
+	mi.position = Vector3(0, -1.05, 0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)

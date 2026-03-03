@@ -26,6 +26,9 @@ func _ready() -> void:
 	pixel_size      = PIXEL_SIZE
 	render_priority = 2
 
+	# Drop shadow at feet
+	_add_drop_shadow()
+
 
 ## Load textures and set the facing direction.
 ## sprite_prefix: path without extension, e.g. "res://assets/art/npc_sprites/zara"
@@ -60,3 +63,28 @@ func update_facing(cam_pos: Vector3) -> void:
 	else:
 		if _tex_back:
 			texture = _tex_back
+
+
+## Add a flat dark ellipse below the NPC sprite as a drop shadow.
+func _add_drop_shadow() -> void:
+	# Skip on LOW preset
+	if GraphicsManager and GraphicsManager.current_preset == 0:
+		return
+	var parent := get_parent()
+	if parent == null:
+		# Sprite is root — create a child MeshInstance3D directly
+		parent = self
+	var mi := MeshInstance3D.new()
+	mi.name = "Shadow"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(0.9, 0.55)
+	mi.mesh = plane
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.0, 0.0, 0.0, 0.25)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mi.material_override = mat
+	mi.position = Vector3(0, -1.45, 0)  # at feet level (sprite origin is ~1.5 up)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)

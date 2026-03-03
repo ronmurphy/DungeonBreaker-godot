@@ -34,6 +34,11 @@ var _terrain_mat: StandardMaterial3D = null
 var _wall_tween: Tween = null
 var _e_was_pressed: bool = false
 
+# Combat vignette overlay
+var _vignette_layer: CanvasLayer = null
+var _vignette_rect: ColorRect = null
+var _vignette_mat: ShaderMaterial = null
+
 ## Ambient light levels for the dungeon environment
 const DUNGEON_AMBIENT := 0.05   # dark exploration
 const COMBAT_AMBIENT  := 0.35   # readable tactical grid
@@ -400,6 +405,10 @@ func _trigger_room_combat(room: Dictionary):
 	if _player:
 		_player.combat_locked = true
 	_set_wall_combat_mode(true)
+
+	# Combat-entry vignette pulse
+	_show_combat_vignette()
+
 	# Hide follower entities — combat spawns fresh entities placed on the grid
 	for f: Node3D in _companion_followers:
 		if is_instance_valid(f):
@@ -468,6 +477,7 @@ func _trigger_room_combat(room: Dictionary):
 func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 	_combat_active = false
 	_set_wall_combat_mode(false)
+	_hide_combat_vignette()
 	if _player and is_instance_valid(_player):
 		_player.combat_locked = false
 	if _camera and is_instance_valid(_camera):
@@ -808,3 +818,47 @@ func _wait_for_terrain_editable():
 		await get_tree().process_frame
 
 	push_warning("Dungeon: terrain not editable after timeout — building anyway")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMBAT VIGNETTE — screen-edge darkening on combat entry
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _show_combat_vignette() -> void:
+	if _vignette_layer == null:
+		_vignette_layer = CanvasLayer.new()
+		_vignette_layer.name = "VignetteLayer"
+		_vignette_layer.layer = 90  # above most UI but below modals
+		add_child(_vignette_layer)
+
+		_vignette_rect = ColorRect.new()
+		_vignette_rect.name = "Vignette"
+		_vignette_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_vignette_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+		var shader := load("res://dungeon_break/ui/combat_vignette.gdshader") as Shader
+		if shader:
+			_vignette_mat = ShaderMaterial.new()
+			_vignette_mat.shader = shader
+			_vignette_mat.set_shader_parameter("strength", 0.0)
+			_vignette_mat.set_shader_parameter("color", Color(0.05, 0.0, 0.0, 1.0))
+			_vignette_mat.set_shader_parameter("radius", 0.65)
+			_vignette_mat.set_shader_parameter("softness", 0.5)
+			_vignette_rect.material = _vignette_mat
+		_vignette_layer.add_child(_vignette_rect)
+
+	if _vignette_mat:
+		# Pulse in, hold briefly, then settle to a light persistent vignette
+		var tw := create_tween()
+		tw.tween_method(func(v: float): _vignette_mat.set_shader_parameter("strength", v),
+			0.0, 0.7, 0.25).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+		tw.tween_interval(0.3)
+		tw.tween_method(func(v: float): _vignette_mat.set_shader_parameter("strength", v),
+			0.7, 0.25, 0.5).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _hide_combat_vignette() -> void:
+	if _vignette_mat:
+		var tw := create_tween()
+		tw.tween_method(func(v: float): _vignette_mat.set_shader_parameter("strength", v),
+			0.25, 0.0, 0.4).set_trans(Tween.TRANS_SINE)

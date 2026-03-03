@@ -59,6 +59,9 @@ var _click_marker: MeshInstance3D = null
 var _terrain_node: VoxelTerrain = null
 var _voxel_tool: VoxelTool = null
 
+# ── Footstep dust particles ──────────────────────────────────────────────────
+var _dust_particles: GPUParticles3D = null
+
 
 func _ready():
 	_box_mover.set_collision_mask(1)
@@ -96,6 +99,57 @@ func _ready():
 	_click_marker.visible = false
 	_click_marker.top_level = true
 	add_child(_click_marker)
+
+	# ── Footstep dust particles ──────────────────────────────────────────────
+	_dust_particles = GPUParticles3D.new()
+	_dust_particles.name = "FootDust"
+	_dust_particles.emitting = false
+	_dust_particles.amount = 6
+	_dust_particles.lifetime = 0.6
+	_dust_particles.one_shot = false
+	_dust_particles.explosiveness = 0.3
+	_dust_particles.visibility_aabb = AABB(Vector3(-2, -1, -2), Vector3(4, 3, 4))
+
+	var dust_mat := ParticleProcessMaterial.new()
+	dust_mat.direction = Vector3(0, 1, 0)
+	dust_mat.spread = 45.0
+	dust_mat.initial_velocity_min = 0.4
+	dust_mat.initial_velocity_max = 1.0
+	dust_mat.gravity = Vector3(0, -1.5, 0)
+	dust_mat.scale_min = 0.08
+	dust_mat.scale_max = 0.18
+	dust_mat.damping_min = 2.0
+	dust_mat.damping_max = 4.0
+	dust_mat.color = Color(0.75, 0.68, 0.55, 0.5)
+	# Fade out over lifetime
+	var alpha_curve := CurveTexture.new()
+	var curve := Curve.new()
+	curve.add_point(Vector2(0.0, 1.0))
+	curve.add_point(Vector2(0.6, 0.6))
+	curve.add_point(Vector2(1.0, 0.0))
+	alpha_curve.curve = curve
+	dust_mat.alpha_curve = alpha_curve
+	_dust_particles.process_material = dust_mat
+
+	# Simple quad mesh for each particle
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.15, 0.15)
+	var quad_mat := StandardMaterial3D.new()
+	quad_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	quad_mat.albedo_color = Color(0.75, 0.68, 0.55, 0.5)
+	quad_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	quad_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	quad.material = quad_mat
+	_dust_particles.draw_pass_1 = quad
+
+	add_child(_dust_particles)
+	_dust_particles.position = Vector3(0, -0.6, 0)  # near feet
+
+	# Respect graphics preset — disable on LOW
+	if GraphicsManager:
+		_apply_dust_quality(GraphicsManager.current_preset)
+		if not GraphicsManager.preset_changed.is_connected(_on_gfx_preset_changed):
+			GraphicsManager.preset_changed.connect(_on_gfx_preset_changed)
 
 
 func _enter_tree():
@@ -336,3 +390,29 @@ func _physics_process(delta: float):
 
 	assert(delta > 0)
 	_velocity = motion / delta
+
+	# ── Footstep dust: emit only when grounded + moving ──────────────────────
+	if _dust_particles and _dust_particles.visible:
+		var moving := input_dir.length_squared() > 0.01
+		_dust_particles.emitting = moving and _grounded
+
+
+# ── Graphics preset callback ─────────────────────────────────────────────────
+
+func _on_gfx_preset_changed(preset: int) -> void:
+	_apply_dust_quality(preset)
+
+
+func _apply_dust_quality(preset: int) -> void:
+	if _dust_particles == null:
+		return
+	match preset:
+		0:  # LOW — disable completely
+			_dust_particles.visible = false
+			_dust_particles.emitting = false
+		1:  # MEDIUM — reduced
+			_dust_particles.visible = true
+			_dust_particles.amount = 4
+		_:  # HIGH — full
+			_dust_particles.visible = true
+			_dust_particles.amount = 6

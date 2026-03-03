@@ -201,10 +201,37 @@ func _create_entity_node() -> Node3D:
 	sprite.render_priority = 2  # Draw on top of grid tiles (priority 1)
 	root.add_child(sprite)
 
+	# Drop shadow — flat dark ellipse at feet
+	var shadow := _create_drop_shadow()
+	root.add_child(shadow)
+	root.set_meta("shadow", shadow)
+
 	root.set_meta("sprite", sprite)
 
 	_pool_parent.add_child(root)
 	return root
+
+
+## Create a small dark ellipse mesh used as a drop shadow.
+static func _create_drop_shadow() -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = "Shadow"
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(1.0, 0.6)
+	mi.mesh = plane
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.0, 0.0, 0.0, 0.3)
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.no_depth_test = false
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mi.material_override = mat
+	mi.position = Vector3(0, 0.02, 0)  # Just above ground to avoid z-fight
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Only show on MEDIUM+ (managed per-frame by LOD or on spawn)
+	if GraphicsManager and GraphicsManager.current_preset == 0:
+		mi.visible = false
+	return mi
 
 
 func _acquire() -> Node3D:

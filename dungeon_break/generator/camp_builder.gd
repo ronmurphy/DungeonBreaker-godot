@@ -672,6 +672,30 @@ func _add_campfire_light(pos: Vector3, node_name: String, color: Color, energy: 
 	_scene_root.add_child(light)
 	light.global_position = pos
 
+	# Fire-flicker animation — subtle energy + range wobble
+	_start_flicker(light, energy, range_val)
+
+
+## Animate a light to flicker like a real flame (looping tween).
+func _start_flicker(light: OmniLight3D, base_energy: float, base_range: float) -> void:
+	var _do_flicker: Callable
+	_do_flicker = func() -> void:
+		if not is_instance_valid(light):
+			return
+		var dur: float = randf_range(0.08, 0.25)
+		var e_target: float = base_energy * randf_range(0.75, 1.15)
+		var r_target: float = base_range * randf_range(0.92, 1.05)
+		var tw := light.create_tween().set_parallel(true)
+		tw.tween_property(light, "light_energy", e_target, dur) \
+			.set_trans(Tween.TRANS_SINE)
+		tw.tween_property(light, "omni_range", r_target, dur) \
+			.set_trans(Tween.TRANS_SINE)
+		tw.chain().tween_callback(_do_flicker)
+	# Stagger start so lights don't sync
+	var delay_tw := light.create_tween()
+	delay_tw.tween_interval(randf_range(0.0, 0.5))
+	delay_tw.tween_callback(_do_flicker)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NPC SPAWNING — one slot per rescued NPC, spread around camp

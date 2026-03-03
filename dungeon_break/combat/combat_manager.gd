@@ -1784,7 +1784,12 @@ func _fx_float_text(world_pos: Vector3, text: String, color: Color = Color.WHITE
 	_scene_root.add_child(lbl)
 	lbl.global_position = world_pos + Vector3(randf_range(-0.25, 0.25), 0.1, randf_range(-0.1, 0.1))
 
+	# Start slightly oversized, then settle — gives a "pop" punch
+	lbl.scale = Vector3(1.4, 1.4, 1.4)
+
 	var tween := lbl.create_tween().set_parallel(true)
+	tween.tween_property(lbl, "scale", Vector3.ONE, 0.18) \
+		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tween.tween_property(lbl, "global_position", lbl.global_position + Vector3(0.0, 1.8, 0.0), 0.65) \
 		.set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_OUT)
 	tween.tween_property(lbl, "modulate:a", 0.0, 0.65).set_delay(0.22)
