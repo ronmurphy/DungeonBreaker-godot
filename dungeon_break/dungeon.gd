@@ -70,6 +70,9 @@ const TORCH_BURN_RATE := 0.15  # fuel per second; full torch lasts ~11 min
 var _companion_followers: Array = []
 var _player_pos_history: Array = []
 
+## Snapshot of active companion keys taken at combat start, used to report losses.
+var _pre_combat_companions: Array[String] = []
+
 
 func _ready():
 	_dungeon_objects = Node3D.new()
@@ -559,12 +562,17 @@ func _trigger_room_combat(room: Dictionary):
 	room["_offset_x"] = _dungeon_stamper.dungeon_data.get("offset_x", 0)
 	room["_offset_z"] = _dungeon_stamper.dungeon_data.get("offset_z", 0)
 
+	# Snapshot companion roster before combat so we can report losses afterwards
+	_pre_combat_companions = GameData.active_companions.duplicate()
+	print("Dungeon: combat companions roster: %s" % str(GameData.active_companions))
+
 	# Spawn companion entities for active companions
 	var companion_entities: Array = []
 	for ckey: String in GameData.active_companions:
 		var cdata: Dictionary = GameData.get_companion(ckey)
 		var edata: Dictionary = EnemyDB.get_enemy(ckey)
 		if cdata.is_empty() or edata.is_empty():
+			push_warning("Dungeon: skipping companion '%s' in combat — cdata empty: %s, edata empty: %s" % [ckey, str(cdata.is_empty()), str(edata.is_empty())])
 			continue
 		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
 		var ox2: int = room["_offset_x"]
@@ -632,6 +640,24 @@ func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 	if _combat_manager and is_instance_valid(_combat_manager):
 		_combat_manager.queue_free()
 		_combat_manager = null
+
+	# Report companion losses via HUD toast
+	var _lost_names: Array[String] = []
+	for ckey: String in _pre_combat_companions:
+		if not (ckey in GameData.active_companions):
+			# Companion was removed (permadeath or dismissed)
+			var edata: Dictionary = EnemyDB.get_enemy(ckey)
+			_lost_names.append(edata.get("name", ckey))
+	if not _lost_names.is_empty():
+		var loss_msg: String
+		if _lost_names.size() == 1:
+			loss_msg = "%s was lost in battle." % _lost_names[0]
+		else:
+			loss_msg = "%s were lost in battle." % ", ".join(_lost_names)
+		print("Dungeon: companions lost — %s" % loss_msg)
+		if _hud and _hud.has_method("show_toast"):
+			_hud.show_toast(loss_msg, 5.0)
+	_pre_combat_companions.clear()
 
 	# Re-show surviving companion followers; despawn any that died in combat.
 	# Snap to player position first so they don't reappear at the old room entrance.
@@ -748,6 +774,7 @@ func _spawn_companion_followers(base_pos: Vector3):
 		var cdata: Dictionary = GameData.get_companion(ckey)
 		var edata: Dictionary = EnemyDB.get_enemy(ckey)
 		if cdata.is_empty() or edata.is_empty():
+			push_warning("Dungeon: skipping companion follower '%s' — cdata empty: %s, edata empty: %s" % [ckey, str(cdata.is_empty()), str(edata.is_empty())])
 			continue
 		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
 		var offset := Vector3(1.2 * (_companion_followers.size() + 1), 0.0, 0.0)

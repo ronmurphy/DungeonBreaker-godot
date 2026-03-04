@@ -336,6 +336,9 @@ func _on_action_resolved(log_text: String):
 
 func _on_unit_defeated(unit: Dictionary):
 	_refresh_enemy_cards()
+	if unit.get("type", "") == "companion":
+		var cname: String = unit.get("name", "Companion")
+		_show_banner("☠  %s has fallen!  ☠" % cname, Color(0.9, 0.4, 0.15), 1.5)
 
 
 func _on_unit_moved(unit: Dictionary, _from: Vector2i, to: Vector2i):
