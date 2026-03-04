@@ -130,6 +130,25 @@
 		"dead_wood": 2
 	  }
 	},
+	"goblin_engineer": {
+	  "name": "Goblin Engineer",
+	  "type": "enemy",
+	  "tier": 2,
+	  "hp": 15,
+	  "attack": 5,
+	  "defense": 14,
+	  "speed": 3,
+	  "abilities": ["Engineering", "Explosive Device", "Female Targeting"],
+	  "sprite_ready": "goblin_engineer_ready_pose_enhanced.png",
+	  "sprite_attack": "goblin_engineer_attack_pose_enhanced.png",
+	  "sprite_portrait": "goblin_engineer.jpeg",
+	  "description": "Creates and maintains constructs, wears odd headgear.",
+	  "craftable": true,
+	  "craft_materials": {
+		"stone": 3,
+		"dead_wood": 2
+	  }
+	},
 	"goblin_bomb_bard": {
 	  "name": "Goblin Bomb Bard",
 	  "type": "enemy",
