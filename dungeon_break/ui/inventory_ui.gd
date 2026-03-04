@@ -37,6 +37,9 @@ var _stat_combat_label: Label = null
 # Equipment slots: slot_idx (-100…-104) → { btn, icon_rect, style, slot_label, base_border }
 var _equip_slots: Dictionary = {}
 
+# Companion roster cards (bottom-right of stats column)
+var _companion_container: VBoxContainer = null
+
 var _selected_index: int = -1
 var _is_open: bool = false
 var _backpack_groups: Array = []  # cached result of _group_backpack_items()
@@ -477,6 +480,11 @@ func _build_stats_col(parent: HBoxContainer):
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	col.add_child(spacer)
 
+	# ── Companion roster ──
+	_companion_container = VBoxContainer.new()
+	_companion_container.add_theme_constant_override("separation", 4)
+	col.add_child(_companion_container)
+
 
 func _make_stat_row_label(prefix: String, color: Color) -> Label:
 	var lbl := Label.new()
@@ -493,6 +501,7 @@ func _refresh():
 	_refresh_backpack()
 	_refresh_detail()
 	_refresh_stats()
+	_refresh_companions()
 
 
 func _refresh_equipment():
@@ -792,6 +801,119 @@ func _refresh_stats():
 	_stat_dex_label.text = "DEX  %d" % GameData.stat_dex
 	_stat_int_label.text = "INT  %d" % GameData.stat_int
 	_stat_lck_label.text = "LCK  %d" % GameData.stat_lck
+
+
+func _refresh_companions():
+	if _companion_container == null:
+		return
+	# Clear previous cards
+	for ch in _companion_container.get_children():
+		ch.queue_free()
+
+	var roster: Array = GameData.companions
+	if roster.is_empty():
+		return
+
+	# Section header
+	var header := Label.new()
+	header.text = "COMPANIONS"
+	header.add_theme_font_size_override("font_size", 11)
+	header.add_theme_color_override("font_color", Color(0.55, 0.8, 0.55))
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_companion_container.add_child(header)
+
+	var sep := HSeparator.new()
+	sep.add_theme_color_override("color", Color(0.35, 0.5, 0.35, 0.5))
+	_companion_container.add_child(sep)
+
+	for cdata: Dictionary in roster:
+		var ckey: String = cdata.get("key", "")
+		var is_active: bool = ckey in GameData.active_companions
+
+		# Card panel
+		var card := PanelContainer.new()
+		var cs := StyleBoxFlat.new()
+		cs.bg_color = Color(0.06, 0.07, 0.04, 0.92) if is_active else Color(0.06, 0.05, 0.06, 0.85)
+		cs.border_color = Color(0.35, 0.6, 0.35) if is_active else Color(0.3, 0.25, 0.3, 0.6)
+		cs.set_border_width_all(1)
+		cs.set_corner_radius_all(4)
+		cs.content_margin_left = 5
+		cs.content_margin_right = 5
+		cs.content_margin_top = 4
+		cs.content_margin_bottom = 4
+		card.add_theme_stylebox_override("panel", cs)
+		_companion_container.add_child(card)
+
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		card.add_child(row)
+
+		# Portrait
+		var portrait := TextureRect.new()
+		portrait.custom_minimum_size = Vector2(32, 32)
+		portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		var portrait_path: String = EnemyDB.get_portrait_path(ckey)
+		if portrait_path != "" and ResourceLoader.exists(portrait_path):
+			portrait.texture = load(portrait_path)
+		row.add_child(portrait)
+
+		# Info column (name + HP)
+		var info := VBoxContainer.new()
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.add_theme_constant_override("separation", 2)
+		row.add_child(info)
+
+		# Name
+		var edata: Dictionary = EnemyDB.get_enemy(ckey)
+		var cname: String = cdata.get("name", edata.get("name", ckey))
+		var name_lbl := Label.new()
+		name_lbl.text = cname
+		name_lbl.add_theme_font_size_override("font_size", 11)
+		name_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.8) if is_active else Color(0.6, 0.55, 0.55))
+		name_lbl.clip_text = true
+		info.add_child(name_lbl)
+
+		# HP bar
+		var hp: int = cdata.get("hp", 0)
+		var hp_max: int = cdata.get("hp_max", 1)
+		var hp_ratio: float = clampf(float(hp) / float(maxi(1, hp_max)), 0.0, 1.0)
+
+		var bar_bg := Control.new()
+		bar_bg.custom_minimum_size = Vector2(0, 5)
+		bar_bg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var bar_bg_r := ColorRect.new()
+		bar_bg_r.color = Color(0.08, 0.04, 0.04)
+		bar_bg_r.set_anchors_preset(Control.PRESET_FULL_RECT)
+		bar_bg.add_child(bar_bg_r)
+
+		var bar_fill := ColorRect.new()
+		if hp_ratio > 0.6:
+			bar_fill.color = Color(0.2, 0.7, 0.3)
+		elif hp_ratio > 0.3:
+			bar_fill.color = Color(0.8, 0.6, 0.1)
+		else:
+			bar_fill.color = Color(0.75, 0.15, 0.1)
+		bar_fill.anchor_right = hp_ratio
+		bar_fill.anchor_bottom = 1.0
+		bar_bg.add_child(bar_fill)
+		info.add_child(bar_bg)
+
+		# HP text
+		var hp_lbl := Label.new()
+		hp_lbl.text = "HP %d/%d" % [hp, hp_max]
+		hp_lbl.add_theme_font_size_override("font_size", 9)
+		hp_lbl.add_theme_color_override("font_color", Color(0.55, 0.7, 0.55) if is_active else Color(0.45, 0.42, 0.45))
+		info.add_child(hp_lbl)
+
+		# Active/Benched indicator
+		var status_lbl := Label.new()
+		status_lbl.text = "ACTIVE" if is_active else "BENCHED"
+		status_lbl.add_theme_font_size_override("font_size", 8)
+		status_lbl.add_theme_color_override("font_color", Color(0.4, 0.75, 0.4) if is_active else Color(0.45, 0.4, 0.5))
+		status_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		row.add_child(status_lbl)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
