@@ -123,7 +123,7 @@ func _build_ui():
 	_sub_list.add_theme_constant_override("separation", 4)
 	_sub_panel.add_child(_sub_list)
 
-	# ── Combat log (bottom-left, sits above enemy panel) ──
+	# ── Combat log (bottom-centre) ──
 	var log_panel := PanelContainer.new()
 	log_panel.name = "LogPanel"
 	var lp_style := StyleBoxFlat.new()
@@ -133,11 +133,11 @@ func _build_ui():
 	lp_style.set_corner_radius_all(4)
 	lp_style.set_content_margin_all(6)
 	log_panel.add_theme_stylebox_override("panel", lp_style)
-	log_panel.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
-	log_panel.offset_left = 8
-	log_panel.offset_right = 380
-	log_panel.offset_top = -238
-	log_panel.offset_bottom = -100
+	log_panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	log_panel.offset_left = -190
+	log_panel.offset_right = 190
+	log_panel.offset_top = -138
+	log_panel.offset_bottom = -4
 	add_child(log_panel)
 
 	_combat_log = RichTextLabel.new()

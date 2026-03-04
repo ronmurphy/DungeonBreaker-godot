@@ -9,6 +9,7 @@ const CombatManagerScript = preload("res://dungeon_break/combat/combat_manager.g
 const CombatUIScript = preload("res://dungeon_break/combat/combat_ui.gd")
 const GameHudScript = preload("res://dungeon_break/ui/game_hud.gd")
 const InventoryUIScript = preload("res://dungeon_break/ui/inventory_ui.gd")
+const MinimapScript = preload("res://dungeon_break/ui/minimap.gd")
 
 signal return_to_camp()
 signal advance_floor()
@@ -29,6 +30,7 @@ var _combat_manager: Node = null
 var _floor_num: int = 1
 var _combat_active: bool = false
 var _hud: CanvasLayer = null
+var _minimap: Control = null
 var _combat_floor_height: int = 0  # elevation of the active combat room
 var _terrain_mat: StandardMaterial3D = null
 var _wall_tween: Tween = null
@@ -174,6 +176,20 @@ func _build_dungeon():
 	_hud.name = "GameHUD"
 	add_child(_hud)
 	_hud.set_dungeon_mode(true)
+
+	# Minimap overlay (top-left corner)
+	var minimap_layer := CanvasLayer.new()
+	minimap_layer.name = "MinimapLayer"
+	add_child(minimap_layer)
+	_minimap = MinimapScript.new()
+	_minimap.name = "Minimap"
+	minimap_layer.add_child(_minimap)
+	_minimap.set_dungeon_data(_dungeon_stamper.dungeon_data, _floor_num)
+	# Mark already-cleared rooms as visited on the minimap
+	for room in data["rooms"]:
+		if room.get("state", "uncleared") == "cleared":
+			_minimap.mark_visited(room["id"])
+			_minimap.mark_cleared(room["id"])
 
 	# Inventory UI (toggle with I or TAB)
 	var inv_ui := InventoryUIScript.new()
@@ -373,6 +389,10 @@ func _process(delta: float):
 		_player.global_position = start_pos
 		print("Dungeon: player fell into void — teleported to start")
 
+	# Update minimap player position
+	if _minimap and is_instance_valid(_minimap):
+		_minimap.update_player_pos(_player.global_position)
+
 	# Update companion followers trailing behind player
 	if not _combat_active:
 		_update_companion_followers()
@@ -492,6 +512,14 @@ func _check_area_interactions():
 				# Spawn puzzle blocks on first visit to a puzzle room
 				if room["room_type"] == "puzzle" and room.has("puzzle"):
 					_spawn_puzzle_blocks(room)
+				# Minimap: mark room discovered
+				if _minimap and is_instance_valid(_minimap):
+					_minimap.mark_visited(rid)
+
+			# Minimap: update current room
+			if _minimap and is_instance_valid(_minimap):
+				_minimap.set_current_room(rid)
+
 			if room["state"] == "uncleared" and room["room_type"] != "puzzle":
 				_trigger_room_combat(room)
 
@@ -502,6 +530,9 @@ func _trigger_room_combat(room: Dictionary):
 
 	if room["enemies"].is_empty():
 		room["state"] = "cleared"
+		# Minimap: mark auto-cleared room
+		if _minimap and is_instance_valid(_minimap):
+			_minimap.mark_cleared(room["id"])
 		return
 
 	_combat_active = true
@@ -625,6 +656,9 @@ func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 		GameData.mark_room_cleared(_floor_num, room["id"])
 		# Track class on room clear for skyshard eligibility
 		ForgeSystem.track_room_clear(_floor_num)
+		# Minimap: mark room cleared
+		if _minimap and is_instance_valid(_minimap):
+			_minimap.mark_cleared(room["id"])
 
 		# If boss room cleared, enable the floor portal and advance floor
 		if room["room_type"] == "boss":
@@ -853,6 +887,9 @@ func _check_puzzle_solved(room: Dictionary):
 	# ── Puzzle solved! ───────────────────────────────────────────────────
 	room["state"] = "cleared"
 	GameData.mark_room_cleared(_floor_num, room["id"])
+	# Minimap: mark puzzle room cleared
+	if _minimap and is_instance_valid(_minimap):
+		_minimap.mark_cleared(room["id"])
 
 	# Remove push blocks (they served their purpose)
 	for block in get_tree().get_nodes_in_group("push_blocks"):
