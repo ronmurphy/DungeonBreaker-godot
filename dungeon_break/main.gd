@@ -6,6 +6,7 @@ const CampScene        = preload("res://dungeon_break/game.tscn")
 const DungeonScene     = preload("res://dungeon_break/dungeon.tscn")
 const SaveSlotUIScript = preload("res://dungeon_break/ui/save_slot_ui.gd")
 const DeathScreenScript = preload("res://dungeon_break/ui/death_screen.gd")
+const TiltShiftShader  = preload("res://dungeon_break/ui/tilt_shift.gdshader")
 
 var _current_scene: Node = null
 
@@ -28,10 +29,17 @@ var _screenshot_toast_sub: Label = null
 var _screenshot_toast_tween: Tween = null
 var _screenshot_dir_path: String = ""
 
+# ── Tilt-shift overlay ────────────────────────────────────────────────────────
+var _tilt_shift_layer: CanvasLayer = null
+var _tilt_shift_rect: ColorRect = null
+var _tilt_shift_mat: ShaderMaterial = null
+var _tilt_shift_tween: Tween = null
+
 
 func _ready():
 	_build_load_overlay()
 	_build_screenshot_overlay()
+	_build_tilt_shift_overlay()
 	_show_save_slots()
 
 
@@ -129,6 +137,7 @@ func _build_screenshot_overlay():
 	_screenshot_layer.layer = 128  # above everything
 	add_child(_screenshot_layer)
 
+
 	_screenshot_toast_panel = PanelContainer.new()
 	_screenshot_toast_panel.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	_screenshot_toast_panel.offset_left = 12
@@ -169,6 +178,76 @@ func _build_screenshot_overlay():
 	_screenshot_toast_sub.add_theme_color_override("font_color", Color(0.66, 0.74, 0.86))
 	_screenshot_toast_sub.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vv.add_child(_screenshot_toast_sub)
+
+
+# ── Tilt-Shift Overlay ───────────────────────────────────────────────────────
+
+func _build_tilt_shift_overlay():
+	# Layer -1: renders BELOW all CanvasLayers (HUD, minimap, etc.)
+	# The shader reads SCREEN_UV from the composited 3D scene,
+	# so UI stays crisp while the world gets the diorama blur.
+	_tilt_shift_layer = CanvasLayer.new()
+	_tilt_shift_layer.name = "TiltShiftLayer"
+	_tilt_shift_layer.layer = -1
+	add_child(_tilt_shift_layer)
+
+	_tilt_shift_mat = ShaderMaterial.new()
+	_tilt_shift_mat.shader = TiltShiftShader
+	_tilt_shift_mat.set_shader_parameter("blur_strength", 0.0)
+	_tilt_shift_mat.set_shader_parameter("focus_center", 0.48)
+	_tilt_shift_mat.set_shader_parameter("focus_width", 0.30)
+	_tilt_shift_mat.set_shader_parameter("focus_falloff", 0.25)
+
+	_tilt_shift_rect = ColorRect.new()
+	_tilt_shift_rect.name = "TiltShiftRect"
+	_tilt_shift_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_tilt_shift_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tilt_shift_rect.material = _tilt_shift_mat
+	_tilt_shift_rect.visible = false
+	_tilt_shift_layer.add_child(_tilt_shift_rect)
+
+	# Apply initial setting
+	_apply_tilt_shift()
+
+	# React to setting changes
+	GraphicsManager.tilt_shift_changed.connect(func(_m: int): _apply_tilt_shift())
+
+
+func _apply_tilt_shift() -> void:
+	var strength: float = GraphicsManager.get_tilt_shift_strength()
+	if strength <= 0.01:
+		_tilt_shift_rect.visible = false
+	else:
+		_tilt_shift_rect.visible = true
+		_tilt_shift_mat.set_shader_parameter("blur_strength", strength)
+
+
+## Smoothly reduce tilt-shift for combat readability.
+func tilt_shift_enter_combat() -> void:
+	if not _tilt_shift_rect.visible:
+		return
+	var target: float = GraphicsManager.get_tilt_shift_combat_strength()
+	_tween_tilt_shift(target, 0.4)
+
+
+## Restore tilt-shift to exploration strength after combat.
+func tilt_shift_exit_combat() -> void:
+	if GraphicsManager.get_tilt_shift_strength() <= 0.01:
+		return
+	_tilt_shift_rect.visible = true
+	var target: float = GraphicsManager.get_tilt_shift_strength()
+	_tween_tilt_shift(target, 0.5)
+
+
+func _tween_tilt_shift(target: float, duration: float) -> void:
+	if _tilt_shift_tween and _tilt_shift_tween.is_valid():
+		_tilt_shift_tween.kill()
+	_tilt_shift_tween = create_tween()
+	_tilt_shift_tween.tween_method(
+		func(v: float): _tilt_shift_mat.set_shader_parameter("blur_strength", v),
+		float(_tilt_shift_mat.get_shader_parameter("blur_strength")),
+		target, duration
+	).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 func _input(event: InputEvent):

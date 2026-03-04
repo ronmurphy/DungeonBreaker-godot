@@ -17,6 +17,7 @@ var _time_label: Label = null
 var _time_icon: TextureRect = null
 var _settings_modal: Control = null
 var _preset_buttons: Array[Button] = []
+var _tilt_shift_buttons: Array[Button] = []
 
 # Hero panel (bottom-right, dungeon mode only)
 var _hero_panel: PanelContainer = null
@@ -244,10 +245,10 @@ func _build_settings_modal():
 	modal_style.set_content_margin_all(20)
 	modal.add_theme_stylebox_override("panel", modal_style)
 	modal.set_anchors_preset(Control.PRESET_CENTER)
-	modal.offset_left   = -160
-	modal.offset_right  = 160
-	modal.offset_top    = -110
-	modal.offset_bottom = 110
+	modal.offset_left   = -170
+	modal.offset_right  = 170
+	modal.offset_top    = -160
+	modal.offset_bottom = 160
 	overlay.add_child(modal)
 
 	var vbox := VBoxContainer.new()
@@ -315,6 +316,54 @@ func _build_settings_modal():
 		_preset_buttons.append(btn)
 		hbox.add_child(btn)
 
+	# ── Tilt-Shift row ──────────────────────────────────────────────────
+	var ts_sep := HSeparator.new()
+	var ts_sep_style := StyleBoxFlat.new()
+	ts_sep_style.bg_color = Color(0.4, 0.3, 0.55)
+	ts_sep_style.set_content_margin_all(1)
+	ts_sep.add_theme_stylebox_override("separator", ts_sep_style)
+	vbox.add_child(ts_sep)
+
+	var ts_label := Label.new()
+	ts_label.text = "Tilt-Shift"
+	ts_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ts_label.add_theme_font_size_override("font_size", 13)
+	ts_label.add_theme_color_override("font_color", Color(0.75, 0.7, 0.85))
+	vbox.add_child(ts_label)
+
+	var ts_hbox := HBoxContainer.new()
+	ts_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	ts_hbox.add_theme_constant_override("separation", 10)
+	vbox.add_child(ts_hbox)
+
+	var ts_labels := ["Off", "Subtle", "Full"]
+	_tilt_shift_buttons.clear()
+
+	for ti in 3:
+		var ts_btn := Button.new()
+		ts_btn.text = ts_labels[ti]
+		ts_btn.custom_minimum_size = Vector2(72, 30)
+		ts_btn.add_theme_font_size_override("font_size", 12)
+		var ts_normal := StyleBoxFlat.new()
+		ts_normal.bg_color = Color(0.1, 0.07, 0.18)
+		ts_normal.border_color = Color(0.4, 0.3, 0.55)
+		ts_normal.set_border_width_all(1)
+		ts_normal.set_corner_radius_all(5)
+		ts_normal.set_content_margin_all(4)
+		ts_btn.add_theme_stylebox_override("normal", ts_normal)
+		var ts_hover := ts_normal.duplicate()
+		ts_hover.bg_color = Color(0.18, 0.12, 0.3)
+		ts_btn.add_theme_stylebox_override("hover", ts_hover)
+		ts_btn.add_theme_color_override("font_color", Color(0.85, 0.8, 1.0))
+
+		var ts_idx := ti
+		ts_btn.pressed.connect(func():
+			GraphicsManager.set_tilt_shift(ts_idx)
+			_refresh_tilt_shift_buttons()
+		)
+		_tilt_shift_buttons.append(ts_btn)
+		ts_hbox.add_child(ts_btn)
+
 	var close_btn := Button.new()
 	close_btn.text = "Close"
 	close_btn.custom_minimum_size = Vector2(80, 30)
@@ -335,6 +384,7 @@ func _build_settings_modal():
 
 	_settings_modal = overlay
 	_refresh_preset_buttons()
+	_refresh_tilt_shift_buttons()
 	if desc:
 		desc.text = preset_descs[GraphicsManager.current_preset]
 
@@ -344,6 +394,7 @@ func _toggle_settings_modal():
 		_settings_modal.visible = not _settings_modal.visible
 		if _settings_modal.visible:
 			_refresh_preset_buttons()
+			_refresh_tilt_shift_buttons()
 
 
 func _refresh_preset_buttons():
@@ -353,6 +404,24 @@ func _refresh_preset_buttons():
 		var style := StyleBoxFlat.new()
 		style.set_corner_radius_all(5)
 		style.set_content_margin_all(6)
+		if is_active:
+			style.bg_color = Color(0.25, 0.15, 0.45)
+			style.border_color = Color(0.75, 0.6, 1.0)
+			style.set_border_width_all(2)
+		else:
+			style.bg_color = Color(0.1, 0.07, 0.18)
+			style.border_color = Color(0.4, 0.3, 0.55)
+			style.set_border_width_all(1)
+		btn.add_theme_stylebox_override("normal", style)
+
+
+func _refresh_tilt_shift_buttons():
+	for i in _tilt_shift_buttons.size():
+		var btn: Button = _tilt_shift_buttons[i]
+		var is_active := (i == GraphicsManager.tilt_shift_mode)
+		var style := StyleBoxFlat.new()
+		style.set_corner_radius_all(5)
+		style.set_content_margin_all(4)
 		if is_active:
 			style.bg_color = Color(0.25, 0.15, 0.45)
 			style.border_color = Color(0.75, 0.6, 1.0)

@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document (continued)
-*Continued from `updated.md`. Last updated: 2026-03-02 (session 9)*
+*Continued from `updated.md`. Last updated: 2026-03-03 (session 11)*
 
 > This file picks up where `updated.md` left off. See that file for the base project overview, tech stack, combat system, class table, and room type reference.
 
@@ -686,4 +686,381 @@ Steven and Mahan will offer a **cross-save meta-progression** forge system:
 - Steven forges weapons, Mahan forges armor — 2× grind incentive
 
 Full design doc: `assets/help/cross-class.md`
+
+---
+
+## Session 11 Summary — Accessories, Elixirs, Puzzle Rooms, Combat SFX, Forge System, and Minimap
+*2026-03-03*
+
+### 1. Accessory System + Equip Slot
+
+Added a full accessory equipment system with a new `equip_accessory` slot and 8 unique accessories with passive effects:
+
+| Accessory | Icon | Passive | Effect | Value | Loot Floor |
+|-----------|------|---------|--------|-------|------------|
+| **Blood Pendant** | blood_pendant.png | `on_kill_heal` | Gain 1 HP per kill | 50g | 3+ |
+| **Ancient Amulet** | ancientAmulet.png | `all_stats` | +1 to all stats while equipped | 100g | 5+ |
+| **Ring of Thorns** | red_ring_1.png | `thorns` | Reflect 2 damage back to melee attackers | 55g | 4+ |
+| **Ring of Vampirism** | red_ring_2.png | `vampirism` | Heal 25% of melee damage dealt | 65g | 4+ |
+| **Ring of Fortitude** | ring_silver_green.png | `fortitude` | +2 AC and +5 max HP while equipped | 70g | 5+ |
+| **Phoenix Crystal** | pheonix_crystal.png | `phoenix` | Revive once per dungeon run at 50% HP | 120g | 7+ |
+| **Gauntlet of Might** | gauntlet_of_strength.png | `atk_bonus` | +3 ATK while equipped | 80g | 6+ |
+| **Hourglass of Haste** | pheonix_hourglass.png | `spd_bonus` | +2 SPD while equipped | 75g | 6+ |
+
+#### Implementation Details
+- New `ItemType.ACCESSORY` enum value added to `ItemDB`
+- New `equip_accessory` equipment slot in `EQUIP_SLOTS`
+- `_apply_accessory_stats(item, equipping)` handles stat add/remove on equip/unequip
+- Passive data stored as `"passive"` and `"passive_value"` keys on item dicts (replaces old ad-hoc `on_kill_heal` / `all_stats_bonus` fields)
+- Blood Pendant and Ancient Amulet migrated from `ItemType.MISC` to `ItemType.ACCESSORY`
+- `is_accessory()` helper added to `ItemDB`
+- Combat manager applies accessory on-hit/on-kill effects during damage resolution
+- Inventory UI shows accessory slot in equipment panel
+
+### 2. Permanent Stat Elixirs
+
+Four rare permanent stat upgrade consumables, usable anywhere (including outside combat):
+
+| Elixir | Icon | Stat | Amount | Value | Loot Floor |
+|--------|------|------|--------|-------|------------|
+| **Elixir of Power** | limited_potion_red.png | STR | +1 | 60g | 4+ |
+| **Elixir of Iron** | limited_potion_grey.png | AC | +1 | 60g | 4+ |
+| **Elixir of Vitality** | limited_potion_green.png | max HP | +5 | 60g | 5+ |
+| **Elixir of Speed** | limited_potion_blue.png | SPD | +1 | 60g | 5+ |
+
+- New `ItemType.ELIXIR` enum value — stackable, consumed on use
+- `use_item()` handles elixir usage with permanent stat application
+- Vitality elixir also heals the +5 HP immediately
+
+**Files touched:**
+- `dungeon_break/data/item_db.gd` — 8 accessories, 4 elixirs, new types/slots, `_apply_accessory_stats()`, `is_accessory()`
+- `dungeon_break/data/game_data.gd` — `equip_accessory` slot
+- `dungeon_break/combat/combat_manager.gd` — accessory passive effect hooks
+- `dungeon_break/ui/inventory_ui.gd` — accessory slot display, elixir usage
+- `dungeon_break/ui/shop_ui.gd` — accessory/elixir shop integration
+
+---
+
+### 3. Sokoban Push-Block Puzzle Rooms
+
+Implemented a full puzzle room system ported from "The Long Nights" concept:
+
+#### BSP Integration
+- New `"puzzle"` room type assigned on **floors 3+** (one puzzle room per floor)
+- Puzzle rooms forced flat (`floor_height = 0`) to avoid elevation issues
+- Excluded from enemy spawning and clearable room counts
+
+#### Puzzle Templates (6 hand-designed layouts)
+| # | Name | Blocks | Difficulty |
+|---|------|--------|------------|
+| 0 | Straight Shot | 2 | Easy |
+| 1 | L-Push | 2 | Easy-Medium |
+| 2 | Trio | 3 | Medium |
+| 3 | Diamond | 3 | Medium |
+| 4 | Corner Trap | 3 | Medium-Hard |
+| 5 | Cross | 4 | Hard |
+
+Templates are randomly mirrored (50% X-flip) for variety. Template selection filters by room inner area to ensure fit.
+
+#### Push Block (`push_block.gd`)
+- `Node3D` script with grid-snapped movement
+- `try_push(dir, voxel_tool)` — checks destination for floor + air + no other block
+- `try_pull(dest, voxel_tool)` — allows pulling blocks (toggle with **F** key)
+- `moved` signal fires after each 0.15s tween slide
+- Visual: 0.9³ brown `BoxMesh` + drop shadow `QuadMesh`
+- Turns green when sitting on a target tile
+- `reset()` returns block to spawn position
+
+#### Player Push/Pull Controls
+- Player detects adjacent push blocks via grid position
+- Movement toward a block pushes it; **F** toggles pull mode
+- HUD shows current mode (PUSH/PULL) when in a puzzle room
+- Pull mode auto-resets when leaving puzzle rooms
+
+#### Puzzle Room Decoration
+- Pressure plates stamped as `RUNE_CORE` voxels at target positions (glowing look)
+- Soft blue-purple `OmniLight3D` at room centre
+- Room-wide `Area3D` with `puzzle_reset` interaction — **[R] Reset Puzzle** prompt
+
+#### Solve Logic
+- `_check_puzzle_solved()` checks all targets covered by blocks
+- On solve: room marked cleared, blocks freed, chest voxel spawned at room centre
+- Reward: `15 + floor×5` gold + `10 + floor×3` XP
+- Toast: "Puzzle solved! +Xg +Y XP"
+
+#### Dungeon Infrastructure Improvements
+- `VoxelViewer` kept alive for entire dungeon session (`_chunk_keeper`) — fixes chunks unloading and erasing stamped walls
+- View distance scaled per floor tier: 56 (floors 1–3), 72 (floors 4–6), 96 (floors 7+)
+- `refresh_voxel_tool()` added to `DungeonStamper` — ensures set_voxel works after terrain loads
+- Longer initial wait for larger floors (2s → 3s → 4s)
+- `_wait_for_terrain_editable()` extended to 600 frames with diagnostics
+- New floor theme tier: floors 4–6 use **sandstone crypt** palette (`SAND` floor, `SAND_STONE` walls)
+- Corridor width reduced from 2 to 1 tile
+- Deeper floors get slightly wider torch range and ambient boost
+- Read-back verification pass after stamping to detect voxel write failures
+
+**Files touched:**
+- `dungeon_break/world/push_block.gd` *(new)* — push block Node3D script
+- `dungeon_break/dungeon.gd` — puzzle spawn/solve/reset logic, chunk keeper, voxel tool refresh, new floor themes, wider torch range
+- `dungeon_break/generator/dungeon_stamper.gd` — `_build_puzzle_room()`, 6 puzzle templates, `refresh_voxel_tool()`, sandstone block constants, stamp verification
+- `dungeon_break/generator/bsp_dungeon.gd` — puzzle room type assignment (floors 3+), corridor width → 1
+- `dungeon_break/player/player_controller.gd` — push/pull block input handling
+- `dungeon_break/ui/game_hud.gd` — block mode indicator (PUSH/PULL)
+
+---
+
+### 4. Procedural Combat Sound Effects
+
+Created a Python tool (`tools/generate_sfx.py`) for procedural combat SFX generation and integrated 7 new sound effects:
+
+| SFX | File | Used For |
+|-----|------|----------|
+| `slash.ogg` | `assets/sfx/combat/slash.ogg` | Swords, axes, blades, knives |
+| `blunt.ogg` | `assets/sfx/combat/blunt.ogg` | Clubs, morningstars, spears |
+| `magic.ogg` | `assets/sfx/combat/magic.ogg` | Staves, wands, darts |
+| `ranged.ogg` | `assets/sfx/combat/ranged.ogg` | Bows, crossbows, boomerangs |
+| `roar.ogg` | `assets/sfx/combat/roar.ogg` | Enemy/companion unarmed attacks |
+| `miss.ogg` | `assets/sfx/combat/miss.ogg` | Dodge/whiff |
+| `block_push.ogg` | `assets/sfx/combat/block_push.ogg` | Sokoban block scraping |
+
+#### Generator (`tools/generate_sfx.py`)
+- Pure Python + NumPy procedural audio synthesis
+- ADSR envelope system
+- Generates WAV then converts to OGG via ffmpeg
+- Reproducible outputs, no external audio assets needed
+
+#### Combat Integration
+- `_get_weapon_sfx(weapon_id)` maps each weapon to its SFX category
+- `_current_hit_sfx` tracks per-attack SFX for consistent weapon sounds
+- All ranged weapon impact callbacks now use weapon-category SFX instead of generic `_SFX_HIT`
+- Companion attacks use `_SFX_ROAR`; companion misses use `_SFX_COMBAT_MISS`
+- Poison tick damage uses `_SFX_MAGIC`
+
+**Files touched:**
+- `tools/generate_sfx.py` *(new)* — procedural SFX generator
+- `assets/sfx/combat/*.ogg` *(new, 7 files)* — generated combat SFX
+- `dungeon_break/combat/combat_manager.gd` — weapon SFX mapping, per-attack SFX routing
+
+---
+
+### 5. Cross-Class Forge System (Full Implementation)
+
+The forge design from Session 10 is now fully implemented as a working system:
+
+#### Skyshard Earning
+- Clearing a full dungeon floor **as a single class** (no class switching mid-floor) earns that class's **Skyshard**
+- `ForgeSystem` autoload tracks class per floor via `track_room_entry()` / `track_room_clear()`
+- Skyshard awarded on boss kill if floor is eligible (`try_award_skyshard()`)
+- Each class skyshard can only be earned once
+
+#### Forge Crafting (Steven = weapons, Mahan = armor)
+- 9 class weapons + 9 class armors, each costing **100g + 1 Skyshard**
+- Every forged item grants its class's combat skill (e.g., Vanguard Forgeblade grants Shield Wall)
+- +5 ATK (weapons) or +3–5 AC (armor) + class-primary stat bonuses (+3 main stat)
+
+| Class | Forged Weapon | Forged Armor |
+|-------|---------------|--------------|
+| Vanguard | Vanguard Forgeblade (+5 ATK, +3 STR) | Tower Shield Plate (+5 AC, +3 STR) |
+| Scoundrel | Shadow Daggers (+5 ATK, +3 DEX) | Nightshade Leathers (+4 AC, +3 DEX) |
+| Arcanist | Arcane Staff (+5 ATK, +3 INT) | Spellweave Robes (+3 AC, +3 INT) |
+| Confessor | Holy Mace (+5 ATK, +2 INT/+1 LCK) | Blessed Vestments (+3 AC, +2 INT/+1 LCK) |
+| Strider | Ranger's Longbow (+5 ATK, +2 DEX/+1 STR) | Scout's Chainmail (+4 AC, +2 DEX/+1 STR) |
+| Minstrel | Songblade Rapier (+5 ATK, +2 LCK/+1 INT) | Bardic Mantle (+3 AC, +2 LCK/+1 INT) |
+| Templar | Consecrated Blade (+5 ATK, +2 STR/+1 INT) | Paladin Cuirass (+5 AC, +2 STR/+1 INT) |
+| Reanimator | Bone Sceptre (+5 ATK, +3 INT) | Necromancer's Shroud (+3 AC, +3 INT) |
+| Tinkerer | Repeater Crossbow (+5 ATK, +2 DEX/+1 INT) | Cogwork Harness (+4 AC, +2 DEX/+1 INT) |
+
+#### Reforge (Merge Two Forged Items)
+- Costs **150g** — merges two forged items of the same type (both weapons or both armor)
+- Combined item keeps both class skills but loses 1 random stat point per merge
+- Max 3 class skills per merged item (`MAX_FORGE_SKILLS`)
+- 2-merge items named "Forged Blade/Armor", 3-merge named "Master Blade/Armor"
+- `preview_reforge()` shows what the result would be without committing
+
+#### Forge Skill Slots
+- Up to 3 forge skill actions can be slotted from forged items in backpack/equipment
+- `slot_forge_skill()` / `unslot_forge_skill()` / `replace_forge_skill()`
+- Active forge skills available in combat alongside the player's native job skill
+
+#### Forge UI (`forge_ui.gd`)
+- Modal overlay opened by interacting with Steven or Mahan in camp
+- Shows available skyshards with class colors
+- Forge, reforge, and skill slot management sections
+- Feedback label with timed messages
+- ESC to close
+
+#### Save/Load Integration
+- `ForgeSystem.to_save_dict()` / `from_save_dict()` — persists floor tracking, earned skyshards, and skill slots
+- `reset_all()` for new game
+- `reset_floor()` — wipes cleared rooms and tracking for retry
+
+#### Art Assets
+- 9 forged weapon art files in `assets/art/tools/weapon_*.png`
+- 9 forged armor art files in `assets/art/tools/armor_*.png`
+
+**Files touched:**
+- `dungeon_break/data/forge_system.gd` *(new)* — full forge autoload (568 lines)
+- `dungeon_break/ui/forge_ui.gd` *(new)* — forge modal UI (534 lines)
+- `dungeon_break/data/item_db.gd` — 9 skyshards, 9 forged weapons, 9 forged armors
+- `dungeon_break/data/game_data.gd` — forge state fields
+- `dungeon_break/game.gd` — forge NPC interaction hookup
+- `dungeon_break/dungeon.gd` — skyshard award on boss kill, room tracking calls
+- `dungeon_break/combat/combat_manager.gd` — forge skill usage in combat
+- `dungeon_break/combat/combat_ui.gd` — forge skill buttons
+- `dungeon_break/player/isometric_camera.gd` — camera adjustments
+- `dungeon_break/player/player_controller.gd` — forge NPC interaction key
+- `project.godot` — `ForgeSystem` autoload registered
+- `assets/art/tools/*.png` *(new, 18 files)* — forged weapon/armor art
+
+---
+
+### 6. Dungeon Minimap Overlay
+
+Added a real-time minimap in the top-left corner of the dungeon HUD:
+
+#### Visual Design
+- 200×200px semi-transparent overlay (layer on top of game)
+- Toggle with **[M]** key
+- Floor label ("F1", "F2", etc.) in top-left; "[M] Map" hint in bottom-right
+
+#### Room Rendering
+- Rooms drawn as coloured rectangles with uniform-scale aspect-ratio-preserving mapping
+- Colour key:
+  - **Dark gray** — undiscovered
+  - **Yellow** — visited but not cleared
+  - **Green** — cleared
+  - **Cyan pulsing border** — current room
+  - **Red tint** — boss room
+  - **Blue tint** — puzzle room
+  - **White tint** — start room
+- Corridor tiles drawn as small filled squares (only near visited rooms for fog-of-war effect)
+
+#### Player Tracking
+- White pulsing dot with cyan outer ring tracks player position in real-time
+- Position clamped inside map bounds
+- Pulse animation via sine wave on `_process`
+
+#### Data Flow
+- `dungeon.gd` calls `minimap.set_dungeon_data()` after BSP stamping with room array, grid, dimensions, and offsets
+- `update_player_pos()` called every frame with player world position
+- `mark_visited()` / `mark_cleared()` / `set_current_room()` called on room state changes
+- Minimap hidden during combat via `combat_ui.gd` integration
+
+**Files touched:**
+- `dungeon_break/ui/minimap.gd` *(new)* — full minimap Control (271 lines)
+- `dungeon_break/dungeon.gd` — minimap data feeding and state updates
+- `dungeon_break/combat/combat_ui.gd` — hide/show minimap during combat
+
+---
+
+### 7. New Entity Sprites (Batch Import)
+
+Added 26 new enemy/creature sprite images for the entity bestiary:
+
+alien_hunter, angry_ghost, bubble_fish, corrupted_citizen, dire_wolf, goblin, goblin_bomb_bard, goblin_grunt, goblin_killdozer, goblin_king_krogg, goblin_shaman, goblin_shamanka, goblin_war_chieftan, hunting_construct, iron_golem, kraken_spawn, lich_lord_morteus, mechanical_spider, rat, scatterer, scolopendra_spawn, skeleton_archer, skeleton_mage, troglodyte, tunnel_rat, urban_predator-cat, vine_creeper, water_elemental, wraith, zombie_brute, zombie_crawler
+
+All placed in `assets/art/entities/` with `.import` configs.
+
+---
+
+## Current State After Session 11
+
+### Accessories & Elixirs
+- 8 equippable accessories with passive effects (thorns, vampirism, fortitude, phoenix revive, stat bonuses)
+- 4 permanent stat elixirs (STR, AC, HP, SPD) — rare dungeon loot
+- New `ACCESSORY` and `ELIXIR` item types
+
+### Puzzle Rooms
+- Sokoban push-block puzzles on floors 3+ (6 templates, random mirror)
+- Push (**WASD**) and pull (**F** toggle) mechanics
+- Pressure plate targets, reset prompt, gold + XP rewards on solve
+- Sandstone crypt floor theme (floors 4–6)
+
+### Cross-Class Forge
+- Earn skyshards by clearing floors as a single class
+- Steven forges weapons, Mahan forges armor (100g + skyshard)
+- 9 class weapons and 9 class armors, each granting their class skill
+- Reforge system merges two forged items (150g, skills combine, -1 stat penalty)
+- Up to 3 forge skill slots for combat
+- Full save/load support
+
+### Combat SFX
+- 7 procedural combat sound effects (slash, blunt, magic, ranged, roar, miss, block_push)
+- Per-weapon SFX category mapping
+
+### Minimap
+- Real-time 200×200px overlay with room states, player dot, fog-of-war corridors
+- Color-coded room types (boss=red, puzzle=blue, start=white)
+- Toggle with [M]
+
+### Dungeon Infrastructure
+- Persistent chunk keeper prevents voxel unloading
+- View distance scaled per floor tier
+- Voxel tool refresh after terrain load
+- Stamp verification pass
+- Corridor width reduced to 1
+
+---
+
+## Known Pending Work (Updated)
+
+| Item | Priority | Notes |
+|---|---|---|
+| Fire staff AoE nerf | High | Exclude friendly units from splash damage |
+| Forge skill integration in combat | High | Forge skills appear as extra buttons in combat UI — needs testing |
+| Push block SFX in combat | Medium | `block_push.ogg` generated but not yet wired to puzzle push events |
+| Camp NPC dialogue | Medium | Joe, Mira, Old Pell — interaction zones exist, no dialogue tree yet |
+| Vault room loot pass | Medium | Currently has chest + gold ore; needs richer decoration and varied loot |
+| Gamepad support | Medium | Needs InputMap refactor + UI focus chains |
+| Visual novel cutscenes | Low | Planned for story beats |
+| Drag-and-drop inventory | Low | Current inventory is click-to-equip only |
+| Save slot delete | Low | No way to clear a save slot from the UI |
+
+---
+
+## File Index (additions since session 10)
+
+```
+dungeon_break/
+  combat/
+    combat_manager.gd     ← accessory passive hooks, weapon SFX mapping,
+                             forge skill usage, per-attack SFX routing
+    combat_ui.gd          ← forge skill buttons, minimap hide/show
+  data/
+    forge_system.gd       ← NEW: cross-class forge autoload (skyshards,
+                             forging, reforging, skill slots, save/load)
+    game_data.gd          ← equip_accessory slot, forge state fields
+    item_db.gd            ← 8 accessories, 4 elixirs, 9 skyshards,
+                             9 forged weapons, 9 forged armors,
+                             ACCESSORY/ELIXIR types, _apply_accessory_stats()
+  entities/
+    entity_manager.gd     ← minor fix
+  generator/
+    bsp_dungeon.gd        ← puzzle room type (floors 3+), corridor width → 1
+    dungeon_stamper.gd    ← _build_puzzle_room(), 6 puzzle templates,
+                             refresh_voxel_tool(), sandstone blocks,
+                             stamp verification, floor theme tiers
+  player/
+    isometric_camera.gd   ← camera adjustments
+    player_controller.gd  ← push/pull block input, forge NPC interaction
+  ui/
+    forge_ui.gd           ← NEW: forge modal UI (534 lines)
+    game_hud.gd           ← block mode indicator (PUSH/PULL)
+    inventory_ui.gd       ← accessory slot, elixir usage
+    minimap.gd            ← NEW: dungeon minimap overlay (271 lines)
+    shop_ui.gd            ← accessory/elixir shop integration
+  world/
+    push_block.gd         ← NEW: sokoban push block (176 lines)
+  dungeon.gd              ← puzzle spawn/solve/reset, chunk keeper,
+                             voxel tool refresh, minimap data feed,
+                             skyshard award, sandstone theme, torch scaling
+  game.gd                 ← forge NPC interaction hookup
+  main.gd                 ← minor cleanup
+tools/
+  generate_sfx.py         ← NEW: procedural combat SFX generator
+assets/
+  art/entities/*.png      ← 26+ new entity sprites
+  art/tools/*.png         ← 18 forged weapon/armor art files
+  sfx/combat/*.ogg        ← 7 new combat sound effects
+project.godot             ← ForgeSystem autoload registered
 ```

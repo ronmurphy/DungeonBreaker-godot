@@ -544,6 +544,11 @@ func _trigger_room_combat(room: Dictionary):
 	# Combat-entry vignette pulse
 	_show_combat_vignette()
 
+	# Reduce tilt-shift blur for combat readability
+	var main_node := get_parent()
+	if main_node and main_node.has_method("tilt_shift_enter_combat"):
+		main_node.tilt_shift_enter_combat()
+
 	# Hide follower entities — combat spawns fresh entities placed on the grid
 	for f: Node3D in _companion_followers:
 		if is_instance_valid(f):
@@ -613,6 +618,12 @@ func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 	_combat_active = false
 	_set_wall_combat_mode(false)
 	_hide_combat_vignette()
+
+	# Restore tilt-shift blur to exploration level
+	var main_node := get_parent()
+	if main_node and main_node.has_method("tilt_shift_exit_combat"):
+		main_node.tilt_shift_exit_combat()
+
 	if _player and is_instance_valid(_player):
 		_player.combat_locked = false
 	if _camera and is_instance_valid(_camera):
