@@ -57,6 +57,7 @@ signal unit_moved(unit: Dictionary, from: Vector2i, to: Vector2i)
 signal companion_swap_needed(incoming_unit_idx: int)
 signal companion_replace_needed(incoming_unit_idx: int, entity_key: String)
 signal recruit_decision_made
+signal round_started(round_num: int)
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -109,6 +110,11 @@ var _scene_root: Node3D = null
 var _sfx_player: AudioStreamPlayer = null
 var _current_hit_sfx: String = ""  # Set per-attack for weapon-specific SFX
 var _slash_shader: Shader = null
+
+# ── Active-unit glow & combat ambient light ──────────────────────────────────
+var _active_glow: Sprite3D = null
+var _active_glow_tween: Tween = null
+var _combat_light: OmniLight3D = null
 
 
 ## Start tactical combat in a room.
@@ -231,6 +237,7 @@ func start_combat(enemies: Array, companions: Array, room: Dictionary, scene_roo
 
 	print("TacticalCombat: started with %d enemies, %d companions in room %d" % [enemies.size(), companions.size(), room["id"]])
 	combat_started.emit()
+	_spawn_combat_light()
 
 	# Defer first round so dungeon.gd can call ui.setup() and connect signals first
 	call_deferred("_start_round")
@@ -397,6 +404,7 @@ func get_alive_enemies() -> Array:
 
 func _start_round():
 	_round += 1
+	round_started.emit(_round)
 
 	# Reset per-round flags
 	GameData.taunt_active = false  # Shield Wall taunt expires at round start
@@ -448,6 +456,7 @@ func _advance_turn():
 	GameData.counter_active = false
 
 	unit_turn_started.emit(unit)
+	_show_active_glow(unit)
 
 	if unit["type"] == "player":
 		_start_player_turn(unit_idx)
@@ -1589,6 +1598,7 @@ func _move_unit(unit_idx: int, target_pos: Vector2i):
 		unit["entity"].global_position = tactical_grid.grid_to_world(target_pos)
 
 	unit_moved.emit(unit, old_pos, target_pos)
+	_update_active_glow_pos(target_pos)
 
 
 func _get_occupied_positions(exclude_idx: int = -1) -> Array[Vector2i]:
@@ -1660,6 +1670,7 @@ func _kill_unit(unit_idx: int):
 
 	if unit["type"] == "enemy":
 		if is_instance_valid(unit["entity"]):
+			_fx_death_poof(unit["entity"].global_position + Vector3(0, 1.0, 0))
 			EntityManager.despawn_entity(unit["entity"])
 
 		GameData.total_kills += 1
@@ -1702,6 +1713,7 @@ func _kill_unit(unit_idx: int):
 
 	elif unit["type"] == "companion":
 		if is_instance_valid(unit.get("entity", null)):
+			_fx_death_poof(unit["entity"].global_position + Vector3(0, 1.0, 0))
 			EntityManager.despawn_entity(unit["entity"])
 		unit_defeated.emit(unit)
 		action_resolved.emit("[color=orange]%s has fallen![/color] (Permadeath)" % unit["name"])
@@ -1823,6 +1835,10 @@ func _cleanup():
 		if unit["type"] in ["enemy", "companion", "dismissed"]:
 			if is_instance_valid(unit.get("entity", null)):
 				EntityManager.despawn_entity(unit["entity"])
+
+	# Remove active-unit glow and combat light
+	_hide_active_glow()
+	_remove_combat_light()
 
 	# Remove tactical grid
 	if tactical_grid and is_instance_valid(tactical_grid):
@@ -1966,34 +1982,34 @@ func _fx_impact(world_pos: Vector3, impact_type: String = "slash") -> void:
 			stw.chain().tween_callback(spark.queue_free)
 
 
-## Floating damage / status text — rises and fades over 0.65s.
+## Floating damage / status text — rises and fades over 0.8s.
 func _fx_float_text(world_pos: Vector3, text: String, color: Color = Color.WHITE) -> void:
 	if _scene_root == null:
 		return
 
 	var lbl := Label3D.new()
 	lbl.text = text
-	lbl.font_size = 32
+	lbl.font_size = 44
 	lbl.modulate = color
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lbl.no_depth_test = true
 	lbl.render_priority = 12
 	lbl.double_sided = true
-	lbl.outline_size = 8
-	lbl.outline_modulate = Color(0.0, 0.0, 0.0, 0.9)
-	lbl.pixel_size = 0.008
+	lbl.outline_size = 12
+	lbl.outline_modulate = Color(0.0, 0.0, 0.0, 0.95)
+	lbl.pixel_size = 0.009
 	_scene_root.add_child(lbl)
-	lbl.global_position = world_pos + Vector3(randf_range(-0.25, 0.25), 0.1, randf_range(-0.1, 0.1))
+	lbl.global_position = world_pos + Vector3(randf_range(-0.5, 0.5), 0.15, randf_range(-0.15, 0.15))
 
-	# Start slightly oversized, then settle — gives a "pop" punch
-	lbl.scale = Vector3(1.4, 1.4, 1.4)
+	# Start oversized, then settle — gives a strong "pop" punch
+	lbl.scale = Vector3(1.8, 1.8, 1.8)
 
 	var tween := lbl.create_tween().set_parallel(true)
-	tween.tween_property(lbl, "scale", Vector3.ONE, 0.18) \
+	tween.tween_property(lbl, "scale", Vector3.ONE, 0.22) \
 		.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_property(lbl, "global_position", lbl.global_position + Vector3(0.0, 1.8, 0.0), 0.65) \
+	tween.tween_property(lbl, "global_position", lbl.global_position + Vector3(0.0, 2.2, 0.0), 0.8) \
 		.set_trans(Tween.TRANS_QUINT).set_ease(Tween.EASE_OUT)
-	tween.tween_property(lbl, "modulate:a", 0.0, 0.65).set_delay(0.22)
+	tween.tween_property(lbl, "modulate:a", 0.0, 0.55).set_delay(0.35)
 	tween.chain().tween_callback(lbl.queue_free)
 
 
@@ -2051,6 +2067,165 @@ func _fx_guts_burst(world_pos: Vector3) -> void:
 		stw.tween_property(star, "scale", Vector3.ONE * randf_range(0.7, 1.1), 0.20).set_ease(Tween.EASE_OUT)
 		stw.tween_property(star, "modulate:a", 0.0, 0.45).set_delay(0.10)
 		stw.chain().tween_callback(star.queue_free)
+
+
+## Smoke-poof death effect — covers the instant despawn with an expanding cloud.
+func _fx_death_poof(world_pos: Vector3) -> void:
+	if _scene_root == null:
+		return
+
+	# Bright flash sprite
+	var flash_path := "res://assets/art/textures/star_01.png"
+	if ResourceLoader.exists(flash_path):
+		var flash := Sprite3D.new()
+		flash.texture = load(flash_path)
+		flash.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		flash.no_depth_test = true
+		flash.render_priority = 11
+		flash.pixel_size = 0.008
+		flash.modulate = Color(2.0, 1.8, 1.5, 1.0)
+		flash.scale = Vector3(0.3, 0.3, 0.3)
+		_scene_root.add_child(flash)
+		flash.global_position = world_pos
+		var ftw := flash.create_tween().set_parallel(true)
+		ftw.tween_property(flash, "scale", Vector3.ONE * 2.0, 0.12).set_ease(Tween.EASE_OUT)
+		ftw.tween_property(flash, "modulate:a", 0.0, 0.22)
+		ftw.chain().tween_callback(flash.queue_free)
+
+	# Smoke cloud — 6 puffs expanding outward
+	var smoke_pool: Array = [
+		"res://assets/art/textures/smoke_01.png",
+		"res://assets/art/textures/smoke_03.png",
+		"res://assets/art/textures/smoke_05.png",
+		"res://assets/art/textures/smoke_07.png",
+		"res://assets/art/textures/smoke_09.png",
+	]
+	for i in 6:
+		var spath: String = smoke_pool[i % smoke_pool.size()]
+		if not ResourceLoader.exists(spath):
+			continue
+		var puff := Sprite3D.new()
+		puff.texture = load(spath)
+		puff.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		puff.no_depth_test = true
+		puff.render_priority = 10
+		puff.pixel_size = 0.006
+		puff.modulate = Color(0.55, 0.45, 0.65, 0.9)
+		puff.scale = Vector3(0.3, 0.3, 0.3)
+		puff.rotation_degrees.z = randf_range(0.0, 360.0)
+		_scene_root.add_child(puff)
+		puff.global_position = world_pos
+
+		var angle := (float(i) / 6.0) * TAU + randf_range(-0.3, 0.3)
+		var drift_r := randf_range(0.4, 0.9)
+		var target_pos := world_pos + Vector3(cos(angle) * drift_r, randf_range(0.3, 1.2), sin(angle) * drift_r)
+
+		var ptw := puff.create_tween().set_parallel(true)
+		ptw.tween_property(puff, "global_position", target_pos, 0.45) \
+			.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+		ptw.tween_property(puff, "scale", Vector3.ONE * randf_range(0.9, 1.4), 0.35) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		ptw.tween_property(puff, "modulate:a", 0.0, 0.5).set_delay(0.15)
+		ptw.chain().tween_callback(puff.queue_free)
+
+	_fx_camera_shake(0.08)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ACTIVE-UNIT GLOW — pulsing circle under the current unit's feet
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _show_active_glow(unit: Dictionary) -> void:
+	_hide_active_glow()
+	if _scene_root == null or tactical_grid == null:
+		return
+
+	var tex_path := "res://assets/art/textures/circle_01.png"
+	if not ResourceLoader.exists(tex_path):
+		return
+
+	var glow := Sprite3D.new()
+	glow.name = "ActiveGlow"
+	glow.texture = load(tex_path)
+	glow.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+	glow.no_depth_test = true
+	glow.render_priority = 5
+	glow.pixel_size = 0.008
+	glow.rotation_degrees.x = -90.0  # lay flat facing upward
+
+	# Color based on unit type
+	match unit["type"]:
+		"player":
+			glow.modulate = Color(0.3, 0.9, 0.4, 0.55)
+		"companion":
+			glow.modulate = Color(0.3, 0.65, 0.95, 0.55)
+		_:
+			glow.modulate = Color(0.9, 0.3, 0.3, 0.55)
+
+	_scene_root.add_child(glow)
+	var world_pos := tactical_grid.grid_to_world(unit["grid_pos"])
+	glow.global_position = Vector3(world_pos.x, world_pos.y - 0.85, world_pos.z)
+	_active_glow = glow
+
+	# Looping pulse
+	_active_glow_tween = create_tween().set_loops()
+	_active_glow_tween.tween_property(glow, "scale", Vector3.ONE * 1.4, 0.7) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	_active_glow_tween.tween_property(glow, "scale", Vector3.ONE * 1.0, 0.7) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+func _hide_active_glow() -> void:
+	if _active_glow_tween and _active_glow_tween.is_valid():
+		_active_glow_tween.kill()
+		_active_glow_tween = null
+	if is_instance_valid(_active_glow):
+		_active_glow.queue_free()
+		_active_glow = null
+
+
+func _update_active_glow_pos(grid_pos: Vector2i) -> void:
+	if not is_instance_valid(_active_glow) or tactical_grid == null:
+		return
+	var world_pos := tactical_grid.grid_to_world(grid_pos)
+	_active_glow.global_position = Vector3(world_pos.x, world_pos.y - 0.85, world_pos.z)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ENVIRONMENTAL COMBAT LIGHT — warm ambient tint during fights
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _spawn_combat_light() -> void:
+	if _scene_root == null:
+		return
+	_combat_light = OmniLight3D.new()
+	_combat_light.name = "CombatAmbient"
+	_combat_light.light_color = Color(0.85, 0.55, 0.2)  # warm combat amber
+	_combat_light.light_energy = 0.0
+	_combat_light.omni_range = 14.0
+	_combat_light.shadow_enabled = false
+	_scene_root.add_child(_combat_light)
+
+	# Position above room centre
+	var cx: float = float(_room["cx"] + _room.get("_offset_x", 0)) + float(_room.get("w", 5)) / 2.0
+	var cz: float = float(_room["cy"] + _room.get("_offset_z", 0)) + float(_room.get("h", 5)) / 2.0
+	var cy: float = float(_room.get("floor_height", 0)) + 4.5
+	_combat_light.global_position = Vector3(cx, cy, cz)
+
+	# Fade in
+	var tw := create_tween()
+	tw.tween_property(_combat_light, "light_energy", 0.55, 0.8) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+
+
+func _remove_combat_light() -> void:
+	if not is_instance_valid(_combat_light):
+		return
+	var light_ref := _combat_light
+	_combat_light = null
+	var tw := create_tween()
+	tw.tween_property(light_ref, "light_energy", 0.0, 0.5)
+	tw.tween_callback(light_ref.queue_free)
 
 
 ## Attack verb for ranged weapons (used in combat log).

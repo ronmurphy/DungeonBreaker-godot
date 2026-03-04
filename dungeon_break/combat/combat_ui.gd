@@ -240,11 +240,14 @@ func _connect_signals():
 	_combat.combat_ended.connect(_on_combat_ended)
 	_combat.companion_swap_needed.connect(_show_companion_swap_modal)
 	_combat.companion_replace_needed.connect(_show_companion_replace_modal)
+	if _combat.has_signal("round_started"):
+		_combat.round_started.connect(_on_round_started)
 
 
 # ── Signal handlers ───────────────────────────────────────────────────────────
 
 func _on_combat_started():
+	_show_banner("⚔  COMBAT!  ⚔", Color(1.0, 0.85, 0.3), 1.2)
 	_log("[color=yellow]═══ COMBAT ═══[/color]")
 	_log("[color=white]Each turn: [color=cyan]MOVE[/color] then [color=gold]ACT[/color][/color]")
 	_log("[color=gray]MOVE: Click a [color=dodgerblue]blue tile[/color] or press [S] to skip[/color]")
@@ -348,12 +351,62 @@ func _on_combat_ended(victory: bool, _fled: bool = false):
 		_enemy_info_panel.visible = false
 
 	if victory:
+		_show_banner("⚔  VICTORY!  ⚔", Color(0.3, 1.0, 0.45), 1.8)
 		_log("[color=lime]═══ VICTORY! ═══[/color]")
 	else:
+		_show_banner("☠  DEFEAT  ☠", Color(0.9, 0.2, 0.2), 1.8)
 		_log("[color=red]═══ DEFEAT ═══[/color]")
 
 	await get_tree().create_timer(2.0).timeout
 	queue_free()
+
+
+func _on_round_started(round_num: int) -> void:
+	if round_num >= 2:
+		_show_banner("— Round %d —" % round_num, Color(0.7, 0.8, 1.0), 0.8)
+	_log("[color=gray]── Round %d ──[/color]" % round_num)
+
+
+# ── Banner overlay — full-width strip with large text ─────────────────────────
+
+func _show_banner(text: String, color: Color = Color(1.0, 0.85, 0.3), hold_time: float = 1.0) -> void:
+	var panel := PanelContainer.new()
+	panel.name = "CombatBanner"
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.04, 0.02, 0.08, 0.88)
+	style.border_color = color.darkened(0.3)
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	style.content_margin_left = 60
+	style.content_margin_right = 60
+	style.content_margin_top = 14
+	style.content_margin_bottom = 14
+	panel.add_theme_stylebox_override("panel", style)
+	panel.anchor_left = 0.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 0.32
+	panel.anchor_bottom = 0.32
+	panel.offset_top = -28
+	panel.offset_bottom = 28
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	var lbl := Label.new()
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 28)
+	lbl.add_theme_color_override("font_color", color)
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(lbl)
+
+	add_child(panel)
+
+	# Slide in from left, hold, fade out
+	panel.modulate.a = 0.0
+	var tw := create_tween()
+	tw.tween_property(panel, "modulate:a", 1.0, 0.18).set_trans(Tween.TRANS_SINE)
+	tw.tween_interval(hold_time)
+	tw.tween_property(panel, "modulate:a", 0.0, 0.35).set_trans(Tween.TRANS_SINE)
+	tw.tween_callback(panel.queue_free)
 
 
 # ── Action menus ──────────────────────────────────────────────────────────────
