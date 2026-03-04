@@ -907,6 +907,22 @@ func _refresh_companions():
 		hp_lbl.add_theme_color_override("font_color", Color(0.55, 0.7, 0.55) if is_active else Color(0.45, 0.42, 0.45))
 		info.add_child(hp_lbl)
 
+		# Equipment line — weapon / armor
+		var wpn: Dictionary = cdata.get("equip_weapon", {})
+		var armr: Dictionary = cdata.get("equip_armor", {})
+		var equip_parts: Array[String] = []
+		if not wpn.is_empty():
+			equip_parts.append("⚔ %s" % wpn.get("name", "Weapon"))
+		if not armr.is_empty():
+			equip_parts.append("🛡 %s" % armr.get("name", "Armor"))
+		if not equip_parts.is_empty():
+			var equip_lbl := Label.new()
+			equip_lbl.text = "  ".join(equip_parts)
+			equip_lbl.add_theme_font_size_override("font_size", 8)
+			equip_lbl.add_theme_color_override("font_color", Color(0.65, 0.75, 0.9) if is_active else Color(0.45, 0.45, 0.5))
+			equip_lbl.clip_text = true
+			info.add_child(equip_lbl)
+
 		# Active/Benched indicator
 		var status_lbl := Label.new()
 		status_lbl.text = "ACTIVE" if is_active else "BENCHED"

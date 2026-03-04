@@ -1,5 +1,5 @@
 # Dungeon Break — Project State Document (continued)
-*Continued from `updated.md`. Last updated: 2026-03-03 (session 11)*
+*Continued from `updated.md`. Last updated: 2026-03-04 (session 12)*
 
 > This file picks up where `updated.md` left off. See that file for the base project overview, tech stack, combat system, class table, and room type reference.
 
@@ -1063,4 +1063,132 @@ assets/
   art/tools/*.png         ← 18 forged weapon/armor art files
   sfx/combat/*.ogg        ← 7 new combat sound effects
 project.godot             ← ForgeSystem autoload registered
+```
+
+---
+
+## Session 12 Summary — Combat VFX, Entity Audit, Companion Bug Fix, Inventory Companion Roster
+
+### 1. Tilt-Shift Shader System
+
+Added a screen-space tilt-shift blur shader for depth-of-field effect during exploration and combat.
+
+- **Shader:** `dungeon_break/ui/tilt_shift.gdshader` — horizontal blur with configurable focus band position and width
+- **GraphicsManager integration:** LOW/MEDIUM/HIGH presets control blur strength; exploration vs combat have separate settings (combat sharpens focus)
+- **Dungeon hooks:** `tilt_shift_enter_combat()` / `tilt_shift_exit_combat()` on `main.gd` for smooth transitions
+- **HUD toggle:** settings gear lets the player toggle tilt-shift on/off
+
+**Files changed:**
+- `dungeon_break/ui/tilt_shift.gdshader` — NEW
+- `dungeon_break/data/graphics_manager.gd` — tilt-shift preset values
+- `dungeon_break/main.gd` — tilt-shift overlay CanvasLayer + combat tween methods
+- `dungeon_break/ui/game_hud.gd` — toggle UI in settings
+- `dungeon_break/dungeon.gd` — combat enter/exit hooks
+
+---
+
+### 2. Combat VFX Enhancements (6 features)
+
+Added visual identity to the tactical combat system:
+
+| Feature | Description |
+|---|---|
+| **Bigger Floating Text** | Font size 32→44, outline 8→12, pixel_size 0.008→0.009, pop scale 1.4→1.8, rise 1.8→2.2, delay 0.22→0.35 |
+| **Active Unit Glow** | Pulsing `circle_01.png` flat under active unit's feet — green (player), blue (companion), red (enemy) |
+| **Death Poof Effect** | Star flash + 6 smoke puffs expanding outward + camera shake on enemy/companion death |
+| **Combat Start/End Banners** | Full-width dark banner at 32% screen height: "⚔ COMBAT! ⚔" (gold), "⚔ VICTORY! ⚔" (green), "☠ DEFEAT ☠" (red) |
+| **Round Transition Banners** | "— Round X —" banner for rounds 2+ (light blue, 0.8s hold) |
+| **Environmental Combat Lighting** | Warm amber `OmniLight3D` (energy 0.55, range 14) spawned above room center during combat |
+
+**Files changed:**
+- `dungeon_break/combat/combat_manager.gd` — new signal `round_started`, new vars `_active_glow`, `_combat_light`; new methods `_fx_death_poof()`, `_show_active_glow()`, `_hide_active_glow()`, `_update_active_glow_pos()`, `_spawn_combat_light()`, `_remove_combat_light()`
+- `dungeon_break/combat/combat_ui.gd` — `_show_banner()` method, `_on_round_started()`, banner calls in `_on_combat_started()` and `_on_combat_ended()`
+
+---
+
+### 3. Entity Sprite Audit & Fixes
+
+Audited `entities.json` against on-disk sprite files to fix invisible enemies appearing in the combat tracker.
+
+**Root cause:** `EntityManager.spawn_entity()` does NOT return null for missing textures — it creates an entity with an empty `Sprite3D` (invisible but present in combat). Enemies with no sprite files showed up in the tracker but were invisible in the 3D scene.
+
+**Fixes applied:**
+| Issue | Resolution |
+|---|---|
+| `goblin_engineer` — zero sprite files on disk | Removed from `entities.json` entirely |
+| `goblin_shamanka` — portrait was `.png`, JSON expected `.jpeg` | Converted PNG → JPEG |
+| `goblin_war_chieftain` — typo in filename (`chieftan` vs `chieftain`) | Copied file with correct name |
+| `urban_predator` — portrait filename mismatch (`urban_predator-cat.jpeg`) | Copied as `urban_predator.jpeg` |
+
+12 remaining missing `sprite_attack` entries are all `type: "companion"` race templates (human/elf/dwarf/goblin variants) — don't spawn in combat, non-issue.
+
+**Files changed:**
+- `assets/art/entities/entities.json` — `goblin_engineer` entry removed
+- `assets/art/entities/` — 3 portrait files created/copied
+
+---
+
+### 4. Companion Combat Bug — Diagnosis & Fix
+
+**Bug report:** Companions sometimes don't show up in combat even though they should be alive.
+
+**Root cause:** Two issues working together:
+1. **Silent skip with zero logging** — In both `_trigger_room_combat()` and `_spawn_companion_followers()`, if `GameData.get_companion(key)` or `EnemyDB.get_enemy(key)` returns empty, the companion is silently skipped with a bare `continue` — no warning, no log.
+2. **Permadeath too quiet** — When a companion dies in combat, a single line scrolls past in the combat log: `"[Name] has fallen! (Permadeath)"`. No banner, no pause, no post-combat summary. Easy to miss in fast combats.
+
+**Fixes applied:**
+
+| Fix | Description |
+|---|---|
+| **Companion death banner** | `combat_ui.gd` — orange "☠ [Name] has fallen! ☠" banner (1.5s) on companion death, same style as victory/defeat banners |
+| **Post-combat loss toast** | `dungeon.gd` — snapshots `active_companions` before combat; after combat diffs against current roster and shows HUD toast: "[Name] was lost in battle." |
+| **`push_warning` on silent skips** | Both `_trigger_room_combat()` and `_spawn_companion_followers()` now log warnings with the key and which lookup failed |
+| **Debug print at combat start** | Prints full `active_companions` roster to console for troubleshooting |
+
+**Files changed:**
+- `dungeon_break/combat/combat_ui.gd` — `_on_unit_defeated()` now shows death banner for companions
+- `dungeon_break/dungeon.gd` — new `_pre_combat_companions` var, snapshot logic in `_trigger_room_combat()`, loss report in `_on_combat_ended()`, `push_warning` in both companion spawn paths
+
+---
+
+### 5. Inventory Companion Roster Panel
+
+Added a companion roster section to the bottom-right of the inventory screen, below the CHARACTER stats column.
+
+**Layout per card:**
+- Dark panel with green border (active) or muted border (benched)
+- **Portrait** (32×32) from `EnemyDB.get_portrait_path()`
+- **Name** — bright for active, dimmed for benched
+- **HP bar** — color-coded green/yellow/red by health ratio
+- **HP text** — e.g. "HP 5/20"
+- **Equipment line** — "⚔ Weapon Name  🛡 Armor Name" (only shown if equipped, font size 8, light blue tint)
+- **Status badge** — "ACTIVE" (green) or "BENCHED" (muted), right-aligned
+
+Section header "COMPANIONS" with separator. Hidden when roster is empty. Max 3 cards (matches the companion slot cap). Refreshes on every inventory open.
+
+**Files changed:**
+- `dungeon_break/ui/inventory_ui.gd` — new `_companion_container` var, companion section in `_build_stats_col()`, `_refresh_companions()` method called from `_refresh()`
+
+---
+
+### File Change Summary
+
+```
+dungeon_break/
+  combat/
+    combat_manager.gd     ← 6 VFX features (glow, poof, light, banners, text),
+                             round_started signal, active glow lifecycle
+    combat_ui.gd          ← banner system, round banners, companion death banner
+  data/
+    graphics_manager.gd   ← tilt-shift preset values
+  ui/
+    tilt_shift.gdshader   ← NEW: screen-space tilt-shift blur
+    game_hud.gd           ← tilt-shift toggle
+    inventory_ui.gd       ← companion roster panel with equipment display
+  dungeon.gd              ← tilt-shift hooks, companion loss tracking,
+                             push_warning on silent skips, debug prints
+  main.gd                 ← tilt-shift overlay + combat transitions
+assets/
+  art/entities/entities.json  ← goblin_engineer removed
+  art/entities/*.jpeg         ← 3 portrait files fixed/created
 ```
