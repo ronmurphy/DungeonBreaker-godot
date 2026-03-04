@@ -11,7 +11,7 @@ signal entity_despawned(entity: Node3D)
 # ── Pool settings ────────────────────────────────────────────────────────────
 const POOL_INITIAL_SIZE := 16
 const POOL_GROW_SIZE := 8
-const MAX_ENTITIES := 64
+const MAX_ENTITIES := 128
 
 # ── Scene parent for active entities (visible in world) ──────────────────────
 var _active_parent: Node3D = null

@@ -32,11 +32,17 @@ GraphicsManager="*res://dungeon_break/data/graphics_manager.gd"
 MusicManager="*res://dungeon_break/data/music_manager.gd"
 NpcDB="*res://dungeon_break/data/npc_db.gd"
 SaveManager="*res://dungeon_break/data/save_manager.gd"
+ForgeSystem="*res://dungeon_break/data/forge_system.gd"
 
 [display]
 
 window/stretch/mode="2d"
 window/stretch/aspect="expand"
+
+[editor]
+
+movie_writer/video_quality=0.9
+movie_writer/movie_file="/home/brad/temp.ogv"
 
 [filesystem]
 

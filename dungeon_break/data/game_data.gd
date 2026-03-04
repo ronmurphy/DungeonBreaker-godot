@@ -327,6 +327,7 @@ func _init_class(cls: PlayerClass):
 	cause_of_death = ""
 	_reset_job_progress()
 	clear_combat_buffs()
+	ForgeSystem.reset_all()
 
 
 ## Change class and reset stats.
@@ -858,6 +859,7 @@ func to_save_dict() -> Dictionary:
 		"searched_camp_objects": searched_camp_objects.duplicate(true),
 		"game_day": game_day,
 		"searched_day": _searched_day,
+		"forge": ForgeSystem.to_save_dict(),
 	}
 
 
@@ -960,5 +962,8 @@ func from_save_dict(data: Dictionary):
 	# Backfill any NPCs that should be in camp based on floors_cleared
 	# (handles old saves that pre-date the NPC unlock system)
 	_apply_npc_catchup()
+	# Restore forge system state
+	var forge_data: Dictionary = data.get("forge", {})
+	ForgeSystem.from_save_dict(forge_data)
 	in_combat = false
 	clear_combat_buffs()

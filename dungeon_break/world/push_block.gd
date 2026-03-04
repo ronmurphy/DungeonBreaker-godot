@@ -124,7 +124,10 @@ func set_on_target(val: bool):
 # ── Private ──────────────────────────────────────────────────────────────────
 
 func _world_pos(gpos: Vector2i) -> Vector3:
-	return Vector3(float(gpos.x) + 0.5, floor_y + 0.5, float(gpos.y) + 0.5)
+	# floor_y is the voxel Y coordinate of the floor surface; the walkable
+	# surface is the TOP of that voxel, i.e. floor_y + 1.0.  Centre the
+	# 0.9-unit box half a unit above that.
+	return Vector3(float(gpos.x) + 0.5, floor_y + 1.0 + 0.45, float(gpos.y) + 0.5)
 
 
 func _animate_to(dest: Vector2i):
@@ -160,7 +163,7 @@ func _create_visual():
 	smat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	shadow_mesh.material_override = smat
 	shadow_mesh.rotation_degrees.x = -90
-	shadow_mesh.position.y = -0.49  # just above floor
+	shadow_mesh.position.y = -0.44  # just above floor surface
 	add_child(shadow_mesh)
 
 

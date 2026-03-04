@@ -444,6 +444,19 @@ func _show_action_sub():
 		_add_sub_button("%s [4]" % job_skill["name"], job_skill["desc"], Color(0.3, 0.6, 1.0),
 			func(): _do_act(job_skill["action"]))
 
+	# Forge skill slots (keys [6], [7], [8])
+	var forge_skills: Array[String] = ForgeSystem.get_active_forge_skills()
+	for fi in forge_skills.size():
+		var fs_action: String = forge_skills[fi]
+		var fs_name: String = ForgeSystem._skill_action_to_name(fs_action)
+		var hotkey: int = 6 + fi  # keys 6, 7, 8
+		if cd > 0:
+			_add_sub_button("%s [%d]" % [fs_name, hotkey], "Cooldown: %d turn%s" % [cd, "s" if cd > 1 else ""], Color(0.25, 0.25, 0.3),
+				func(): pass)
+		else:
+			_add_sub_button("%s [%d]" % [fs_name, hotkey], "Forge skill", Color(0.6, 0.35, 1.0),
+				func(): _do_act(fs_action))
+
 	# Recruit button — only shown if enemies are alive
 	if _combat and _combat.get_alive_enemies().size() > 0:
 		_add_sub_button("Recruit [5]", "Attempt to recruit an enemy", Color(0.85, 0.65, 0.2),
@@ -1304,15 +1317,15 @@ func _unhandled_input(event: InputEvent):
 
 	if _combat.phase == 1:  # MOVE
 		# Consume all number keys + combat keys so they don't leak to inventory/hotbar
-		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_R, KEY_S, KEY_ESCAPE]:
+		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_R, KEY_S, KEY_ESCAPE]:
 			get_viewport().set_input_as_handled()
 		if kc == KEY_S and _combat:
 			_combat.player_skip_move()
 
 	elif _combat.phase == 2:  # ACT
 		# Always consume combat-relevant keys, regardless of sub-state.
-		# This prevents 1-6 from leaking to inventory quick-use / hotbar.
-		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_R, KEY_S, KEY_ESCAPE]:
+		# This prevents 1-8 from leaking to inventory quick-use / hotbar.
+		if kc in [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_R, KEY_S, KEY_ESCAPE]:
 			get_viewport().set_input_as_handled()
 
 		if _selecting_target:
@@ -1323,7 +1336,7 @@ func _unhandled_input(event: InputEvent):
 				_show_action_sub()
 
 		elif _in_action_sub:
-			# Action sub: Attack [1] Guts [2] Counter [3] Defend [4] Recruit [5] Back [ESC]
+			# Action sub: Attack [1] Guts [2] Counter [3] Skill [4] Recruit [5] Forge [6-8] Back [ESC]
 			var cu: Dictionary = _combat.get_current_unit()
 			var attackable: Array = _combat.get_attackable_enemies(cu["grid_pos"], cu["attack_range"])
 			match kc:
@@ -1335,10 +1348,18 @@ func _unhandled_input(event: InputEvent):
 				KEY_3:
 					_do_act("counter")
 				KEY_4:
-					_do_act("defend")
+					var js: Dictionary = GameData.JOB_SPECIAL_SKILL.get(GameData.player_class, {})
+					var js_action: String = js.get("action", "defend")
+					if GameData.skill_cooldown <= 0:
+						_do_act(js_action)
 				KEY_5:
 					if _combat and _combat.get_alive_enemies().size() > 0:
 						_show_recruit_sub()
+				KEY_6, KEY_7, KEY_8:
+					var forge_idx: int = kc - KEY_6
+					var _forge_skills: Array[String] = ForgeSystem.get_active_forge_skills()
+					if forge_idx < _forge_skills.size() and GameData.skill_cooldown <= 0:
+						_do_act(_forge_skills[forge_idx])
 				KEY_ESCAPE:
 					_close_sub_panel()
 

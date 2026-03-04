@@ -70,6 +70,10 @@ var _in_puzzle_room: bool = false
 # ── Footstep dust particles ──────────────────────────────────────────────────
 var _dust_particles: GPUParticles3D = null
 
+# ── Block push/pull SFX ──────────────────────────────────────────────────────
+var _block_sfx_player: AudioStreamPlayer = null
+const _SFX_BLOCK_PUSH := "res://assets/sfx/combat/block_push.ogg"
+
 
 func _ready():
 	_box_mover.set_collision_mask(1)
@@ -107,6 +111,11 @@ func _ready():
 	_click_marker.visible = false
 	_click_marker.top_level = true
 	add_child(_click_marker)
+
+	# ── Block push SFX player ────────────────────────────────────────────────
+	_block_sfx_player = AudioStreamPlayer.new()
+	_block_sfx_player.bus = "SFX" if AudioServer.get_bus_index("SFX") >= 0 else "Master"
+	add_child(_block_sfx_player)
 
 	# ── Footstep dust particles ──────────────────────────────────────────────
 	_dust_particles = GPUParticles3D.new()
@@ -474,6 +483,7 @@ func _try_push_block(move_dir: Vector3):
 					_voxel_tool.channel = VoxelBuffer.CHANNEL_TYPE
 					if block.try_pull(player_tile, _voxel_tool):
 						_push_cooldown = PUSH_COOLDOWN_TIME
+						_play_block_sfx()
 				break
 	else:
 		# Push mode: block is ahead, push it further ahead.
@@ -488,4 +498,16 @@ func _try_push_block(move_dir: Vector3):
 					_voxel_tool.channel = VoxelBuffer.CHANNEL_TYPE
 					if block.try_push(dir, _voxel_tool):
 						_push_cooldown = PUSH_COOLDOWN_TIME
+						_play_block_sfx()
 				break
+
+
+func _play_block_sfx():
+	if _block_sfx_player == null:
+		return
+	var stream := load(_SFX_BLOCK_PUSH) as AudioStream
+	if stream == null:
+		return
+	_block_sfx_player.stream = stream
+	_block_sfx_player.pitch_scale = randf_range(0.9, 1.1)
+	_block_sfx_player.play()

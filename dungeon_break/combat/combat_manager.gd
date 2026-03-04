@@ -1815,11 +1815,12 @@ func _cleanup():
 			else:
 				GameData.update_companion_hp(ckey, unit["hp"])
 
-	# Despawn all companion/dismissed combat entities — the dungeon follower entities
-	# will be re-shown instead. Dead companions were already despawned in _kill_unit;
+	# Despawn all combat entities (enemies, companions, dismissed).
+	# On victory enemies are already dead/despawned via _kill_unit, but on
+	# flee or defeat surviving enemies must be released back to the pool.
 	# despawn_entity() safely no-ops if the entity is no longer in the pool.
 	for unit in _units:
-		if unit["type"] in ["companion", "dismissed"]:
+		if unit["type"] in ["enemy", "companion", "dismissed"]:
 			if is_instance_valid(unit.get("entity", null)):
 				EntityManager.despawn_entity(unit["entity"])
 

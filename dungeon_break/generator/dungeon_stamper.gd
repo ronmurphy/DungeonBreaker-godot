@@ -648,12 +648,18 @@ func _build_puzzle_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: i
 		if fits:
 			usable.append(i)
 
+	var tmpl_idx: int
+	var tmpl: Dictionary
 	if usable.is_empty():
-		# Room too small — fall back to simplest 2-block template at (1,1) and (1,2)
-		usable.append(0)
-
-	var tmpl_idx: int = usable[randi() % usable.size()]
-	var tmpl: Dictionary = _PUZZLE_TEMPLATES[tmpl_idx]
+		# Room too small for any pre-made template — build a minimal 1-block puzzle
+		# that fits ANY room (needs inner ≥ 1×2).
+		var bx: int = clampi(inner_w / 2, 0, inner_w - 1)
+		var ty: int = clampi(inner_h - 1, 1, inner_h - 1)
+		tmpl = { "blocks": [Vector2i(bx, 0)], "targets": [Vector2i(bx, ty)] }
+		tmpl_idx = -1  # dynamic
+	else:
+		tmpl_idx = usable[randi() % usable.size()]
+		tmpl = _PUZZLE_TEMPLATES[tmpl_idx]
 
 	# Possibly mirror the template (flip X) for variety
 	var mirror: bool = randf() < 0.5

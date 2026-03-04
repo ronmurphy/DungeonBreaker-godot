@@ -21,6 +21,7 @@ const StructureShopUIScript = preload("res://dungeon_break/ui/structure_shop_ui.
 const SageUIScript = preload("res://dungeon_break/ui/sage_ui.gd")
 const CompanionRosterUIScript = preload("res://dungeon_break/ui/companion_roster_ui.gd")
 const JobChangeUIScript = preload("res://dungeon_break/ui/job_change_ui.gd")
+const ForgeUIScript = preload("res://dungeon_break/ui/forge_ui.gd")
 
 signal enter_dungeon()
 
@@ -509,6 +510,12 @@ func _open_npc_ui(npc_key: String, role: String) -> void:
 		add_child(struct_ui)
 		struct_ui.open()
 		struct_ui.shop_closed.connect(_on_npc_ui_closed)
+	elif role in ["enhanced_weapons_shop", "enhanced_armor_shop"]:
+		var forge_ui := ForgeUIScript.new()
+		forge_ui.name = "ForgeUI"
+		add_child(forge_ui)
+		forge_ui.open(npc_key)
+		forge_ui.forge_closed.connect(_on_npc_ui_closed)
 	else:
 		var shop_ui := ShopUIScript.new()
 		shop_ui.name = "ShopUI"

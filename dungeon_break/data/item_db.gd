@@ -465,6 +465,216 @@ const ITEMS := {
 		"description": "Detonates on impact dealing 10 damage to all enemies in the room.",
 		"value": 25, "special_effect": "aoe_blast",
 	},
+
+	# ══════════════════════════════════════════════════════════════════════════
+	# SKYSHARDS — one per class, earned by clearing a full floor as that class
+	# ══════════════════════════════════════════════════════════════════════════
+	"vanguard_skyshard": {
+		"id": "vanguard_skyshard", "name": "Vanguard Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Vanguard. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "VANGUARD", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"scoundrel_skyshard": {
+		"id": "scoundrel_skyshard", "name": "Scoundrel Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Scoundrel. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "SCOUNDREL", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"arcanist_skyshard": {
+		"id": "arcanist_skyshard", "name": "Arcanist Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Arcanist. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "ARCANIST", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"confessor_skyshard": {
+		"id": "confessor_skyshard", "name": "Confessor Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Confessor. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "CONFESSOR", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"strider_skyshard": {
+		"id": "strider_skyshard", "name": "Strider Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Strider. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "STRIDER", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"minstrel_skyshard": {
+		"id": "minstrel_skyshard", "name": "Minstrel Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Minstrel. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "MINSTREL", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"templar_skyshard": {
+		"id": "templar_skyshard", "name": "Templar Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Templar. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "TEMPLAR", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"reanimator_skyshard": {
+		"id": "reanimator_skyshard", "name": "Reanimator Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Reanimator. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "REANIMATOR", "soulbound": true, "sellable": false, "value": 0,
+	},
+	"tinkerer_skyshard": {
+		"id": "tinkerer_skyshard", "name": "Tinkerer Skyshard", "type": ItemType.MISC,
+		"icon": "res://assets/art/tools/skyshard.png",
+		"description": "Crystallized essence of the Tinkerer. Bring to Steven or Mahan to forge class gear.",
+		"class_origin": "TINKERER", "soulbound": true, "sellable": false, "value": 0,
+	},
+
+	# ══════════════════════════════════════════════════════════════════════════
+	# FORGED WEAPONS — crafted at Steven's forge from a class skyshard + gold
+	# ══════════════════════════════════════════════════════════════════════════
+	"vanguard_forged_sword": {
+		"id": "vanguard_forged_sword", "name": "Vanguard Forgeblade", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_vanguard_forged_greatsword.png",
+		"description": "Forged from a Vanguard Skyshard. Grants Shield Wall.",
+		"attack_bonus": 5, "stat_str": 3,
+		"grants_skill": "skill_shield_wall", "forged_from": ["VANGUARD"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"scoundrel_forged_daggers": {
+		"id": "scoundrel_forged_daggers", "name": "Shadow Daggers", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_scoundrel_shadow_daggers.png",
+		"description": "Forged from a Scoundrel Skyshard. Grants Shadowstep.",
+		"attack_bonus": 5, "stat_dex": 3,
+		"grants_skill": "skill_shadowstep", "forged_from": ["SCOUNDREL"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"arcanist_forged_staff": {
+		"id": "arcanist_forged_staff", "name": "Arcane Staff", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_arcanist_arcane_staff.png",
+		"description": "Forged from an Arcanist Skyshard. Grants Arcane Blast.",
+		"attack_bonus": 5, "stat_int": 3,
+		"grants_skill": "skill_arcane_blast", "forged_from": ["ARCANIST"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"confessor_forged_mace": {
+		"id": "confessor_forged_mace", "name": "Holy Mace", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_confessor_holy_mace.png",
+		"description": "Forged from a Confessor Skyshard. Grants Bless.",
+		"attack_bonus": 5, "stat_int": 2, "stat_lck": 1,
+		"grants_skill": "skill_bless", "forged_from": ["CONFESSOR"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"strider_forged_bow": {
+		"id": "strider_forged_bow", "name": "Ranger's Longbow", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_strider_rangers_longbow.png",
+		"description": "Forged from a Strider Skyshard. Grants Steady Shot.",
+		"attack_bonus": 5, "stat_dex": 2, "stat_str": 1,
+		"grants_skill": "skill_steady_shot", "forged_from": ["STRIDER"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"minstrel_forged_rapier": {
+		"id": "minstrel_forged_rapier", "name": "Songblade Rapier", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_minstrel_songblade_rapier.png",
+		"description": "Forged from a Minstrel Skyshard. Grants War Song.",
+		"attack_bonus": 5, "stat_lck": 2, "stat_int": 1,
+		"grants_skill": "skill_war_song", "forged_from": ["MINSTREL"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"templar_forged_blade": {
+		"id": "templar_forged_blade", "name": "Consecrated Blade", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_templar_consecrated_blade.png",
+		"description": "Forged from a Templar Skyshard. Grants Holy Smite.",
+		"attack_bonus": 5, "stat_str": 2, "stat_int": 1,
+		"grants_skill": "skill_holy_smite", "forged_from": ["TEMPLAR"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"reanimator_forged_sceptre": {
+		"id": "reanimator_forged_sceptre", "name": "Bone Sceptre", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_reanimator_bone_sceptre.png",
+		"description": "Forged from a Reanimator Skyshard. Grants Soul Drain.",
+		"attack_bonus": 5, "stat_int": 3,
+		"grants_skill": "skill_soul_drain", "forged_from": ["REANIMATOR"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"tinkerer_forged_crossbow": {
+		"id": "tinkerer_forged_crossbow", "name": "Repeater Crossbow", "type": ItemType.WEAPON,
+		"icon": "res://assets/art/tools/weapon_tinkerer_repeater_crossbow.png",
+		"description": "Forged from a Tinkerer Skyshard. Grants Shock Mine.",
+		"attack_bonus": 5, "stat_dex": 2, "stat_int": 1,
+		"grants_skill": "skill_shock_mine", "forged_from": ["TINKERER"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+
+	# ══════════════════════════════════════════════════════════════════════════
+	# FORGED ARMOR — crafted at Mahan's forge from a class skyshard + gold
+	# ══════════════════════════════════════════════════════════════════════════
+	"vanguard_forged_plate": {
+		"id": "vanguard_forged_plate", "name": "Tower Shield Plate", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_vanguard_tower_shield_plate.png",
+		"description": "Forged from a Vanguard Skyshard. Grants Shield Wall.",
+		"ac_bonus": 5, "stat_str": 3,
+		"grants_skill": "skill_shield_wall", "forged_from": ["VANGUARD"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"scoundrel_forged_leathers": {
+		"id": "scoundrel_forged_leathers", "name": "Nightshade Leathers", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_scoundrel_nightshade_leathers.png",
+		"description": "Forged from a Scoundrel Skyshard. Grants Shadowstep.",
+		"ac_bonus": 4, "stat_dex": 3,
+		"grants_skill": "skill_shadowstep", "forged_from": ["SCOUNDREL"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"arcanist_forged_robes": {
+		"id": "arcanist_forged_robes", "name": "Spellweave Robes", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_arcanist_spellweave_robes.png",
+		"description": "Forged from an Arcanist Skyshard. Grants Arcane Blast.",
+		"ac_bonus": 3, "stat_int": 3,
+		"grants_skill": "skill_arcane_blast", "forged_from": ["ARCANIST"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"confessor_forged_vestments": {
+		"id": "confessor_forged_vestments", "name": "Blessed Vestments", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_confessor_blessed_vestments.png",
+		"description": "Forged from a Confessor Skyshard. Grants Bless.",
+		"ac_bonus": 3, "stat_int": 2, "stat_lck": 1,
+		"grants_skill": "skill_bless", "forged_from": ["CONFESSOR"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"strider_forged_chainmail": {
+		"id": "strider_forged_chainmail", "name": "Scout's Chainmail", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_strider_scouts_chainmail.png",
+		"description": "Forged from a Strider Skyshard. Grants Steady Shot.",
+		"ac_bonus": 4, "stat_dex": 2, "stat_str": 1,
+		"grants_skill": "skill_steady_shot", "forged_from": ["STRIDER"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"minstrel_forged_mantle": {
+		"id": "minstrel_forged_mantle", "name": "Bardic Mantle", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_minstrel_bardic_mantle.png",
+		"description": "Forged from a Minstrel Skyshard. Grants War Song.",
+		"ac_bonus": 3, "stat_lck": 2, "stat_int": 1,
+		"grants_skill": "skill_war_song", "forged_from": ["MINSTREL"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"templar_forged_cuirass": {
+		"id": "templar_forged_cuirass", "name": "Paladin Cuirass", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_templar_paladin_cuirass.png",
+		"description": "Forged from a Templar Skyshard. Grants Holy Smite.",
+		"ac_bonus": 5, "stat_str": 2, "stat_int": 1,
+		"grants_skill": "skill_holy_smite", "forged_from": ["TEMPLAR"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"reanimator_forged_shroud": {
+		"id": "reanimator_forged_shroud", "name": "Necromancer's Shroud", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_reanimator_necromancers_shroud.png",
+		"description": "Forged from a Reanimator Skyshard. Grants Soul Drain.",
+		"ac_bonus": 3, "stat_int": 3,
+		"grants_skill": "skill_soul_drain", "forged_from": ["REANIMATOR"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
+	"tinkerer_forged_harness": {
+		"id": "tinkerer_forged_harness", "name": "Cogwork Harness", "type": ItemType.CHEST,
+		"icon": "res://assets/art/tools/armor_tinkerer_cogwork_harness.png",
+		"description": "Forged from a Tinkerer Skyshard. Grants Shock Mine.",
+		"ac_bonus": 4, "stat_dex": 2, "stat_int": 1,
+		"grants_skill": "skill_shock_mine", "forged_from": ["TINKERER"],
+		"forge_penalty": 0, "soulbound": true, "sellable": false, "value": 100,
+	},
 }
 
 # ══════════════════════════════════════════════════════════════════════════════

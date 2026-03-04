@@ -50,6 +50,11 @@ var _pre_combat_pitch := 0.0
 var _pre_combat_distance := 0.0
 var _zoom_tween: Tween = null
 
+## Puzzle mode: overhead view while in puzzle rooms
+var _puzzle_mode := false
+var _pre_puzzle_pitch := 0.0
+var _pre_puzzle_distance := 0.0
+
 ## Distance to snap to when combat begins (close enough to see the tactical grid clearly)
 const COMBAT_DISTANCE := 18.0
 
@@ -97,6 +102,22 @@ func set_combat_mode(enabled: bool) -> void:
 ## Call this after the wall-opacity restore tween has finished.
 func restore_zoom() -> void:
 	_zoom_tween_to(_pre_combat_distance, 0.6)
+
+
+## Enter or leave puzzle overhead view.
+## On enter: saves current pitch + zoom, snaps to near-overhead.
+## On leave: restores the saved pitch + zoom.
+func set_puzzle_mode(enabled: bool) -> void:
+	if enabled and not _puzzle_mode:
+		_puzzle_mode = true
+		_pre_puzzle_pitch = pitch_degrees
+		_pre_puzzle_distance = distance
+		pitch_degrees = 75.0
+		_zoom_tween_to(22.0, 0.5)
+	elif not enabled and _puzzle_mode:
+		_puzzle_mode = false
+		pitch_degrees = _pre_puzzle_pitch
+		_zoom_tween_to(_pre_puzzle_distance, 0.5)
 
 
 func _zoom_tween_to(target_dist: float, duration: float) -> void:

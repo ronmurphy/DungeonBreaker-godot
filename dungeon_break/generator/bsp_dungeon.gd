@@ -380,7 +380,22 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 	var assign_idx := 0
 
 	# Puzzle (1) — sokoban push-block room, floors 3+  (assigned early to guarantee a slot)
+	# Prefer a room large enough for the smallest template (inner 5×6 → room 7×8).
 	if _floor_num >= 3 and assign_idx < available.size():
+		var puzzle_idx := -1
+		# First pass: find a room ≥ 7×8 from the unassigned pool
+		for j in range(assign_idx, available.size()):
+			var rm: Dictionary = rooms[available[j]]
+			if rm["w"] >= 7 and rm["h"] >= 7:
+				puzzle_idx = j
+				break
+		if puzzle_idx == -1:
+			puzzle_idx = assign_idx  # fallback — stamper will generate a tiny template
+		# Swap chosen room to the front of the available list
+		if puzzle_idx != assign_idx:
+			var tmp: int = available[assign_idx]
+			available[assign_idx] = available[puzzle_idx]
+			available[puzzle_idx] = tmp
 		rooms[available[assign_idx]]["room_type"] = "puzzle"
 		rooms[available[assign_idx]]["floor_height"] = 0  # must be flat
 		assign_idx += 1

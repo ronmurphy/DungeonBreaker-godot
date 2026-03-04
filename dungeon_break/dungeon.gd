@@ -446,8 +446,8 @@ func _check_area_interactions():
 						_do_advance_floor()
 			"puzzle_reset":
 				if _hud:
-					_hud.show_prompt("[R] Reset Puzzle")
-				if Input.is_key_pressed(KEY_R):
+					_hud.show_prompt("[L] Reset Puzzle")
+				if Input.is_key_pressed(KEY_L):
 					var prid: int = child.get_meta("room_id", -1)
 					var proom: Dictionary = _get_room_by_id(prid)
 					if not proom.is_empty():
@@ -474,13 +474,21 @@ func _check_area_interactions():
 						_player._pull_mode = false  # reset to push when leaving
 						if _hud and _hud.has_method("hide_block_mode"):
 							_hud.hide_block_mode()
+						_set_wall_puzzle_mode(false)
+						if _camera and is_instance_valid(_camera):
+							_camera.set_puzzle_mode(false)
 					else:
 						if _hud and _hud.has_method("set_block_mode"):
 							_hud.set_block_mode("PUSH")
+						_set_wall_puzzle_mode(true)
+						if _camera and is_instance_valid(_camera):
+							_camera.set_puzzle_mode(true)
 
 			if not _visited_rooms.has(rid):
 				_visited_rooms[rid] = true
 				_enable_room_lights(rid)
+				# Track class on room entry for skyshard eligibility
+				ForgeSystem.track_room_entry(_floor_num)
 				# Spawn puzzle blocks on first visit to a puzzle room
 				if room["room_type"] == "puzzle" and room.has("puzzle"):
 					_spawn_puzzle_blocks(room)
@@ -517,12 +525,10 @@ func _trigger_room_combat(room: Dictionary):
 
 	# Spawn companion entities for active companions
 	var companion_entities: Array = []
-	print("Dungeon: combat companion spawn — active_companions = %s" % [GameData.active_companions])
 	for ckey: String in GameData.active_companions:
 		var cdata: Dictionary = GameData.get_companion(ckey)
 		var edata: Dictionary = EnemyDB.get_enemy(ckey)
 		if cdata.is_empty() or edata.is_empty():
-			print("Dungeon: SKIP combat companion '%s' — cdata.empty=%s edata.empty=%s" % [ckey, cdata.is_empty(), edata.is_empty()])
 			continue
 		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
 		var ox2: int = room["_offset_x"]
@@ -617,15 +623,21 @@ func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 				_hud.show_toast(msg, 4.0)
 		room["state"] = "cleared"
 		GameData.mark_room_cleared(_floor_num, room["id"])
-		print("Dungeon: room %d cleared!" % room["id"])
+		# Track class on room clear for skyshard eligibility
+		ForgeSystem.track_room_clear(_floor_num)
 
 		# If boss room cleared, enable the floor portal and advance floor
 		if room["room_type"] == "boss":
 			_enable_boss_portal()
 			var cleared_floor: int = _floor_num
+			# Try to award a skyshard before advancing floor
+			var shard_id: String = ForgeSystem.try_award_skyshard(cleared_floor)
+			if shard_id != "":
+				if _hud and _hud.has_method("show_toast"):
+					var cls_name: String = ForgeSystem.get_class_name(ForgeSystem.get_floor_class(cleared_floor))
+					_hud.show_toast("%s Skyshard earned! Visit Steven or Mahan to forge." % cls_name, 6.0)
 			GameData.dungeon_seed = 0
 			GameData.advance_floor()
-			print("Dungeon: boss defeated — advanced to floor %d" % GameData.current_floor)
 			# Rescue NPCs tied to this floor
 			var rescued: Array[String] = GameData.rescue_npcs_for_floor(cleared_floor)
 			for new_npc: String in rescued:
@@ -687,12 +699,10 @@ func _do_bonfire_rest():
 func _spawn_companion_followers(base_pos: Vector3):
 	## Spawn exploration follower entities for each active companion.
 	## These trail behind the player outside of combat.
-	print("Dungeon: _spawn_companion_followers — active_companions = %s" % [GameData.active_companions])
 	for ckey: String in GameData.active_companions:
 		var cdata: Dictionary = GameData.get_companion(ckey)
 		var edata: Dictionary = EnemyDB.get_enemy(ckey)
 		if cdata.is_empty() or edata.is_empty():
-			print("Dungeon: SKIP companion '%s' — cdata.empty=%s edata.empty=%s" % [ckey, cdata.is_empty(), edata.is_empty()])
 			continue
 		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
 		var offset := Vector3(1.2 * (_companion_followers.size() + 1), 0.0, 0.0)
@@ -871,6 +881,11 @@ func _check_puzzle_solved(room: Dictionary):
 		_hud.show_toast("Puzzle solved!  +%dg  +%d XP" % [gold_reward, xp_reward], 3.5)
 	print("Dungeon: puzzle room %d solved! +%d gold, +%d XP" % [room["id"], gold_reward, xp_reward])
 
+	# Restore camera from overhead puzzle view
+	if _camera and is_instance_valid(_camera):
+		_camera.set_puzzle_mode(false)
+	_set_wall_puzzle_mode(false)
+
 
 ## Reset all push blocks in a puzzle room to their spawn positions.
 func _reset_puzzle(room: Dictionary):
@@ -946,6 +961,29 @@ func _set_wall_combat_mode(enabled: bool) -> void:
 			# Zoom back out now that walls are fully opaque again
 			if _camera and is_instance_valid(_camera):
 				_camera.restore_zoom()
+		)
+
+
+## Semi-transparent walls while inside a puzzle room so blocks are visible.
+func _set_wall_puzzle_mode(enabled: bool) -> void:
+	if _terrain_mat == null:
+		return
+	if _combat_active:
+		return  # combat transparency takes priority
+	if _wall_tween and _wall_tween.is_valid():
+		_wall_tween.kill()
+	_wall_tween = create_tween()
+	if enabled:
+		_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_terrain_mat.vertex_color_use_as_albedo = false
+		_wall_tween.tween_property(_terrain_mat, "albedo_color",
+			Color(1.0, 1.0, 1.0, 0.08), 0.4)
+	else:
+		_wall_tween.tween_property(_terrain_mat, "albedo_color",
+			Color(1.0, 1.0, 1.0, 1.0), 0.4)
+		_wall_tween.tween_callback(func() -> void:
+			_terrain_mat.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+			_terrain_mat.vertex_color_use_as_albedo = true
 		)
 
 
