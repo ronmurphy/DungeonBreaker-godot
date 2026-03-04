@@ -337,8 +337,6 @@ func _decorate_room(room: Dictionary, ox: int, oz: int, floor_num: int = 1):
 			_build_boss_room(wcx, wcz, room, ox, oz)
 		"bonfire":
 			_build_bonfire_room(wcx, wcz, room, ox, oz)
-		"merchant":
-			_build_merchant_room(wcx, wcz, room, ox, oz)
 		"fountain":
 			_build_fountain_room(wcx, wcz, room, ox, oz)
 		"trap":

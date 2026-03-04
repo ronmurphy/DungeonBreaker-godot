@@ -263,7 +263,7 @@ func _spawn_enemies(data: Dictionary):
 	# Count and store the total number of clearable rooms for this floor
 	var clearable_count: int = 0
 	for room in rooms:
-		if room["room_type"] not in ["start", "bonfire", "merchant", "fountain", "alchemy", "puzzle"]:
+		if room["room_type"] not in ["start", "bonfire", "fountain", "alchemy", "puzzle", "vault"]:
 			clearable_count += 1
 	GameData.set_floor_room_count(_floor_num, clearable_count)
 
@@ -276,7 +276,7 @@ func _spawn_enemies(data: Dictionary):
 		# Only spawn in uncleared normal/trap/locked rooms
 		if room["state"] != "uncleared":
 			continue
-		if room["room_type"] in ["start", "bonfire", "merchant", "fountain", "alchemy", "puzzle"]:
+		if room["room_type"] in ["start", "bonfire", "fountain", "alchemy", "puzzle", "vault"]:
 			continue
 
 		# Enemy count: 1–3 for normal, 1 for boss
@@ -285,6 +285,11 @@ func _spawn_enemies(data: Dictionary):
 			count = randi_range(1, 3)
 		elif room["room_type"] == "trap":
 			count = randi_range(2, 3)
+
+		# Store enemy blueprints — actual entities are spawned on combat entry.
+		# This avoids hitting the EntityManager pool cap on large floors.
+		if not room.has("enemy_blueprints"):
+			room["enemy_blueprints"] = []
 
 		for i in count:
 			var key: String = floor_enemies[randi() % floor_enemies.size()]
@@ -301,15 +306,36 @@ func _spawn_enemies(data: Dictionary):
 			var ry_max: int = room["y"] + maxi(2, room["h"] - 2)
 			var ex: float = randi_range(rx_min, rx_max) + ox + 0.5
 			var ez: float = randi_range(ry_min, ry_max) + oz + 0.5
-			var ey: float = room.get("floor_height", 0) + 1.5  # above elevated floor if applicable
+			var ey: float = room.get("floor_height", 0) + 1.5
 
-			var tex_path: String = EnemyDB.get_ready_texture_path(key)
 			stats["room_id"] = room["id"]
 			stats["entity_key"] = key
 
-			var entity: Node3D = EntityManager.spawn_entity(Vector3(ex, ey, ez), tex_path, stats)
-			if entity:
-				room["enemies"].append(entity)
+			room["enemy_blueprints"].append({
+				"key": key,
+				"stats": stats,
+				"pos": Vector3(ex, ey, ez),
+			})
+
+
+## Spawn actual enemy entities from stored blueprints when entering a room.
+## Only the current room's enemies exist as entities, keeping the pool small.
+func _materialize_room_enemies(room: Dictionary):
+	var blueprints: Array = room.get("enemy_blueprints", [])
+	if blueprints.is_empty():
+		return
+	for bp: Dictionary in blueprints:
+		var key: String = bp["key"]
+		var stats: Dictionary = bp["stats"]
+		var pos: Vector3 = bp["pos"]
+		var tex_path: String = EnemyDB.get_ready_texture_path(key)
+		var entity: Node3D = EntityManager.spawn_entity(pos, tex_path, stats)
+		if entity:
+			room["enemies"].append(entity)
+		else:
+			push_warning("Dungeon: failed to spawn enemy '%s' — entity pool may be full (%d active)" % [key, EntityManager.get_active_count()])
+	# Clear blueprints so they aren't spawned again if player re-enters
+	room["enemy_blueprints"].clear()
 
 
 func _connect_portals():
@@ -401,16 +427,17 @@ func _check_area_interactions():
 					_hud.show_prompt("[E] Drink from Fountain")
 				if e_just_pressed:
 					_do_fountain_heal()
-			"merchant":
-				if _hud:
-					_hud.show_prompt("[E] Buy Health Potion (15g)")
-				if e_just_pressed:
-					_do_merchant_buy()
 			"alchemy":
 				if _hud:
 					_hud.show_prompt("[E] Brew Random Potion (10g)")
 				if e_just_pressed:
 					_do_alchemy_brew()
+			"vault":
+				if not child.get_meta("looted", false):
+					if _hud:
+						_hud.show_prompt("[E] Open Vault Chest")
+					if e_just_pressed:
+						_do_vault_loot(child)
 			"boss_portal":
 				if child.get_meta("enabled", false):
 					if _hud:
@@ -462,6 +489,9 @@ func _check_area_interactions():
 
 
 func _trigger_room_combat(room: Dictionary):
+	# Materialize enemy entities from blueprints (lazy spawn)
+	_materialize_room_enemies(room)
+
 	if room["enemies"].is_empty():
 		room["state"] = "cleared"
 		return
@@ -487,10 +517,12 @@ func _trigger_room_combat(room: Dictionary):
 
 	# Spawn companion entities for active companions
 	var companion_entities: Array = []
+	print("Dungeon: combat companion spawn — active_companions = %s" % [GameData.active_companions])
 	for ckey: String in GameData.active_companions:
 		var cdata: Dictionary = GameData.get_companion(ckey)
 		var edata: Dictionary = EnemyDB.get_enemy(ckey)
 		if cdata.is_empty() or edata.is_empty():
+			print("Dungeon: SKIP combat companion '%s' — cdata.empty=%s edata.empty=%s" % [ckey, cdata.is_empty(), edata.is_empty()])
 			continue
 		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
 		var ox2: int = room["_offset_x"]
@@ -655,10 +687,12 @@ func _do_bonfire_rest():
 func _spawn_companion_followers(base_pos: Vector3):
 	## Spawn exploration follower entities for each active companion.
 	## These trail behind the player outside of combat.
+	print("Dungeon: _spawn_companion_followers — active_companions = %s" % [GameData.active_companions])
 	for ckey: String in GameData.active_companions:
 		var cdata: Dictionary = GameData.get_companion(ckey)
 		var edata: Dictionary = EnemyDB.get_enemy(ckey)
 		if cdata.is_empty() or edata.is_empty():
+			print("Dungeon: SKIP companion '%s' — cdata.empty=%s edata.empty=%s" % [ckey, cdata.is_empty(), edata.is_empty()])
 			continue
 		var tex_path: String = EnemyDB.get_ready_texture_path(ckey)
 		var offset := Vector3(1.2 * (_companion_followers.size() + 1), 0.0, 0.0)
@@ -701,20 +735,6 @@ func _do_fountain_heal():
 	print("Dungeon: fountain healed %d HP" % heal_amount)
 
 
-func _do_merchant_buy():
-	var cost := 15
-	if GameData.gold >= cost:
-		var potion := ItemDB.create_item("potion_red")
-		if not potion.is_empty() and ItemDB.add_to_backpack(potion):
-			GameData.gold -= cost
-			GameData.gold_changed.emit(GameData.gold)
-			print("Dungeon: bought Health Potion for %d gold" % cost)
-		else:
-			print("Dungeon: backpack full!")
-	else:
-		print("Dungeon: not enough gold (need %d, have %d)" % [cost, GameData.gold])
-
-
 func _do_alchemy_brew():
 	var cost := 10
 	if GameData.gold >= cost:
@@ -729,6 +749,29 @@ func _do_alchemy_brew():
 			print("Dungeon: backpack full!")
 	else:
 		print("Dungeon: not enough gold (need %d, have %d)" % [cost, GameData.gold])
+
+
+func _do_vault_loot(area: Area3D):
+	# Gold reward scales with floor
+	var gold_reward := 20 + _floor_num * 10
+	GameData.gold += gold_reward
+	GameData.gold_changed.emit(GameData.gold)
+
+	# Random bonus item: potion, food, or accessory
+	var loot_table := ["potion_red", "potion_blue", "potion_green", "baked_potato", "bread"]
+	var loot_key: String = loot_table[randi() % loot_table.size()]
+	var item := ItemDB.create_item(loot_key)
+	var item_name := ""
+	if not item.is_empty() and ItemDB.add_to_backpack(item):
+		item_name = item.get("name", loot_key)
+
+	# Mark as looted so it can't be opened again
+	area.set_meta("looted", true)
+
+	if item_name != "":
+		print("Dungeon: vault — %d gold + %s" % [gold_reward, item_name])
+	else:
+		print("Dungeon: vault — %d gold (backpack full, item lost)" % gold_reward)
 
 
 # ── Puzzle room logic ────────────────────────────────────────────────────────

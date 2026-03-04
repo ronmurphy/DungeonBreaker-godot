@@ -710,6 +710,7 @@ const NPC_SLOTS: Array = [
 	{ "pos": Vector2i( -2,  7), "face": Vector2( 1, -1) },  # near bonfire SW
 	{ "pos": Vector2i( 17, -9), "face": Vector2(-1,  1) },  # east area
 	{ "pos": Vector2i( 20,  9), "face": Vector2(-1,  0) },  # east, face west
+	{ "pos": Vector2i(-12, 12), "face": Vector2( 1, -1) },  # south-west clearing
 ]
 
 

@@ -37,6 +37,13 @@ const _FX_MAGIC: Array = [
 const _SFX_HIT  := "res://assets/sfx/Craft.ogg"
 const _SFX_MISS := "res://assets/sfx/Select.ogg"
 const _SFX_GUTS := "res://assets/sfx/Fire.ogg"
+# Weapon-category combat SFX
+const _SFX_SLASH  := "res://assets/sfx/combat/slash.ogg"
+const _SFX_BLUNT  := "res://assets/sfx/combat/blunt.ogg"
+const _SFX_MAGIC  := "res://assets/sfx/combat/magic.ogg"
+const _SFX_RANGED := "res://assets/sfx/combat/ranged.ogg"
+const _SFX_ROAR   := "res://assets/sfx/combat/roar.ogg"
+const _SFX_COMBAT_MISS := "res://assets/sfx/combat/miss.ogg"
 
 signal combat_ended(victory: bool, fled: bool)
 signal combat_started()
@@ -100,6 +107,7 @@ var _attack_tiles: Array[Vector2i] = []
 var _scene_root: Node3D = null
 
 var _sfx_player: AudioStreamPlayer = null
+var _current_hit_sfx: String = ""  # Set per-attack for weapon-specific SFX
 var _slash_shader: Shader = null
 
 
@@ -482,6 +490,7 @@ func _start_enemy_turn(unit_idx: int):
 	# Poison tick — take damage at start of turn, then decrement
 	if unit.get("poison_turns", 0) > 0:
 		var pdmg: int = unit.get("poison_dmg", 2)
+		_current_hit_sfx = _SFX_MAGIC
 		_apply_damage(unit_idx, pdmg)
 		unit["poison_turns"] -= 1
 		if tactical_grid:
@@ -849,6 +858,7 @@ func _tactic_defender(unit_idx: int):
 func _do_companion_attack(attacker_idx: int, target_idx: int):
 	var attacker: Dictionary = _units[attacker_idx]
 	var target: Dictionary = _units[target_idx]
+	_current_hit_sfx = _SFX_ROAR
 
 	# Show companion's attack pose sprite
 	var c_key: String = attacker.get("entity_key", "")
@@ -870,7 +880,7 @@ func _do_companion_attack(attacker_idx: int, target_idx: int):
 		if tactical_grid:
 			_fx_float_text(tactical_grid.grid_to_world(attacker["grid_pos"]) + Vector3(0, 1.2, 0),
 				"Miss!", Color(0.7, 0.7, 0.7))
-		_fx_play_sfx(_SFX_MISS, randf_range(0.9, 1.1))
+		_fx_play_sfx(_SFX_COMBAT_MISS, randf_range(0.9, 1.1))
 	else:
 		action_resolved.emit("[color=gray]%s and %s clash to a stalemate![/color]" % [attacker["name"], target["name"]])
 
@@ -985,6 +995,23 @@ func dismiss_companion_for(dismissed_unit_idx: int):
 	# HP is preserved in roster — companion is benched, not dead
 
 
+## Map weapon ID to its SFX category.
+func _get_weapon_sfx(weapon_id: String) -> String:
+	match weapon_id:
+		"sword", "blade", "knights_sword", "axe", "magic_knife":
+			return _SFX_SLASH
+		"throwing_knives", "shuriken":
+			return _SFX_SLASH
+		"club", "morningstar", "stone_spear":
+			return _SFX_BLUNT
+		"fire_staff", "crystal_wand", "skull_wand", "storm_staff", "poison_dart":
+			return _SFX_MAGIC
+		"crossbow", "ice_bow", "boomerang":
+			return _SFX_RANGED
+		_:
+			return _SFX_SLASH
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ACTIONS
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1003,6 +1030,8 @@ func _do_attack(attacker_idx: int, target_idx: int):
 	var target: Dictionary = _units[target_idx]
 	var is_ranged: bool = attacker.get("attack_range", 1) > 1
 	var weapon_id: String = GameData.equip_weapon.get("id", "") if attacker["type"] == "player" else ""
+	var wpn_sfx: String = _get_weapon_sfx(weapon_id)
+	_current_hit_sfx = wpn_sfx
 
 	# Crystal wand — halve target defense before rolling (armor pierce)
 	var effective_defense: int = target["defense"]
@@ -1044,7 +1073,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_ice_impact(to_wpos)
 						_fx_float_text(to_wpos, "-%d  FROZEN!" % dmg, Color(0.4, 0.9, 1.0))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.10)
 				"fire_staff":
 					impact_cb = func() -> void:
@@ -1053,7 +1082,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_fire_impact(to_wpos)
 						_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.5, 0.1))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.18)
 						# AoE splash — half damage to all ENEMY units adjacent to target
 						var aoe_dmg: int = maxi(1, dmg / 2)
@@ -1073,7 +1102,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_impact(to_wpos, "slash")
 						_fx_float_text(to_wpos, "-%d  Pierce!" % dmg, Color(0.8, 0.9, 1.0))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.10)
 						# Pierce: apply half damage to all enemies along the line path
 						var knife_path: Array[Vector2i] = _get_line_path_tiles(from_gpos, to_gpos)
@@ -1093,7 +1122,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_poison_impact(to_wpos)
 						_fx_float_text(to_wpos, "-%d  POISONED!" % dmg, Color(0.3, 0.85, 0.15))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.08)
 				"crystal_wand":
 					impact_cb = func() -> void:
@@ -1102,7 +1131,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_arcane_impact(to_wpos)
 						_fx_float_text(to_wpos, "-%d  Pierce AC!" % dmg, Color(0.8, 0.5, 1.0))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.10)
 				"shuriken":
 					impact_cb = func() -> void:
@@ -1111,7 +1140,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_impact(to_wpos, "slash")
 						_fx_float_text(to_wpos, "-%d" % dmg, Color(0.8, 0.8, 0.9))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.10)
 						# Ricochet: bounce to up to 2 nearby enemies for 1/3 damage
 						var ricochet_dmg: int = maxi(1, dmg / 3)
@@ -1138,7 +1167,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_life_drain_impact(to_wpos)
 						_fx_float_text(to_wpos, "-%d" % dmg, Color(0.6, 0.15, 0.5))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.12)
 						# Life steal: heal attacker 25% of damage dealt
 						var heal_amt: int = maxi(1, dmg / 4)
@@ -1155,7 +1184,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_lightning_impact(to_wpos)
 						_fx_float_text(to_wpos, "-%d" % dmg, Color(0.5, 0.8, 1.0))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.15)
 						# Chain lightning: half damage to one adjacent enemy
 						var chain_dmg: int = maxi(1, dmg / 2)
@@ -1183,7 +1212,7 @@ func _do_attack(attacker_idx: int, target_idx: int):
 							tactical_grid.clear_ranged_path()
 						_fx_impact(to_wpos, "slash")
 						_fx_float_text(to_wpos, "-%d" % dmg, Color(1.0, 0.9, 0.25))
-						_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+						_fx_play_sfx(wpn_sfx, randf_range(0.85, 1.15))
 						_fx_camera_shake(0.10)
 
 			# Apply damage (suppress FX — projectile handles impact visuals)
@@ -1249,12 +1278,13 @@ func _do_attack(attacker_idx: int, target_idx: int):
 		if tactical_grid:
 			_fx_float_text(tactical_grid.grid_to_world(target["grid_pos"]) + Vector3(0, 1.2, 0),
 				"Clash!", Color(0.8, 0.8, 0.5))
-		_fx_play_sfx(_SFX_MISS, randf_range(0.9, 1.1))
+		_fx_play_sfx(_SFX_COMBAT_MISS, randf_range(0.9, 1.1))
 
 
 func _do_enemy_attack(attacker_idx: int, target_idx: int):
 	var attacker: Dictionary = _units[attacker_idx]
 	var target: Dictionary = _units[target_idx]
+	_current_hit_sfx = _SFX_ROAR
 
 	# Flash the enemy's world sprite to its attack pose
 	var entity_key: String = attacker.get("entity_key", "")
@@ -1291,7 +1321,7 @@ func _do_enemy_attack(attacker_idx: int, target_idx: int):
 		if tactical_grid:
 			_fx_float_text(tactical_grid.grid_to_world(target["grid_pos"]) + Vector3(0, 1.2, 0),
 				"Dodge!", Color(0.4, 1.0, 0.6))
-		_fx_play_sfx(_SFX_MISS, randf_range(1.0, 1.3))
+		_fx_play_sfx(_SFX_COMBAT_MISS, randf_range(1.0, 1.3))
 
 
 func _do_defend(unit_idx: int):
@@ -1309,6 +1339,7 @@ func _do_counter(unit_idx: int):
 
 func _do_guts(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
+	_current_hit_sfx = _get_weapon_sfx(GameData.equip_weapon.get("id", ""))
 	if GameData.guts >= GameData.guts_max:
 		# Guts unleash — powerful attack on all nearby enemies
 		var targets := get_attackable_enemies(unit["grid_pos"], 2)  # AoE range 2
@@ -1399,6 +1430,7 @@ func _do_skill_shadowstep(unit_idx: int):
 ## ARCANIST — Arcane Blast: AoE d10 damage to ALL alive enemies (no friendly fire).
 func _do_skill_arcane_blast(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
+	_current_hit_sfx = _SFX_MAGIC
 	var total_dmg: int = 0
 	var hit_count: int = 0
 	for i in _units.size():
@@ -1479,6 +1511,7 @@ func _do_skill_war_song(unit_idx: int):
 ## TEMPLAR — Holy Smite: Guaranteed hit, INT-based holy damage to nearest enemy.
 func _do_skill_holy_smite(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
+	_current_hit_sfx = _SFX_MAGIC
 	var nearest_idx := _get_nearest_enemy(unit["grid_pos"])
 	if nearest_idx < 0:
 		action_resolved.emit("[color=yellow]No enemies to smite![/color]")
@@ -1497,6 +1530,7 @@ func _do_skill_holy_smite(unit_idx: int):
 ## REANIMATOR — Soul Drain: Steal HP from nearest enemy (deal damage, heal self).
 func _do_skill_soul_drain(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
+	_current_hit_sfx = _SFX_MAGIC
 	var nearest_idx := _get_nearest_enemy(unit["grid_pos"])
 	if nearest_idx < 0:
 		action_resolved.emit("[color=yellow]No enemies to drain![/color]")
@@ -1520,6 +1554,7 @@ func _do_skill_soul_drain(unit_idx: int):
 ## TINKERER — Shock Mine: d6 damage + stun (freeze 1 turn) to nearest enemy.
 func _do_skill_shock_mine(unit_idx: int):
 	var unit: Dictionary = _units[unit_idx]
+	_current_hit_sfx = _SFX_MAGIC
 	var nearest_idx := _get_nearest_enemy(unit["grid_pos"])
 	if nearest_idx < 0:
 		action_resolved.emit("[color=yellow]No enemies to target![/color]")
@@ -1597,7 +1632,7 @@ func _apply_damage(unit_idx: int, damage: int, suppress_fx: bool = false):
 		_fx_impact(wpos, "blunt" if is_player_hit else "slash")
 		var num_col := Color(1.0, 0.35, 0.2) if is_player_hit else Color(1.0, 0.9, 0.25)
 		_fx_float_text(wpos, "-%d" % damage, num_col)
-		_fx_play_sfx(_SFX_HIT, randf_range(0.85, 1.15))
+		_fx_play_sfx(_current_hit_sfx if _current_hit_sfx != "" else _SFX_SLASH, randf_range(0.85, 1.15))
 		_fx_camera_shake(0.18 if is_player_hit else 0.10)
 
 	if unit["hp"] <= 0:

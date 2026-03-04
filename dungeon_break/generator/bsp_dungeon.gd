@@ -379,6 +379,12 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 	# Assign special rooms from the shuffled pool
 	var assign_idx := 0
 
+	# Puzzle (1) — sokoban push-block room, floors 3+  (assigned early to guarantee a slot)
+	if _floor_num >= 3 and assign_idx < available.size():
+		rooms[available[assign_idx]]["room_type"] = "puzzle"
+		rooms[available[assign_idx]]["floor_height"] = 0  # must be flat
+		assign_idx += 1
+
 	# Bonfire (1)
 	if assign_idx < available.size():
 		rooms[available[assign_idx]]["room_type"] = "bonfire"
@@ -405,29 +411,12 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 		rooms[available[assign_idx]]["room_type"] = "fountain"
 		assign_idx += 1
 
-	# Merchant (depends on room count)
-	var merchant_count := 0
-	if rooms.size() <= 14:
-		merchant_count = 2
-	elif rooms.size() <= 22:
-		merchant_count = 1
-	for _m in merchant_count:
-		if assign_idx < available.size():
-			rooms[available[assign_idx]]["room_type"] = "merchant"
-			assign_idx += 1
-
 	# Locked (1–2)
 	if assign_idx < available.size():
 		rooms[available[assign_idx]]["room_type"] = "locked"
 		assign_idx += 1
 	if assign_idx < available.size() and randf() < 0.5:
 		rooms[available[assign_idx]]["room_type"] = "locked"
-		assign_idx += 1
-
-	# Puzzle (1) — sokoban push-block room, floors 3+
-	if _floor_num >= 3 and assign_idx < available.size():
-		rooms[available[assign_idx]]["room_type"] = "puzzle"
-		rooms[available[assign_idx]]["floor_height"] = 0  # must be flat
 		assign_idx += 1
 
 	# Rest stay "normal" — these get enemies
@@ -439,7 +428,7 @@ func _assign_room_types(rooms: Array, _floor_num: int):
 
 	# Ensure interactive/safe rooms are always flat (elevation breaks their interactions)
 	# Boss rooms keep their elevation if they're upper rooms
-	const FLAT_TYPES := ["start", "bonfire", "merchant", "fountain", "puzzle"]
+	const FLAT_TYPES := ["start", "bonfire", "fountain", "puzzle"]
 	for room in rooms:
 		if room["room_type"] in FLAT_TYPES:
 			room["floor_height"] = 0

@@ -333,6 +333,7 @@ func _clear_current():
 
 func _on_enter_dungeon():
 	GameData.in_dungeon = true
+	print("Main: _on_enter_dungeon — active_companions = %s, companions roster size = %d" % [GameData.active_companions, GameData.companions.size()])
 	# Skip floors the player has fully cleared (all clearable rooms beaten)
 	while GameData.is_floor_cleared(GameData.current_floor):
 		GameData.current_floor += 1
