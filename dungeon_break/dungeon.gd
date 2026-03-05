@@ -49,7 +49,7 @@ const DUNGEON_GI_ENERGY := 0.18 # subtle bounce so walls are still readable
 const LOW_MED_DUNGEON_AMBIENT := 0.10 # slight fallback lift when SDFGI is disabled
 const LOW_MED_FILL_ENERGY := 0.20
 const LOW_MED_FILL_RANGE := 14.0
-const GRAPHICS_PRESET_HIGH := 2
+const GRAPHICS_PRESET_HIGH := GraphicsManager.Preset.HIGH
 
 ## Torch light node (OmniLight3D parented to player, only in dungeon)
 var _torch_light: OmniLight3D = null
@@ -134,7 +134,6 @@ func _build_dungeon():
 	# The tool obtained in setup() may reference a terrain state with no
 	# loaded chunks. Getting a fresh one now ensures set_voxel() works.
 	_dungeon_stamper.refresh_voxel_tool()
-	print("Dungeon: building floor %d (view_dist=%d, grid will be generated next)" % [_floor_num, view_dist])
 
 	# Cache wall material for combat transparency toggling (floor blocks use the other material)
 	_terrain_mat = load("res://blocky_game/blocks/terrain_material_wall.tres") as StandardMaterial3D
@@ -200,17 +199,7 @@ func _build_dungeon():
 	add_child(inv_ui)
 
 	# Give player starter gear on first run
-	if GameData.equip_weapon.is_empty():
-		ItemDB.equip_item(ItemDB.create_item("club"))
-	if GameData.equip_chest.is_empty():
-		ItemDB.equip_item(ItemDB.create_item("chest_leather"))
-	if GameData.backpack.is_empty():
-		ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-		ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-		ItemDB.add_to_backpack(ItemDB.create_item("baked_potato"))
-		ItemDB.add_to_backpack(ItemDB.create_item("potion_red"))
-		if GameData.gold == 0:
-			GameData.add_gold(15)
+	GameData.ensure_starter_gear()
 
 	# Darken the dungeon: kill the directional sun (it shines into every open-top room)
 	# and bring ambient down to near-zero. Corridor sconces + player torch + room lights
@@ -231,7 +220,6 @@ func _build_dungeon():
 		_enable_boss_portal()
 
 	MusicManager.play_dungeon()
-	print("Dungeon: floor %d ready — %d rooms" % [_floor_num, data["rooms"].size()])
 	dungeon_ready.emit()
 
 
@@ -358,12 +346,9 @@ func _materialize_room_enemies(room: Dictionary):
 
 
 func _connect_portals():
-	# Find all Area3D nodes in dungeon objects and connect body_entered
-	for child in _dungeon_objects.get_children():
-		if child is Area3D:
-			child.body_entered.connect(_on_area_body_entered.bind(child))
-			# Also detect CharacterBody3D — but our player is Node3D with VoxelBoxMover
-			# So we use area overlap with player proximity check instead
+	# Portal interactions are handled via proximity in _check_area_interactions.
+	# No body_entered signals needed (player uses VoxelBoxMover, not CharacterBody).
+	pass
 
 
 func _process(delta: float):
@@ -390,7 +375,6 @@ func _process(delta: float):
 	if _player.global_position.y < -15.0:
 		var start_pos: Vector3 = _dungeon_stamper.get_start_position()
 		_player.global_position = start_pos
-		print("Dungeon: player fell into void — teleported to start")
 
 	# Update minimap player position
 	if _minimap and is_instance_valid(_minimap):
@@ -398,7 +382,7 @@ func _process(delta: float):
 
 	# Update companion followers trailing behind player
 	if not _combat_active:
-		_update_companion_followers()
+		_update_companion_followers(delta)
 
 	# Check player proximity to portal areas (since we use VoxelBoxMover, not CharacterBody)
 	_check_area_interactions()
@@ -559,7 +543,6 @@ func _trigger_room_combat(room: Dictionary):
 	for f: Node3D in _companion_followers:
 		if is_instance_valid(f):
 			f.visible = false
-	print("Dungeon: combat started in room %d (%s) elev=%d" % [room["id"], room["room_type"], _combat_floor_height])
 
 	# Inject dungeon offsets into room dict for the tactical grid
 	room["_offset_x"] = _dungeon_stamper.dungeon_data.get("offset_x", 0)
@@ -567,7 +550,6 @@ func _trigger_room_combat(room: Dictionary):
 
 	# Snapshot companion roster before combat so we can report losses afterwards
 	_pre_combat_companions = GameData.active_companions.duplicate()
-	print("Dungeon: combat companions roster: %s" % str(GameData.active_companions))
 
 	# Spawn companion entities for active companions
 	var companion_entities: Array = []
@@ -657,7 +639,6 @@ func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 			loss_msg = "%s was lost in battle." % _lost_names[0]
 		else:
 			loss_msg = "%s were lost in battle." % ", ".join(_lost_names)
-		print("Dungeon: companions lost — %s" % loss_msg)
 		if _hud and _hud.has_method("show_toast"):
 			_hud.show_toast(loss_msg, 5.0)
 	_pre_combat_companions.clear()
@@ -688,7 +669,6 @@ func _on_combat_ended(victory: bool, fled: bool, room: Dictionary):
 			for jid in unlocked_jobs:
 				var nm: String = str(GameData.CLASS_NAMES.get(int(jid), "Unknown"))
 				names.append(nm)
-				print("Jobs: unlocked %s" % nm)
 			if _hud and _hud.has_method("show_toast"):
 				var msg := "New job unlocked: %s" % ", ".join(names)
 				_hud.show_toast(msg, 4.0)
@@ -767,7 +747,8 @@ func _do_advance_floor():
 func _do_bonfire_rest():
 	GameData.heal(GameData.hp_max)
 	GameData.heal_companions()
-	print("Dungeon: rested at bonfire — HP restored for player and companions")
+	if _hud and _hud.has_method("show_toast"):
+		_hud.show_toast("Rested — HP restored for you and companions", 3.0)
 
 
 func _spawn_companion_followers(base_pos: Vector3):
@@ -794,7 +775,7 @@ func _spawn_companion_followers(base_pos: Vector3):
 			_companion_followers.append(entity)
 
 
-func _update_companion_followers():
+func _update_companion_followers(delta: float):
 	## Move companion followers to trail behind the player using a position history.
 	if _player == null or _companion_followers.is_empty():
 		return
@@ -803,6 +784,7 @@ func _update_companion_followers():
 	if _player_pos_history.size() > 80:
 		_player_pos_history.pop_front()
 
+	var lerp_speed := 6.0  # framerate-independent smooth follow
 	for i in _companion_followers.size():
 		var f: Node3D = _companion_followers[i]
 		if not is_instance_valid(f):
@@ -811,13 +793,14 @@ func _update_companion_followers():
 		var delay: int = (i + 1) * 20
 		var target_idx: int = maxi(0, _player_pos_history.size() - 1 - delay)
 		var target_pos: Vector3 = _player_pos_history[target_idx]
-		f.global_position = f.global_position.lerp(target_pos, 0.12)
+		f.global_position = f.global_position.lerp(target_pos, 1.0 - exp(-lerp_speed * delta))
 
 
 func _do_fountain_heal():
 	var heal_amount := GameData.hp_max / 3
 	GameData.heal(heal_amount)
-	print("Dungeon: fountain healed %d HP" % heal_amount)
+	if _hud and _hud.has_method("show_toast"):
+		_hud.show_toast("Fountain healed %d HP" % heal_amount, 2.5)
 
 
 func _do_alchemy_brew():
@@ -827,20 +810,21 @@ func _do_alchemy_brew():
 		var key: String = potions[randi() % potions.size()]
 		var potion := ItemDB.create_item(key)
 		if not potion.is_empty() and ItemDB.add_to_backpack(potion):
-			GameData.gold -= cost
-			GameData.gold_changed.emit(GameData.gold)
-			print("Dungeon: brewed %s for %d gold" % [potion.get("name", "potion"), cost])
+			GameData.add_gold(-cost)
+			if _hud and _hud.has_method("show_toast"):
+				_hud.show_toast("Brewed %s! (-%dg)" % [potion.get("name", "potion"), cost], 3.0)
 		else:
-			print("Dungeon: backpack full!")
+			if _hud and _hud.has_method("show_toast"):
+				_hud.show_toast("Backpack full!", 2.0)
 	else:
-		print("Dungeon: not enough gold (need %d, have %d)" % [cost, GameData.gold])
+		if _hud and _hud.has_method("show_toast"):
+			_hud.show_toast("Not enough gold (need %dg)" % cost, 2.0)
 
 
 func _do_vault_loot(area: Area3D):
 	# Gold reward scales with floor (vaults are premium)
 	var gold_reward := 30 + _floor_num * 15
-	GameData.gold += gold_reward
-	GameData.gold_changed.emit(GameData.gold)
+	GameData.add_gold(gold_reward)
 
 	# Vault loot is tiered by floor — guaranteed item (no drop chance roll)
 	var item: Dictionary = _roll_vault_item()
@@ -855,10 +839,8 @@ func _do_vault_loot(area: Area3D):
 	var msg := ""
 	if item_name != "":
 		msg = "Vault opened!  +%dg  +%s" % [gold_reward, item_name]
-		print("Dungeon: vault — %d gold + %s" % [gold_reward, item_name])
 	else:
 		msg = "Vault opened!  +%dg  (backpack full)" % gold_reward
-		print("Dungeon: vault — %d gold (backpack full, item lost)" % gold_reward)
 	if _hud and _hud.has_method("show_toast"):
 		_hud.show_toast(msg, 4.0)
 
@@ -954,7 +936,6 @@ func _spawn_puzzle_blocks(room: Dictionary):
 
 	if _hud and _hud.has_method("show_toast"):
 		_hud.show_toast("Push the blocks onto the glowing plates!", 3.0)
-	print("Dungeon: spawned %d puzzle blocks in room %d" % [blocks.size(), room["id"]])
 
 
 ## Called whenever a push block finishes moving.
@@ -1009,8 +990,7 @@ func _check_puzzle_solved(room: Dictionary):
 	# Reward: gold + bonus XP
 	var gold_reward: int = 15 + _floor_num * 5
 	var xp_reward: int = 10 + _floor_num * 3
-	GameData.gold += gold_reward
-	GameData.gold_changed.emit(GameData.gold)
+	GameData.add_gold(gold_reward)
 	GameData.grant_xp(xp_reward)
 
 	# Spawn a chest voxel at room centre as visual feedback
@@ -1026,7 +1006,6 @@ func _check_puzzle_solved(room: Dictionary):
 
 	if _hud and _hud.has_method("show_toast"):
 		_hud.show_toast("Puzzle solved!  +%dg  +%d XP" % [gold_reward, xp_reward], 3.5)
-	print("Dungeon: puzzle room %d solved! +%d gold, +%d XP" % [room["id"], gold_reward, xp_reward])
 
 	# Restore camera from overhead puzzle view
 	if _camera and is_instance_valid(_camera):
@@ -1042,7 +1021,6 @@ func _reset_puzzle(room: Dictionary):
 	_update_puzzle_targets(room)
 	if _hud and _hud.has_method("show_toast"):
 		_hud.show_toast("Puzzle reset.", 1.5)
-	print("Dungeon: puzzle room %d reset" % room["id"])
 
 
 ## Look up a room dict by its ID from dungeon_data.
@@ -1055,8 +1033,7 @@ func _get_room_by_id(rid: int) -> Dictionary:
 	return {}
 
 
-func _on_area_body_entered(_body: Node3D, _area: Area3D):
-	pass  # Handled via proximity in _check_area_interactions
+
 
 
 ## Enable all lights for a room (called when the player first steps into it).
@@ -1239,7 +1216,6 @@ func _wait_for_terrain_editable(half: int = 50):
 	# Poll until editable — up to ~10s at 60fps
 	for attempt in 600:
 		if vt.is_area_editable(check_aabb):
-			print("Dungeon: terrain editable after %d frames (half=%d)" % [attempt, half])
 			return
 		await get_tree().process_frame
 

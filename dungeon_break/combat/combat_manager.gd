@@ -235,7 +235,6 @@ func start_combat(enemies: Array, companions: Array, room: Dictionary, scene_roo
 
 	tactical_grid.set_blocked(player_pos, true)
 
-	print("TacticalCombat: started with %d enemies, %d companions in room %d" % [enemies.size(), companions.size(), room["id"]])
 	combat_started.emit()
 	_spawn_combat_light()
 
@@ -451,9 +450,11 @@ func _advance_turn():
 	var unit_idx: int = _turn_order[_current_unit_idx]
 	var unit: Dictionary = _units[unit_idx]
 
-	# Reset temp bonuses at start of each unit's turn
-	GameData.ac_bonus_temp = 0
-	GameData.counter_active = false
+	# Reset temp bonuses only at start of the *player's* turn.
+	# Defend/Counter grants AC that must persist through companion and enemy turns.
+	if unit["type"] == "player":
+		GameData.ac_bonus_temp = 0
+		GameData.counter_active = false
 
 	unit_turn_started.emit(unit)
 	_show_active_glow(unit)
@@ -884,7 +885,6 @@ func _do_companion_attack(attacker_idx: int, target_idx: int):
 		action_resolved.emit("[color=lime]%s[/color] strikes %s! [color=white]%d vs %d[/color] → [color=red]%d damage![/color]" % [
 			attacker["name"], target["name"], atk_roll, def_roll, dmg])
 	elif def_roll > atk_roll:
-		var dmg: int = maxi(1, def_roll - atk_roll)
 		action_resolved.emit("[color=gray]%s attacks but %s deflects![/color]" % [attacker["name"], target["name"]])
 		if tactical_grid:
 			_fx_float_text(tactical_grid.grid_to_world(attacker["grid_pos"]) + Vector3(0, 1.2, 0),

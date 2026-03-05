@@ -103,8 +103,6 @@ func spawn_camp_wanderers():
 
 		_wanderers.append(ws)
 
-	print("WandererController: spawned %d camp wanderers" % _wanderers.size())
-
 
 func _process(delta: float):
 	for ws in _wanderers:

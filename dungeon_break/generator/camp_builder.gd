@@ -79,8 +79,6 @@ func build_camp():
 	_build_lowland_trees()
 	_build_lowland_foliage()
 
-	print("CampBuilder: camp structures placed")
-
 
 ## Get surface Y at (x, z) — topmost solid block.
 func _surface_y(x: int, z: int) -> int:

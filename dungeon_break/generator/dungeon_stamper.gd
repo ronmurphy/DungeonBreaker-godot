@@ -71,7 +71,6 @@ func setup(terrain: VoxelTerrain, scene_parent: Node3D):
 func refresh_voxel_tool():
 	if _terrain:
 		_voxel_tool = _terrain.get_voxel_tool()
-		print("DungeonStamper: voxel tool refreshed")
 
 
 ## Generate and stamp a full dungeon floor. Returns dungeon data dict.
@@ -92,14 +91,6 @@ func build_dungeon(floor_num: int) -> Dictionary:
 	# Offset: centre the dungeon around origin
 	var ox: int = -cols / 2
 	var oz: int = -rows / 2
-
-	print("DungeonStamper: floor %d — grid %dx%d, offset (%d,%d), %d rooms" % [
-		floor_num, cols, rows, ox, oz, rooms.size()])
-
-	# Quick editability spot-check: test a tile near the grid corner
-	var corner := Vector3i(ox + 1, 0, oz + 1)
-	var corner_editable := _voxel_tool.is_area_editable(AABB(Vector3(corner), Vector3(1, 1, 1)))
-	print("DungeonStamper: corner (%d,0,%d) editable=%s" % [corner.x, corner.z, str(corner_editable)])
 
 	# Determine block themes based on floor level
 	var wall_block := LOG_Y
@@ -132,8 +123,6 @@ func build_dungeon(floor_num: int) -> Dictionary:
 	# Stamp tiles. Walls are extended to MAX_ELEVATION+WALL_HEIGHT so elevated
 	# room walls reach the correct height. Elevated rooms get a solid platform
 	# base (Y=1..elev-1) plus floor at Y=elev; corridor tiles stay flat.
-	var stamp_count := 0
-	var fail_count := 0
 	for row in range(rows):
 		for col in range(cols):
 			var tile: int = grid[row][col]
@@ -156,50 +145,23 @@ func build_dungeon(floor_num: int) -> Dictionary:
 				if elev > 0:
 					for y in range(1, elev):
 						_voxel_tool.set_voxel(Vector3i(wx, y, wz), wall_block)
-						stamp_count += 1
 					_voxel_tool.set_voxel(Vector3i(wx, elev, wz), floor_block)
-					stamp_count += 1
 					for y in range(elev + 1, elev + WALL_HEIGHT + 2):
 						_voxel_tool.set_voxel(Vector3i(wx, y, wz), AIR)
-						stamp_count += 1
 				else:
 					_voxel_tool.set_voxel(Vector3i(wx, FLOOR_Y, wz), floor_block)
-					stamp_count += 1
 					for y in range(FLOOR_Y + 1, FLOOR_Y + WALL_HEIGHT + 2):
 						_voxel_tool.set_voxel(Vector3i(wx, y, wz), AIR)
-						stamp_count += 1
 
 			elif tile == BspDungeon.CORRIDOR:
 				if corr_floor != DIRT:
 					_voxel_tool.set_voxel(Vector3i(wx, FLOOR_Y, wz), corr_floor)
-					stamp_count += 1
 				for y in range(FLOOR_Y + 1, FLOOR_Y + WALL_HEIGHT + 1):
 					_voxel_tool.set_voxel(Vector3i(wx, y, wz), AIR)
-					stamp_count += 1
 
 			elif tile == BspDungeon.WALL:
 				for y in range(FLOOR_Y, FLOOR_Y + MAX_ELEVATION + WALL_HEIGHT + 2):
 					_voxel_tool.set_voxel(Vector3i(wx, y, wz), wall_block)
-					stamp_count += 1
-
-	# Read-back verification: check a few wall tiles actually stuck
-	var verify_ok := 0
-	var verify_fail := 0
-	for room in rooms:
-		var wx_test: int = room["x"] + ox
-		var wz_test: int = room["y"] + oz
-		# The tile at (room_x-1, room_y) should be a WALL in the grid
-		if room["x"] > 0:
-			var test_col: int = room["x"] - 1
-			var test_row: int = room["y"]
-			if test_row >= 0 and test_row < rows and test_col >= 0 and test_col < cols:
-				if grid[test_row][test_col] == BspDungeon.WALL:
-					var read_back: int = _voxel_tool.get_voxel(Vector3i(test_col + ox, FLOOR_Y, test_row + oz))
-					if read_back == wall_block:
-						verify_ok += 1
-					else:
-						verify_fail += 1
-	print("DungeonStamper: stamped %d voxels. Verify: %d ok, %d FAILED read-back" % [stamp_count, verify_ok, verify_fail])
 
 	# Build staircases connecting corridors to elevated rooms
 	_build_staircases(grid, rooms, cols, rows, ox, oz, wall_block)
@@ -218,10 +180,6 @@ func build_dungeon(floor_num: int) -> Dictionary:
 	# Store offset for world→grid coordinate conversion
 	dungeon_data["offset_x"] = ox
 	dungeon_data["offset_z"] = oz
-
-	var elevated_count := rooms.filter(func(r): return r.get("floor_height", 0) > 0).size()
-	print("DungeonStamper: floor %d (%dx%d, %d rooms, %d elevated) theme wall=%d floor=%d" % [
-		floor_num, cols, rows, rooms.size(), elevated_count, wall_block, room_floor])
 
 	return dungeon_data
 
@@ -708,9 +666,6 @@ func _build_puzzle_room(wcx: float, wcz: float, room: Dictionary, ox: int, oz: i
 	}
 	# Puzzle rooms start uncleared — cleared when solved
 	room["state"] = "uncleared"
-
-	print("DungeonStamper: puzzle room %d — template %d, %d blocks, %d targets" % [
-		room["id"], tmpl_idx, block_positions.size(), target_positions.size()])
 
 
 ## Add sconces (lights) in room corners.

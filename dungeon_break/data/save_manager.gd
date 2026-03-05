@@ -25,7 +25,6 @@ func save_game(slot: int) -> bool:
 		return false
 	file.store_string(JSON.stringify(data, "\t"))
 	file.close()
-	print("SaveManager: saved slot %d" % slot)
 	return true
 
 
@@ -86,4 +85,3 @@ func delete_slot(slot: int) -> void:
 	var path := _slot_path(slot)
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
-		print("SaveManager: deleted slot %d" % slot)

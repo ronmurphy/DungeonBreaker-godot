@@ -42,7 +42,7 @@ var _lowland_grass_mat: ShaderMaterial = null
 
 const GRAPHICS_PRESET_LOW := 0
 const GRAPHICS_PRESET_MEDIUM := 1
-const GRAPHICS_PRESET_HIGH := 2
+const GRAPHICS_PRESET_HIGH := GraphicsManager.Preset.HIGH
 const AIR := 0
 const GRASS := 2
 const LOWLAND_MIN_Y := -22
@@ -140,21 +140,10 @@ func _build_camp():
 	add_child(inv_ui)
 
 	# Give player starter gear on first run
-	if GameData.equip_weapon.is_empty():
-		ItemDB.equip_item(ItemDB.create_item("club"))
-	if GameData.equip_chest.is_empty():
-		ItemDB.equip_item(ItemDB.create_item("chest_leather"))
-	if GameData.backpack.is_empty():
-		ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-		ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-		ItemDB.add_to_backpack(ItemDB.create_item("baked_potato"))
-		ItemDB.add_to_backpack(ItemDB.create_item("potion_red"))
-		if GameData.gold == 0:
-			GameData.add_gold(15)
+	GameData.ensure_starter_gear()
 
 	GameData.scene_state = "camp"
 	MusicManager.play_camp()
-	print("Game: camp fully initialised")
 
 
 func _notification(what: int) -> void:
@@ -414,7 +403,6 @@ func _check_portal_interactions():
 			if _hud:
 				_hud.show_prompt("[E] Enter Dungeon")
 			if e_just_pressed:
-				print("Game: entering dungeon portal!")
 				enter_dungeon.emit()
 				return
 		elif interaction == "bonfire":
@@ -433,7 +421,7 @@ func _check_portal_interactions():
 					if GameData.has_upgrade("supply_depot"):
 						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 						ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-					print("Game: Bonfire — rested, healed, time advanced 8 hrs")
+
 			else:
 				_bonfire_rest_pending = false
 
@@ -451,7 +439,6 @@ func _check_portal_interactions():
 				if GameData.has_upgrade("supply_depot"):
 					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
 					ItemDB.add_to_backpack(ItemDB.create_item("bread"))
-				print("Game: Azure Flame — rested, healed, torch refuelled!")
 			elif r_just_pressed and not _npc_ui_open:
 				_open_companion_roster()
 			elif c_just_pressed and not _npc_ui_open:

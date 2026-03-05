@@ -277,10 +277,8 @@ func _take_screenshot():
 	var err := img.save_png(full_path)
 
 	if err == OK:
-		print("Screenshot saved: %s" % full_path)
 		_show_screenshot_toast("Screenshot Saved", "%s  (click to open folder)" % filename)
 	else:
-		print("Screenshot failed (error %d)" % err)
 		_show_screenshot_toast("Screenshot Failed", "Could not write PNG file.")
 
 
@@ -347,7 +345,6 @@ func _on_load_game_requested(slot: int):
 		return
 	GameData.from_save_dict(data)
 	GameData.save_slot = slot
-	print("Main: loaded slot %d — scene=%s floor=%d" % [slot, GameData.scene_state, GameData.current_floor])
 	if GameData.scene_state == "dungeon":
 		_load_dungeon(GameData.current_floor)
 	else:
@@ -380,7 +377,6 @@ func _load_camp():
 
 	# Connect the portal trigger from camp
 	camp.connect("enter_dungeon", _on_enter_dungeon)
-	print("Main: camp loaded")
 
 
 ## Load a dungeon floor.
@@ -399,7 +395,6 @@ func _load_dungeon(floor_num: int):
 	dungeon.advance_floor.connect(_on_advance_floor)
 	dungeon.dungeon_ready.connect(_hide_load_overlay, CONNECT_ONE_SHOT)
 	dungeon.player_defeated.connect(_on_player_defeated, CONNECT_ONE_SHOT)
-	print("Main: dungeon floor %d loaded" % floor_num)
 
 
 func _clear_current():

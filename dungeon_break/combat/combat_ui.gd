@@ -1363,11 +1363,6 @@ func _unhandled_input(event: InputEvent):
 	if not (event is InputEventKey) or not event.pressed:
 		return
 
-	var combat_phase: int = _combat.get_phase()
-
-	if combat_phase == 0:
-		pass
-
 	# Strict-mode: keycode is Variant, must cast explicitly
 	var kc: int = event.keycode
 

@@ -482,6 +482,22 @@ func heal(amount: int):
 	hp_changed.emit(hp, hp_max)
 
 
+## Ensure the player has basic starter equipment on first run.
+## Safe to call multiple times — only grants missing items.
+func ensure_starter_gear():
+	if equip_weapon.is_empty():
+		ItemDB.equip_item(ItemDB.create_item("club"))
+	if equip_chest.is_empty():
+		ItemDB.equip_item(ItemDB.create_item("chest_leather"))
+	if backpack.is_empty():
+		ItemDB.add_to_backpack(ItemDB.create_item("bread"))
+		ItemDB.add_to_backpack(ItemDB.create_item("bread"))
+		ItemDB.add_to_backpack(ItemDB.create_item("baked_potato"))
+		ItemDB.add_to_backpack(ItemDB.create_item("potion_red"))
+		if gold == 0:
+			add_gold(15)
+
+
 ## Add gold.
 func add_gold(amount: int):
 	if amount > 0:
