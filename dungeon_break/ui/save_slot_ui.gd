@@ -52,6 +52,14 @@ func _build_ui() -> void:
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(sub)
 
+	# ── permadeath warning ──
+	var warn := Label.new()
+	warn.text = "⚠  PERMADEATH — If you die, your save is deleted. You have been warned."
+	warn.add_theme_font_size_override("font_size", 12)
+	warn.add_theme_color_override("font_color", Color(0.9, 0.35, 0.3))
+	warn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(warn)
+
 	# ── three slot cards ──
 	var slots_row := HBoxContainer.new()
 	slots_row.add_theme_constant_override("separation", 14)
@@ -259,6 +267,14 @@ func _build_occupied_slot(col: VBoxContainer, slot: int, info: Dictionary) -> vo
 	new_btn.pressed.connect(func(): _confirm_new(slot, col, btn_row))
 	btn_row.add_child(new_btn)
 
+	var del_btn := Button.new()
+	del_btn.text = "Delete"
+	del_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	del_btn.custom_minimum_size = Vector2(0, 32)
+	_style_btn(del_btn, Color(0.65, 0.2, 0.2))
+	del_btn.pressed.connect(func(): _confirm_delete(slot, col, btn_row))
+	btn_row.add_child(del_btn)
+
 
 ## Replace the button row with a "Overwrite? Yes / No" confirmation.
 func _confirm_new(slot: int, col: VBoxContainer, btn_row: HBoxContainer) -> void:
@@ -280,6 +296,41 @@ func _confirm_new(slot: int, col: VBoxContainer, btn_row: HBoxContainer) -> void
 	yes_btn.pressed.connect(func():
 		SaveManager.delete_slot(slot)
 		new_game_requested.emit(slot)
+	)
+	btn_row.add_child(yes_btn)
+
+	var no_btn := Button.new()
+	no_btn.text = "Cancel"
+	no_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	no_btn.custom_minimum_size = Vector2(0, 30)
+	_style_btn(no_btn, Color(0.3, 0.3, 0.35))
+	no_btn.pressed.connect(func(): get_tree().reload_current_scene())
+	btn_row.add_child(no_btn)
+
+
+## Replace the button row with a "Delete save? Yes / No" confirmation.
+func _confirm_delete(slot: int, col: VBoxContainer, btn_row: HBoxContainer) -> void:
+	for c in btn_row.get_children():
+		c.queue_free()
+
+	var confirm_lbl := Label.new()
+	confirm_lbl.text = "Delete this save?"
+	confirm_lbl.add_theme_font_size_override("font_size", 12)
+	confirm_lbl.add_theme_color_override("font_color", Color(1.0, 0.35, 0.3))
+	confirm_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(confirm_lbl)
+
+	var yes_btn := Button.new()
+	yes_btn.text = "Yes — Delete"
+	yes_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	yes_btn.custom_minimum_size = Vector2(0, 30)
+	_style_btn(yes_btn, Color(0.8, 0.2, 0.15))
+	yes_btn.pressed.connect(func():
+		SaveManager.delete_slot(slot)
+		# Rebuild the UI to show the slot as empty
+		for child in get_children():
+			child.queue_free()
+		call_deferred("_build_ui")
 	)
 	btn_row.add_child(yes_btn)
 

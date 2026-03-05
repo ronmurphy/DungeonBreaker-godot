@@ -518,6 +518,9 @@ func _check_area_interactions():
 				# Minimap: mark room discovered
 				if _minimap and is_instance_valid(_minimap):
 					_minimap.mark_visited(rid)
+			else:
+				# Re-enable lights when revisiting a room
+				_enable_room_lights(rid)
 
 			# Minimap: update current room
 			if _minimap and is_instance_valid(_minimap):
@@ -834,26 +837,95 @@ func _do_alchemy_brew():
 
 
 func _do_vault_loot(area: Area3D):
-	# Gold reward scales with floor
-	var gold_reward := 20 + _floor_num * 10
+	# Gold reward scales with floor (vaults are premium)
+	var gold_reward := 30 + _floor_num * 15
 	GameData.gold += gold_reward
 	GameData.gold_changed.emit(GameData.gold)
 
-	# Random bonus item: potion, food, or accessory
-	var loot_table := ["potion_red", "potion_blue", "potion_green", "baked_potato", "bread"]
-	var loot_key: String = loot_table[randi() % loot_table.size()]
-	var item := ItemDB.create_item(loot_key)
+	# Vault loot is tiered by floor — guaranteed item (no drop chance roll)
+	var item: Dictionary = _roll_vault_item()
 	var item_name := ""
 	if not item.is_empty() and ItemDB.add_to_backpack(item):
-		item_name = item.get("name", loot_key)
+		item_name = item.get("name", "???")
 
 	# Mark as looted so it can't be opened again
 	area.set_meta("looted", true)
 
+	# Toast feedback
+	var msg := ""
 	if item_name != "":
+		msg = "Vault opened!  +%dg  +%s" % [gold_reward, item_name]
 		print("Dungeon: vault — %d gold + %s" % [gold_reward, item_name])
 	else:
+		msg = "Vault opened!  +%dg  (backpack full)" % gold_reward
 		print("Dungeon: vault — %d gold (backpack full, item lost)" % gold_reward)
+	if _hud and _hud.has_method("show_toast"):
+		_hud.show_toast(msg, 4.0)
+
+
+## Roll a vault-specific loot item. Vaults guarantee a good drop scaled to floor.
+## Early floors: consumables + basic gear. Mid floors: magic weapons + accessories.
+## Late floors: elixirs + rare accessories + magic weapons.
+func _roll_vault_item() -> Dictionary:
+	# Build a floor-appropriate weighted loot pool
+	var pool: Array = []  # Array of [weight: int, item_id: String]
+
+	# ── Always available: healing ──
+	pool.append([3, "potion_red"])
+	pool.append([2, "potion_blue"])
+
+	# ── Floor 1-3: basic gear + food ──
+	if _floor_num <= 3:
+		pool.append([3, "bread"])
+		pool.append([3, "baked_potato"])
+		pool.append([2, "potion_green"])
+		pool.append([2, "dungeon_key"])
+		pool.append([1, "poison_dart"])
+		pool.append([1, "crystal_wand"])
+
+	# ── Floor 4-6: magic weapons + early accessories + elixirs ──
+	if _floor_num >= 4:
+		pool.append([2, "shuriken"])
+		pool.append([2, "throwing_knives"])
+		pool.append([2, "blood_pendant"])
+		pool.append([2, "ring_of_thorns"])
+		pool.append([2, "ring_of_vampirism"])
+		pool.append([1, "elixir_power"])
+		pool.append([1, "elixir_iron"])
+
+	# ── Floor 5+: better accessories + elixirs ──
+	if _floor_num >= 5:
+		pool.append([2, "ring_of_fortitude"])
+		pool.append([2, "ancient_amulet"])
+		pool.append([1, "elixir_vitality"])
+		pool.append([1, "elixir_speed"])
+
+	# ── Floor 6+: high-tier weapons + accessories ──
+	if _floor_num >= 6:
+		pool.append([2, "skull_wand"])
+		pool.append([2, "gauntlet_of_might"])
+		pool.append([2, "hourglass_of_haste"])
+		pool.append([1, "storm_staff"])
+
+	# ── Floor 7+: phoenix crystal ──
+	if _floor_num >= 7:
+		pool.append([2, "phoenix_crystal"])
+
+	# Weighted random pick
+	var total_weight := 0
+	for entry in pool:
+		total_weight += entry[0]
+	if total_weight == 0:
+		return ItemDB.create_item("potion_red")
+
+	var roll := randi_range(1, total_weight)
+	var cumulative := 0
+	for entry in pool:
+		cumulative += entry[0]
+		if roll <= cumulative:
+			return ItemDB.create_item(entry[1])
+
+	return ItemDB.create_item("potion_red")
 
 
 # ── Puzzle room logic ────────────────────────────────────────────────────────

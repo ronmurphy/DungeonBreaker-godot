@@ -1,5 +1,5 @@
 extends Control
-## Minimap overlay — shows dungeon room layout in the top-left corner.
+## Minimap overlay — shows dungeon room layout in the top-right corner.
 ##
 ## Rooms are drawn as coloured rectangles. Corridors are thin lines
 ## connecting adjacent rooms. A pulsing dot tracks the player.
@@ -13,8 +13,8 @@ extends Control
 ##   Blue tint   — puzzle room
 ##   White tint  — start room
 
-const MAP_SIZE := Vector2(200, 200)   # pixel size of the minimap box
-const PADDING  := 8.0                 # inner padding in pixels
+const MAP_SIZE := Vector2(150, 150)   # pixel size of the minimap box
+const PADDING  := 6.0                 # inner padding in pixels
 const ROOM_BORDER := 1.0              # border thickness around each room rect
 
 # Colours
@@ -54,12 +54,12 @@ var _origin: Vector2 = Vector2.ZERO
 
 
 func _ready():
-	# Position: top-left corner with a small margin
-	set_anchors_preset(Control.PRESET_TOP_LEFT)
-	offset_left   = 8
-	offset_top    = 40
-	offset_right  = 8 + MAP_SIZE.x
-	offset_bottom = 40 + MAP_SIZE.y
+	# Position: top-right corner, below the time bar
+	set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	offset_left   = -MAP_SIZE.x - 8
+	offset_top    = 36
+	offset_right  = -8
+	offset_bottom = 36 + MAP_SIZE.y
 	custom_minimum_size = MAP_SIZE
 	size = MAP_SIZE
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -69,7 +69,7 @@ func _ready():
 	var lbl := Label.new()
 	lbl.name = "FloorLabel"
 	lbl.text = "F%d" % _floor_num
-	lbl.add_theme_font_size_override("font_size", 11)
+	lbl.add_theme_font_size_override("font_size", 10)
 	lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.8))
 	lbl.position = Vector2(4, 2)
 	add_child(lbl)
@@ -78,9 +78,9 @@ func _ready():
 	var hint := Label.new()
 	hint.name = "HintLabel"
 	hint.text = "[M] Map"
-	hint.add_theme_font_size_override("font_size", 10)
+	hint.add_theme_font_size_override("font_size", 9)
 	hint.add_theme_color_override("font_color", Color(0.45, 0.45, 0.6))
-	hint.position = Vector2(MAP_SIZE.x - 52, MAP_SIZE.y - 16)
+	hint.position = Vector2(MAP_SIZE.x - 48, MAP_SIZE.y - 14)
 	add_child(hint)
 
 

@@ -48,9 +48,10 @@ func _ready():
 	title.modulate.a = 0.0
 	root.add_child(title)
 
-	# ── 3. Subtitle "on floor N" ──────────────────────────────────────────────
+	# ── 3. Subtitle "PlayerName the ClassName — floor N" ─────────────────────
+	var class_label: String = GameData.CLASS_NAMES.get(GameData.player_class, "Adventurer")
 	var sub := Label.new()
-	sub.text = "on floor %d" % GameData.current_floor
+	sub.text = "%s the %s  —  floor %d" % [GameData.player_name, class_label, GameData.current_floor]
 	sub.add_theme_font_override("font", font_reg)
 	sub.add_theme_font_size_override("font_size", 24)
 	sub.add_theme_color_override("font_color", Color(0.85, 0.75, 0.65))
@@ -67,25 +68,64 @@ func _ready():
 	stats_box.anchor_right = 0.5
 	stats_box.anchor_top = 0.0
 	stats_box.anchor_bottom = 0.0
-	stats_box.offset_top = vp_size.y * 0.52
-	stats_box.offset_bottom = vp_size.y * 0.52 + 220.0
-	stats_box.offset_left = -200.0
-	stats_box.offset_right = 200.0
+	stats_box.offset_top = vp_size.y * 0.42
+	stats_box.offset_bottom = vp_size.y * 0.42 + 360.0
+	stats_box.offset_left = -220.0
+	stats_box.offset_right = 220.0
 	stats_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	stats_box.modulate.a = 0.0
 	root.add_child(stats_box)
 
+	# ── Compute derived stats ─────────────────────────────────────────────────
+	var weapon_name: String = GameData.equip_weapon.get("name", "") if GameData.equip_weapon else ""
+	if weapon_name == "":
+		weapon_name = "Fists"
+	var accessory_name: String = GameData.equip_accessory.get("name", "") if GameData.equip_accessory else ""
+	if accessory_name == "":
+		accessory_name = "None"
+
+	var total_rooms_cleared: int = 0
+	for floor_key in GameData.cleared_rooms.keys():
+		var arr = GameData.cleared_rooms[floor_key]
+		if arr is Array:
+			total_rooms_cleared += arr.size()
+
+	var companions_alive: int = GameData.companions.size()
+	var companions_fallen: int = maxi(GameData.run_companions_recruited - companions_alive, 0)
+	var comp_text: String
+	if GameData.run_companions_recruited == 0:
+		comp_text = "None"
+	elif companions_fallen == 0:
+		comp_text = "%d alive" % companions_alive
+	elif companions_alive == 0:
+		comp_text = "%d fallen" % companions_fallen
+	else:
+		comp_text = "%d alive, %d fallen" % [companions_alive, companions_fallen]
+
 	var stat_lines: Array = [
 		["Level", str(GameData.player_level)],
-		["Floor Reached", str(GameData.current_floor)],
+		["Floors Cleared", str(GameData.floors_cleared)],
+		["Rooms Cleared", str(total_rooms_cleared)],
 		["Enemies Slain", str(GameData.total_kills)],
-		["Gold Earned", "%dg" % GameData.run_gold_earned],
+		["", ""],  # spacer row
+		["Weapon", weapon_name],
+		["Accessory", accessory_name],
+		["", ""],  # spacer row
+		["Gold Collected", "%dg" % GameData.run_gold_earned],
+		["Gold on Hand", "%dg" % GameData.gold],
 		["Damage Dealt", str(GameData.run_damage_dealt)],
 		["Damage Taken", str(GameData.run_damage_taken)],
-		["Companions", str(GameData.run_companions_recruited)],
+		["Companions", comp_text],
 	]
 
 	for row in stat_lines:
+		# Empty key = spacer row
+		if row[0] == "":
+			var gap := Control.new()
+			gap.custom_minimum_size = Vector2(0.0, 6.0)
+			stats_box.add_child(gap)
+			continue
+
 		var hb := HBoxContainer.new()
 		hb.alignment = BoxContainer.ALIGNMENT_CENTER
 		stats_box.add_child(hb)
@@ -120,8 +160,8 @@ func _ready():
 	cod.add_theme_color_override("font_color", Color(0.8, 0.3, 0.2))
 	cod.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	cod.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	cod.offset_top = vp_size.y * 0.52 + 232.0
-	cod.offset_bottom = vp_size.y * 0.52 + 258.0
+	cod.offset_top = vp_size.y * 0.42 + 372.0
+	cod.offset_bottom = vp_size.y * 0.42 + 398.0
 	cod.modulate.a = 0.0
 	root.add_child(cod)
 

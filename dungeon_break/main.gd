@@ -430,6 +430,8 @@ func _on_advance_floor():
 
 func _on_player_defeated():
 	_clear_current()
+	# Permadeath: delete the save file immediately
+	SaveManager.delete_slot(GameData.save_slot)
 	var ds := DeathScreenScript.new()
 	ds.name = "DeathScreen"
 	ds.new_run_requested.connect(func(): ds.queue_free(); _clear_current(); _show_character_select())
